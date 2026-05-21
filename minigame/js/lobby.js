@@ -73,6 +73,7 @@ App.Lobby = (function() {
   }
 
   function launchSingleGame(gameId) {
+    showScreen('game');
     setTitle('載入中...');
     var container = document.getElementById('game-container');
     gameActive = true;
@@ -88,6 +89,7 @@ App.Lobby = (function() {
   }
 
   function launchMultiplayerGame(gameId) {
+    showScreen('game');
     setTitle('載入中...');
     var container = document.getElementById('game-container');
     gameActive = true;
