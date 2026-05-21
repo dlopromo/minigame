@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MiniGame</title>
+<link rel="stylesheet" href="css/common.css">
+<link rel="stylesheet" href="css/lobby.css">
+</head>
+<body>
+<div class="toast-container" id="toast-container"></div>
+
+<!-- Home Screen -->
+<div id="screen-home" class="screen active">
+  <div class="card">
+    <h1>MiniGame</h1>
+    <p class="subtitle">選擇遊戲模式</p>
+    <div class="mode-buttons">
+      <button class="btn btn-primary" onclick="App.Lobby.selectMode('single')">單人遊戲</button>
+      <button class="btn btn-secondary" onclick="App.Lobby.selectMode('versus')">雙人對戰</button>
+    </div>
+    <button class="btn btn-secondary" onclick="App.Lobby.selectMode('coop')">雙人合作</button>
+  </div>
+  <div class="card">
+    <h2>連線說明（雙人模式）</h2>
+    <p style="font-size:.85rem;line-height:1.6;color:var(--muted)">
+      雙方需在同一 WiFi / 區域網路內。<br>
+      玩家 A 創建房間後，複製邀請碼傳給玩家 B。<br>
+      玩家 B 貼上邀請碼產生回應碼，再傳回給玩家 A。<br>
+      玩家 A 貼上回應碼即可連線。
+    </p>
+  </div>
+</div>
+
+<!-- Game Selection Screen -->
+<div id="screen-game-select" class="screen">
+  <div class="card">
+    <h2 id="game-select-title">選擇遊戲</h2>
+    <div class="game-grid" id="game-grid"></div>
+  </div>
+  <button class="btn btn-secondary" onclick="App.Lobby.goHome()">← 返回</button>
+</div>
+
+<!-- Connect Screen -->
+<div id="screen-connect" class="screen">
+  <div class="card">
+    <h2 id="connect-title">雙人模式</h2>
+    <p style="font-size:.85rem;color:var(--muted);margin-bottom:12px" id="connect-desc"></p>
+    <input type="text" id="player-name-input" placeholder="輸入你的名字" maxlength="12"
+      class="text-input">
+    <button class="btn btn-primary" onclick="App.Lobby.startHost()">創建房間</button>
+    <button class="btn btn-secondary" onclick="App.Lobby.startJoin()">加入房間</button>
+  </div>
+  <button class="btn btn-secondary" onclick="App.Lobby.goHome()">← 返回</button>
+</div>
+
+<!-- Host Screen -->
+<div id="screen-host" class="screen">
+  <div class="card">
+    <h2>創建房間</h2>
+    <p style="font-size:.85rem;color:var(--muted);margin-bottom:12px">
+      步驟 1：複製下方邀請碼，傳給對方
+    </p>
+    <textarea id="offer-code" class="code-area" readonly placeholder="產生中..."></textarea>
+    <button class="btn-small btn-copy" onclick="App.Common.copyText('offer-code')">複製邀請碼</button>
+  </div>
+  <div class="card">
+    <p style="font-size:.85rem;color:var(--muted);margin-bottom:12px">
+      步驟 2：貼上對方的回應碼，然後按連線
+    </p>
+    <textarea id="answer-input" class="code-area" placeholder="貼上對方的回應碼..."></textarea>
+    <button class="btn btn-primary" id="btn-connect-host" onclick="App.Lobby.connectHost()">連線</button>
+  </div>
+  <div class="card" id="host-retry-card" style="display:none">
+    <p style="text-align:center;color:var(--muted);font-size:.9rem;margin-bottom:12px">連線已中斷</p>
+    <button class="btn btn-primary" onclick="App.Lobby.retryHost()">重新產生邀請碼</button>
+  </div>
+  <button class="btn btn-secondary" onclick="App.Lobby.goHome()">← 返回</button>
+</div>
+
+<!-- Join Screen -->
+<div id="screen-join" class="screen">
+  <div class="card">
+    <h2>加入房間</h2>
+    <p style="font-size:.85rem;color:var(--muted);margin-bottom:12px">
+      步驟 1：貼上對方的邀請碼，然後按產生回應碼
+    </p>
+    <textarea id="offer-input" class="code-area" placeholder="貼上對方的邀請碼..."></textarea>
+    <button class="btn btn-primary" id="btn-gen-answer" onclick="App.Lobby.generateAnswer()">產生回應碼</button>
+  </div>
+  <div class="card" id="join-answer-card" style="display:none">
+    <p style="font-size:.85rem;color:var(--muted);margin-bottom:12px">
+      步驟 2：複製下方回應碼，傳給對方，等他連線
+    </p>
+    <textarea id="answer-code" class="code-area" readonly></textarea>
+    <button class="btn-small btn-copy" onclick="App.Common.copyText('answer-code')">複製回應碼</button>
+    <p style="text-align:center;margin-top:12px;color:var(--muted);font-size:.85rem">
+      <span class="spinner"></span>等待對方連線...
+    </p>
+  </div>
+  <div class="card" id="join-retry-card" style="display:none">
+    <p style="text-align:center;color:var(--muted);font-size:.9rem;margin-bottom:12px">連線已中斷</p>
+    <button class="btn btn-primary" onclick="App.Lobby.retryJoin()">重新輸入邀請碼</button>
+  </div>
+  <button class="btn btn-secondary" onclick="App.Lobby.goHome()">← 返回</button>
+</div>
+
+<!-- Waiting Screen -->
+<div id="screen-waiting" class="screen">
+  <div class="card">
+    <div class="waiting-text">
+      <span class="spinner"></span>等待房主選擇遊戲...
+    </div>
+  </div>
+  <button class="btn btn-secondary" onclick="App.Lobby.goHome()">← 返回</button>
+</div>
+
+<!-- Game Container -->
+<div id="screen-game" class="screen">
+  <div id="game-container"></div>
+</div>
+
+<!-- Scripts -->
+<script src="js/common.js"></script>
+<script src="js/webrtc.js"></script>
+<script src="js/gameManager.js"></script>
+<script src="js/lobby.js"></script>
+<script>
+(function() {
+  var gamesToLoad = ['guessColor'];
+  var loaded = 0;
+
+  gamesToLoad.forEach(function(id) {
+    var link = document.createElement('link');
+    link.rel = 'stylesheet';
+    link.href = 'games/' + id + '/' + id + '.css';
+    document.head.appendChild(link);
+
+    var script = document.createElement('script');
+    script.src = 'games/' + id + '/' + id + '.js';
+    script.onload = function() {
+      loaded++;
+      if (loaded === gamesToLoad.length) {
+        App.Lobby.init();
+      }
+    };
+    script.onerror = function() {
+      console.warn('Failed to load game: ' + id);
+      loaded++;
+      if (loaded === gamesToLoad.length) {
+        App.Lobby.init();
+      }
+    };
+    document.body.appendChild(script);
+  });
+})();
+</script>
+</body>
+</html>
