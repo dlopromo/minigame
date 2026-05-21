@@ -6,6 +6,7 @@
 <title>MiniGame</title>
 <link rel="stylesheet" href="css/common.css">
 <link rel="stylesheet" href="css/lobby.css">
+<link rel="stylesheet" href="games/guessColor/guessColor.css">
 </head>
 <body>
 <div class="toast-container" id="toast-container"></div>
@@ -124,36 +125,8 @@
 <script src="js/common.js"></script>
 <script src="js/webrtc.js"></script>
 <script src="js/gameManager.js"></script>
+<script src="games/guessColor/guessColor.js"></script>
 <script src="js/lobby.js"></script>
-<script>
-(function() {
-  var gamesToLoad = ['guessColor'];
-  var loaded = 0;
-
-  gamesToLoad.forEach(function(id) {
-    var link = document.createElement('link');
-    link.rel = 'stylesheet';
-    link.href = 'games/' + id + '/' + id + '.css';
-    document.head.appendChild(link);
-
-    var script = document.createElement('script');
-    script.src = 'games/' + id + '/' + id + '.js';
-    script.onload = function() {
-      loaded++;
-      if (loaded === gamesToLoad.length) {
-        App.Lobby.init();
-      }
-    };
-    script.onerror = function() {
-      console.warn('Failed to load game: ' + id);
-      loaded++;
-      if (loaded === gamesToLoad.length) {
-        App.Lobby.init();
-      }
-    };
-    document.body.appendChild(script);
-  });
-})();
-</script>
+<script>App.Lobby.init();</script>
 </body>
 </html>
