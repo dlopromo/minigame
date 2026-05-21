@@ -620,8 +620,8 @@
       '<div class="card">' +
         '<div class="result-title ' + (iWin ? 'result-win' : 'result-lose') + '">' +
           (mode === 'coop'
-            ? (iWin ? '你們贏了！' : '你們輸了...')
-            : (iWin ? '你贏了！' : '你輸了...')) +
+            ? (iWin ? '你們贏了！用了 ' + (myGuesses.length + opponentGuesses.length) + ' 次' : '你們輸了...')
+            : (iWin ? '你贏了！用了 ' + myGuesses.length + ' 次' : '你輸了...')) +
         '</div>' +
         (myCodeLabel ? '<p style="font-size:.85rem;color:var(--muted);text-align:center;margin-bottom:12px">' + myCodeLabel + '</p>' : '') +
         (myCodeLabel ? '<div class="reveal-row" id="gc-reveal-my-code"></div>' : '') +
