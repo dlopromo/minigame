@@ -1,11 +1,23 @@
 var App = window.App || {};
 
 App.Lobby = (function() {
-  var gameMode = null;
+  var playContext = null;
+  var selectedGameId = null;
   var playerName = '';
   var opponentName = '';
   var isHost = false;
   var gameActive = false;
+
+  var modeMeta = {
+    coop: {
+      name: '雙人合作',
+      description: '輪流猜同一組電腦答案，不限次數，直到猜中。'
+    },
+    race: {
+      name: '雙人對決',
+      description: '同題即時競速，先猜中者勝，步數作統計。'
+    }
+  };
 
   function showScreen(id) {
     App.Common.showScreen(id);
@@ -16,32 +28,29 @@ App.Lobby = (function() {
   }
 
   function selectMode(mode) {
-    gameMode = mode;
+    selectedGameId = null;
     if (mode === 'single') {
+      playContext = 'single';
+      setTitle('本機遊玩');
       showGameSelect('single');
-    } else {
-      showScreen('connect');
-      var titleEl = document.getElementById('connect-title');
-      var descEl = document.getElementById('connect-desc');
-      if (mode === 'versus') {
-        titleEl.textContent = '雙人對戰';
-        descEl.textContent = '輪流猜測對方的秘密代碼，先猜中者勝！';
-      } else {
-        titleEl.textContent = '雙人合作';
-        descEl.textContent = '合力破解電腦的秘密代碼！';
-      }
-      setTitle(mode === 'versus' ? '雙人對戰' : '雙人合作');
+      return;
     }
+
+    playContext = 'multiplayer';
+    showScreen('connect');
+    var titleEl = document.getElementById('connect-title');
+    var descEl = document.getElementById('connect-desc');
+    if (titleEl) titleEl.textContent = '雙人連線';
+    if (descEl) descEl.textContent = '先完成連線，連線後由房主選擇遊戲和玩法。';
+    setTitle('雙人連線');
   }
 
-  function showGameSelect(modeFilter) {
+  function showGameSelect(context) {
+    if (context) playContext = context;
     var grid = document.getElementById('game-grid');
     grid.innerHTML = '';
-    var games = App.GameManager.getGames();
-    games.forEach(function(game) {
-      var supported = false;
-      if (modeFilter === 'single' && game.supportsSingle) supported = true;
-      if (modeFilter !== 'single' && game.supportsMultiplayer) supported = true;
+    App.GameManager.getGames().forEach(function(game) {
+      var supported = playContext === 'single' ? game.supportsSingle : game.supportsMultiplayer;
       if (!supported) return;
 
       var card = document.createElement('div');
@@ -56,20 +65,55 @@ App.Lobby = (function() {
 
     var selectTitle = document.getElementById('game-select-title');
     if (selectTitle) {
-      selectTitle.textContent = modeFilter === 'single' ? '選擇遊戲' : '選擇遊戲';
+      selectTitle.textContent = playContext === 'single' ? '選擇本機遊戲' : '選擇雙人遊戲';
     }
     showScreen('game-select');
   }
 
   function onGameSelected(gameId) {
-    if (gameMode === 'single') {
+    selectedGameId = gameId;
+    if (playContext === 'single') {
       launchSingleGame(gameId);
-    } else {
-      if (App.WebRTC.getIsHost()) {
-        App.WebRTC.send({ type: 'game_select', gameId: gameId });
-        launchMultiplayerGame(gameId);
-      }
+      return;
     }
+
+    if (!App.WebRTC.getIsHost()) return;
+    var game = App.GameManager.getGame(gameId);
+    var modes = game && game.multiplayerModes ? game.multiplayerModes : ['coop'];
+    App.WebRTC.send({ type: 'game_select', gameId: gameId });
+    if (modes.length === 1) {
+      selectMultiplayerMode(modes[0]);
+    } else {
+      showModeSelect(gameId);
+    }
+  }
+
+  function showModeSelect(gameId) {
+    selectedGameId = gameId;
+    var game = App.GameManager.getGame(gameId);
+    var modes = game && game.multiplayerModes ? game.multiplayerModes : ['coop'];
+    var grid = document.getElementById('mode-choice-grid');
+    grid.innerHTML = '';
+    modes.forEach(function(mode) {
+      var meta = modeMeta[mode] || { name: mode, description: '' };
+      var card = document.createElement('button');
+      card.className = 'mode-choice-card';
+      card.innerHTML =
+        '<span class="mode-choice-name">' + meta.name + '</span>' +
+        '<span class="mode-choice-desc">' + meta.description + '</span>';
+      card.onclick = function() { selectMultiplayerMode(mode); };
+      grid.appendChild(card);
+    });
+    var title = document.getElementById('mode-select-title');
+    if (title) title.textContent = (game ? game.name : '遊戲') + ' 玩法';
+    showScreen('mode-select');
+  }
+
+  function selectMultiplayerMode(mode) {
+    if (!selectedGameId || !App.WebRTC.getIsHost()) return;
+    App.WebRTC.send({ type: 'mode_select', mode: mode });
+    App.WebRTC.send({ type: 'game_start', gameId: selectedGameId, mode: mode });
+    launchMultiplayerGame(selectedGameId, mode);
   }
 
   function launchSingleGame(gameId) {
@@ -88,19 +132,21 @@ App.Lobby = (function() {
     });
   }
 
-  function launchMultiplayerGame(gameId) {
+  function launchMultiplayerGame(gameId, mode) {
     showScreen('game');
     setTitle('載入中...');
     var container = document.getElementById('game-container');
     gameActive = true;
     App.GameManager.startGame(gameId, container, {
-      mode: gameMode,
+      mode: mode,
       isHost: isHost,
-      playerName: playerName,
-      opponentName: opponentName
+      playerName: playerName || '玩家',
+      opponentName: opponentName || '對方'
     }, function() {
       gameActive = false;
-      showGameSelect(gameMode);
+      if (App.WebRTC.isConnected() && isHost) showGameSelect('multiplayer');
+      else if (App.WebRTC.isConnected()) showWaiting();
+      else goHome();
     });
   }
 
@@ -185,25 +231,35 @@ App.Lobby = (function() {
     document.getElementById('btn-gen-answer').disabled = false;
   }
 
+  function showWaiting() {
+    showScreen('waiting');
+    setTitle('等待房主選擇遊戲...');
+  }
+
   function onConnectionOpen() {
+    playContext = 'multiplayer';
     App.WebRTC.send({ type: 'player_info', name: playerName });
     if (App.WebRTC.getIsHost()) {
-      showGameSelect(gameMode);
+      showGameSelect('multiplayer');
     } else {
-      showScreen('waiting');
-      setTitle('等待房主選擇遊戲...');
+      showWaiting();
     }
   }
 
   function onConnectionClose() {
+    var wasHost = isHost;
     if (gameActive) {
       App.GameManager.endGame();
       gameActive = false;
     }
     App.Common.showToast('連線已中斷，可按重試重新連線', 'error');
-    if (isHost) {
+    if (wasHost) {
+      isHost = true;
+      showScreen('host');
       document.getElementById('host-retry-card').style.display = 'block';
     } else {
+      isHost = false;
+      showScreen('join');
       document.getElementById('join-retry-card').style.display = 'block';
     }
   }
@@ -211,10 +267,17 @@ App.Lobby = (function() {
   function handleMessage(msg) {
     switch (msg.type) {
       case 'player_info':
-        opponentName = msg.name;
+        opponentName = msg.name || '對方';
         break;
       case 'game_select':
-        launchMultiplayerGame(msg.gameId);
+        selectedGameId = msg.gameId;
+        showWaiting();
+        break;
+      case 'mode_select':
+        break;
+      case 'game_start':
+        selectedGameId = msg.gameId;
+        launchMultiplayerGame(msg.gameId, msg.mode);
         break;
       case 'game_msg':
         App.GameManager.handleMessage(msg.payload);
@@ -228,7 +291,8 @@ App.Lobby = (function() {
       App.GameManager.endGame();
       gameActive = false;
     }
-    gameMode = null;
+    playContext = null;
+    selectedGameId = null;
     playerName = '';
     opponentName = '';
     isHost = false;
@@ -257,6 +321,8 @@ App.Lobby = (function() {
     init: init,
     selectMode: selectMode,
     showGameSelect: showGameSelect,
+    showModeSelect: showModeSelect,
+    selectMultiplayerMode: selectMultiplayerMode,
     startHost: startHost,
     connectHost: connectHost,
     retryHost: retryHost,

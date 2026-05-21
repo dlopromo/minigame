@@ -17,7 +17,11 @@ App.Common = {
   copyText: function(id) {
     var el = document.getElementById(id);
     el.select();
-    navigator.clipboard.writeText(el.value).catch(function() { document.execCommand('copy'); });
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(el.value).catch(function() { document.execCommand('copy'); });
+    } else {
+      document.execCommand('copy');
+    }
   },
 
   encodeSDP: function(sdp) {

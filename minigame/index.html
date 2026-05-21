@@ -2,7 +2,7 @@
 <html lang="zh-Hant">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>MiniGame</title>
 <link rel="stylesheet" href="css/common.css">
 <link rel="stylesheet" href="css/lobby.css">
@@ -15,12 +15,11 @@
 <div id="screen-home" class="screen active">
   <div class="card">
     <h1>MiniGame</h1>
-    <p class="subtitle">選擇遊戲模式</p>
+    <p class="subtitle">選擇遊玩方式</p>
     <div class="mode-buttons">
-      <button class="btn btn-primary" onclick="App.Lobby.selectMode('single')">單人遊戲</button>
-      <button class="btn btn-secondary" onclick="App.Lobby.selectMode('versus')">雙人對戰</button>
+      <button class="btn btn-primary" onclick="App.Lobby.selectMode('single')">本機遊玩</button>
+      <button class="btn btn-secondary" onclick="App.Lobby.selectMode('multiplayer')">雙人連線</button>
     </div>
-    <button class="btn btn-secondary" onclick="App.Lobby.selectMode('coop')">雙人合作</button>
   </div>
   <div class="card">
     <h2>連線說明（雙人模式）</h2>
@@ -53,6 +52,18 @@
     <button class="btn btn-secondary" onclick="App.Lobby.startJoin()">加入房間</button>
   </div>
   <button class="btn btn-secondary" onclick="App.Lobby.goHome()">← 返回</button>
+</div>
+
+<!-- Multiplayer Mode Selection Screen -->
+<div id="screen-mode-select" class="screen">
+  <div class="card">
+    <h2 id="mode-select-title">選擇玩法</h2>
+    <p style="font-size:.85rem;color:var(--muted);margin-bottom:12px" id="mode-select-desc">
+      選擇這局要合作破解，或同題競速。
+    </p>
+    <div class="mode-choice-grid" id="mode-choice-grid"></div>
+  </div>
+  <button class="btn btn-secondary" onclick="App.Lobby.showGameSelect('multiplayer')">← 返回遊戲選擇</button>
 </div>
 
 <!-- Host Screen -->

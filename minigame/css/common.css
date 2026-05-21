@@ -1,18 +1,26 @@
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{
-  --bg:#f0f0f0;--card:#fff;--shadow:0 4px 16px rgba(0,0,0,.1);
-  --radius:12px;--text:#333;--muted:#888;
+  --bg:#f5f6f8;--card:#fff;--shadow:0 8px 28px rgba(20,28,40,.08);
+  --radius:12px;--text:#1f2933;--muted:#7b8794;
   --red:#E74C3C;--blue:#3498DB;--yellow:#F1C40F;
-  --green:#2ECC71;--orange:#E67E22;--pink:#E91E8C;
+  --green:#2ECC71;--orange:#E67E22;--pink:#E91E8C;--purple:#8E44AD;
   --hit:#2ECC71;--blow:#F39C12;
 }
 body{
   font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
   background:var(--bg);color:var(--text);min-height:100vh;
   display:flex;justify-content:center;align-items:center;
+  padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
 }
 .screen{display:none;width:100%;max-width:600px;padding:20px}
 .screen.active{display:block}
+#screen-game.screen{
+  max-width:1120px;height:100dvh;padding:10px;
+}
+#screen-game.active{
+  display:flex;align-items:stretch;justify-content:center;
+}
+#game-container{width:100%;height:100%;min-height:0}
 .card{
   background:var(--card);border-radius:var(--radius);
   box-shadow:var(--shadow);padding:28px;margin-bottom:16px;
@@ -73,7 +81,9 @@ h2{font-size:1.2rem;margin-bottom:12px}
 }
 @keyframes spin{to{transform:rotate(360deg)}}
 @media(max-width:480px){
+  body{align-items:stretch}
   .screen{padding:12px}
   .card{padding:18px}
   h1{font-size:1.3rem}
+  #screen-game.screen{padding:6px}
 }

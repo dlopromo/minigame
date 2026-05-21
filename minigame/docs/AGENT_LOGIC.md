@@ -1,0 +1,198 @@
+# MiniGame Agent Logic Notes
+
+This document records the current implemented behavior so future agents can understand the app without re-discovering the full flow from scratch.
+
+## Architecture
+
+- `index.html` owns the static screens and loads scripts in this order:
+  `common.js`, `webrtc.js`, `gameManager.js`, game modules, then `lobby.js`.
+- `App.Common` owns shared UI utilities:
+  toast display, clipboard copy, SDP encode/decode, and screen switching.
+- `App.WebRTC` owns peer connection setup and the data channel.
+  It does not know game rules; it only sends JSON messages.
+- `App.GameManager` registers games and starts the active game module in `#game-container`.
+- `App.Lobby` owns app-level flow:
+  local play, multiplayer connection, game selection, multiplayer mode selection, and launching games.
+- Each game module owns its own rules, rendering, and `game_msg` message handling.
+
+## Lobby Flow
+
+The home screen has two entry points:
+
+- `本機遊玩`
+  - Sets lobby context to `single`.
+  - Shows game selection.
+  - Starts selected game with `mode: "single"`.
+- `雙人連線`
+  - Shows the manual WebRTC offer/answer flow.
+  - Host creates an offer.
+  - Joiner pastes the offer and creates an answer.
+  - Host accepts the answer.
+  - After the data channel opens, host chooses game and mode.
+
+After multiplayer connection opens:
+
+- Both peers exchange `{ type: "player_info", name }`.
+- Host sees multiplayer game selection.
+- Joiner sees waiting screen.
+- Host selects a game.
+- Lobby sends `{ type: "game_select", gameId }`.
+- If the game has more than one multiplayer mode, host chooses mode.
+- Lobby sends:
+  - `{ type: "mode_select", mode }`
+  - `{ type: "game_start", gameId, mode }`
+- Both peers then call `App.GameManager.startGame(gameId, opts)`.
+
+Current Guess Color multiplayer modes:
+
+- `coop`: cooperative turn-based play.
+- `race`: simultaneous race play.
+
+## WebRTC Message Layers
+
+Top-level lobby messages:
+
+- `player_info`
+  - Payload: `{ name }`
+  - Updates opponent display name.
+- `game_select`
+  - Payload: `{ gameId }`
+  - Lets joiner know the host selected a game.
+- `mode_select`
+  - Payload: `{ mode }`
+  - Informational mode selection message.
+- `game_start`
+  - Payload: `{ gameId, mode }`
+  - Starts the selected game on the receiving peer.
+- `game_msg`
+  - Payload: arbitrary game-owned message.
+  - Routed to `App.GameManager.handleMessage`.
+
+Game modules should only send game-specific messages through:
+
+```js
+App.WebRTC.send({ type: 'game_msg', payload: msg });
+```
+
+## Guess Color Shared Rules
+
+Guess Color is a 4-slot color code game.
+
+- Colors: red, blue, yellow, green, orange, purple.
+- Repeated colors are allowed.
+- Feedback pegs:
+  - Green: correct color and correct position.
+  - Orange: correct color but wrong position.
+  - Light gray: no match.
+- A guess is scored using the usual Hit & Blow logic:
+  - First count exact position matches.
+  - Then count remaining color-only matches.
+- Selecting an already-filled input peg removes it and makes that slot active again.
+
+## Guess Color Single Mode
+
+Single mode behavior:
+
+- Local browser generates the computer code.
+- Player guesses alone.
+- Maximum attempts: `MAX_ROWS` currently equals `12`.
+- Game ends when:
+  - Player gets 4 hits, or
+  - Player reaches 12 guesses.
+- Result screen shows:
+  - Win/loss.
+  - Computer answer.
+  - Full local guess history.
+
+## Guess Color Coop Mode
+
+Coop mode behavior:
+
+- Host generates one computer code.
+- Host sends it to joiner using `round_start`.
+- Host starts first.
+- Players alternate turns.
+- There is no 12-guess failure limit.
+- The board only displays the latest visible rows, but the result history keeps all guesses.
+- Game ends when either player gets 4 hits.
+- Both players see the same computer answer.
+- Result screen shows the merged turn history.
+
+Coop game messages:
+
+- `round_start`
+  - Payload: `{ code }`
+  - Sent by host when a multiplayer round starts.
+- `coop_guess`
+  - Payload: `{ colors, hits, blows, code? }`
+  - Sent after a coop guess.
+  - `code` is included when the guess ends the game.
+- `game_over`
+  - Payload: `{ winner: "team", code }`
+  - Ends the coop round for the peer.
+
+## Guess Color Race Mode
+
+Race mode behavior:
+
+- Host generates one computer code.
+- Host sends it to joiner using `round_start`.
+- Both players can guess at the same time.
+- There is no turn lock.
+- First player to guess 4 hits wins.
+- Attempts are statistics only; fewer attempts does not beat a faster finish.
+- During the race, the opponent panel only shows:
+  - Opponent attempt count.
+  - Opponent elapsed time.
+  - Whether opponent has finished.
+- It does not reveal opponent guess colors during play.
+- Result screen shows:
+  - Winner/loser text.
+  - Both players' attempts and elapsed time.
+  - Computer answer.
+  - Local guess history and opponent guess history.
+
+Race game messages:
+
+- `round_start`
+  - Payload: `{ code }`
+  - Sent by host when a race starts.
+- `race_progress`
+  - Payload: `{ attempts, elapsed, finished }`
+  - Sent after every local guess.
+  - Used only for the compact opponent status panel.
+- `race_finish`
+  - Payload: `{ attempts, elapsed, guesses, code }`
+  - Sent when a player finishes.
+  - Ends the race for the opponent and supplies final history.
+
+## Rematch Behavior
+
+- Single rematch:
+  - Generates a new local code.
+  - Starts a fresh single round.
+- Multiplayer rematch:
+  - Non-host sends `rematch` and waits.
+  - Host receives `rematch`, generates a new code, sends `round_start`, and starts the new round.
+  - Host can also press rematch directly and start a new round.
+
+## UI Principles
+
+The current design direction is Office Calm:
+
+- Light background.
+- Minimal controls.
+- No dark board.
+- No decorative secret rack.
+- Compact game surface for work-break play.
+- iPhone-like `402 x 680` viewport should not require page scrolling during the main game.
+- Desktop keeps the color picker below the board.
+
+## Known Constraints
+
+- Short room codes are not implemented.
+  The app still uses manual WebRTC offer/answer copy-paste.
+- Host-generated answer is shared with the peer.
+  This is acceptable for friendly play but is not cheat-resistant.
+- Full two-peer WebRTC behavior should be manually tested in two browser contexts before release.
+- `.DS_Store` may appear locally and should not be committed unless intentionally ignored or removed.

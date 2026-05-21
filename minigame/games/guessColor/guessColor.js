@@ -1,24 +1,25 @@
 (function() {
-  var COLORS = ['red','blue','yellow','green','orange','pink'];
+  var COLORS = ['red','blue','yellow','green','orange','purple'];
   var SLOTS = 4;
   var MAX_ROWS = 12;
 
   var container = null;
   var opts = null;
-  var myCode = [], opponentCode = [];
   var myGuesses = [], opponentGuesses = [];
-  var myTurn = true, codeLocked = false, opponentCodeLocked = false, gameOver = false;
+  var myTurn = true, gameOver = false;
   var pendingGuess = null;
   var computerCode = [];
-  var setupSelection = [null,null,null,null], setupActiveSlot = 0;
+  var startTime = 0;
+  var finishedAt = 0;
+  var opponentProgress = { attempts: 0, elapsed: 0, finished: false };
   var guessSelection = [null,null,null,null], guessActiveSlot = 0;
 
   function resetGameState() {
-    myCode = []; opponentCode = [];
     myGuesses = []; opponentGuesses = [];
-    myTurn = true; codeLocked = false; opponentCodeLocked = false;
+    myTurn = true;
     gameOver = false; pendingGuess = null; computerCode = [];
-    setupSelection = [null,null,null,null]; setupActiveSlot = 0;
+    startTime = 0; finishedAt = 0;
+    opponentProgress = { attempts: 0, elapsed: 0, finished: false };
     guessSelection = [null,null,null,null]; guessActiveSlot = 0;
   }
 
@@ -49,6 +50,17 @@
     return el('div', cls);
   }
 
+  function elapsedMs() {
+    return startTime ? Date.now() - startTime : 0;
+  }
+
+  function formatTime(ms) {
+    var total = Math.max(0, Math.floor(ms / 1000));
+    var minutes = Math.floor(total / 60);
+    var seconds = total % 60;
+    return minutes + ':' + (seconds < 10 ? '0' : '') + seconds;
+  }
+
   function renderCodeReveal(parent, code) {
     parent.innerHTML = '';
     if (code.length === SLOTS) {
@@ -62,114 +74,110 @@
     }
   }
 
-  // ===== Setup Screen =====
-  function showSetupScreen() {
-    setTitle('🔐 設定密碼');
-    setupSelection = [null,null,null,null];
-    setupActiveSlot = 0;
-    codeLocked = false;
-
-    container.innerHTML =
-      '<div class="card">' +
-        '<h2>設定你的秘密代碼</h2>' +
-        '<p style="font-size:.85rem;color:var(--muted);margin-bottom:8px">選 4 色（可重複）</p>' +
-        '<div class="selection-display" id="gc-setup-display"></div>' +
-        '<div class="color-palette" id="gc-setup-palette"></div>' +
-        '<button class="btn btn-primary" id="gc-btn-lock" disabled>確認鎖定</button>' +
-        '<div class="status-bar" id="gc-setup-status">等待雙方設定密碼...</div>' +
-      '</div>' +
-      '<button class="btn-leave" id="gc-btn-leave-setup">離開遊戲</button>';
-
-    document.getElementById('gc-btn-lock').onclick = lockCode;
-    document.getElementById('gc-btn-leave-setup').onclick = function() {
-      App.Lobby.goHome();
-    };
-
-    renderSetupDisplay();
-    renderSetupPalette();
-    updateSetupStatus();
-  }
-
-  function renderSetupDisplay() {
-    var c = document.getElementById('gc-setup-display');
-    if (!c) return;
-    c.innerHTML = '';
-    for (var i = 0; i < SLOTS; i++) {
-      var pin = el('div', 'selection-pin' + (setupSelection[i] ? ' filled' : '') + (i === setupActiveSlot ? ' active-slot' : ''));
-      if (setupSelection[i]) pin.dataset.color = setupSelection[i];
-      else pin.textContent = i + 1;
-      (function(idx) {
-        pin.onclick = function() {
-          if (!codeLocked) { setupActiveSlot = idx; renderSetupDisplay(); }
-        };
-      })(i);
-      c.appendChild(pin);
+  function appendGuessRow(parent, item, idx, label) {
+    var row = el('div', 'guess-row result-history-row');
+    row.appendChild(el('div', 'row-num', idx + 1));
+    if (label) row.appendChild(el('div', 'player-name', label));
+    var pins = el('div', 'pins');
+    for (var j = 0; j < SLOTS; j++) {
+      var pin = el('div', 'pin');
+      if (item.colors[j]) pin.dataset.color = item.colors[j];
+      pins.appendChild(pin);
     }
+    row.appendChild(pins);
+    var result = el('div', 'result');
+    for (var h = 0; h < item.hits; h++) result.appendChild(dot('hit-dot'));
+    for (var b = 0; b < item.blows; b++) result.appendChild(dot('blow-dot'));
+    for (var e = 0; e < SLOTS - item.hits - item.blows; e++) result.appendChild(dot('empty-dot'));
+    row.appendChild(result);
+    parent.appendChild(row);
   }
 
-  function renderSetupPalette() {
-    var c = document.getElementById('gc-setup-palette');
-    if (!c) return;
-    c.innerHTML = '';
-    COLORS.forEach(function(color) {
-      var btn = el('div', 'color-btn');
-      btn.dataset.color = color;
-      btn.onclick = function() { selectSetupColor(color); };
-      c.appendChild(btn);
-    });
+  function appendHistorySection(parent, title, guesses, label) {
+    var section = el('div', 'result-history-section');
+    section.appendChild(el('h3', null, title));
+    if (guesses.length === 0) {
+      section.appendChild(el('p', 'result-history-empty', '沒有作答紀錄'));
+    } else {
+      guesses.forEach(function(g, idx) {
+        appendGuessRow(section, g, idx, label);
+      });
+    }
+    parent.appendChild(section);
   }
 
-  function selectSetupColor(color) {
-    if (codeLocked) return;
-    setupSelection[setupActiveSlot] = color;
-    setupActiveSlot = (setupActiveSlot + 1) % SLOTS;
-    renderSetupDisplay();
-    var lockBtn = document.getElementById('gc-btn-lock');
-    if (lockBtn) lockBtn.disabled = !setupSelection.every(function(s) { return s !== null; });
-  }
-
-  function lockCode() {
-    if (setupSelection.some(function(s) { return s === null; })) return;
-    myCode = setupSelection.slice();
-    codeLocked = true;
-    send({ type: 'code_ready' });
-    var lockBtn = document.getElementById('gc-btn-lock');
-    if (lockBtn) { lockBtn.disabled = true; lockBtn.textContent = '已鎖定'; }
-    updateSetupStatus();
-    if (opponentCodeLocked) startVersusGame();
-  }
-
-  function updateSetupStatus() {
-    var el = document.getElementById('gc-setup-status');
-    if (!el) return;
-    if (codeLocked && opponentCodeLocked) el.textContent = '雙方已就緒！';
-    else if (codeLocked) el.innerHTML = '<span class="spinner"></span>等待對方設定密碼...';
-    else if (opponentCodeLocked) el.textContent = '對方已就緒，請設定你的密碼';
-    else el.textContent = '等待雙方設定密碼...';
+  function renderResultHistory() {
+    var target = document.getElementById('gc-result-history');
+    if (!target) return;
+    target.innerHTML = '';
+    if (opts.mode === 'coop') {
+      var merged = [];
+      var myIdx = 0, oppIdx = 0;
+      var total = myGuesses.length + opponentGuesses.length;
+      for (var turn = 0; turn < total; turn++) {
+        var isMySlot = opts.isHost ? (turn % 2 === 0) : (turn % 2 === 1);
+        if (isMySlot && myIdx < myGuesses.length) {
+          merged.push({ guess: myGuesses[myIdx], label: opts.playerName || '你' });
+          myIdx++;
+        } else if (oppIdx < opponentGuesses.length) {
+          merged.push({ guess: opponentGuesses[oppIdx], label: opts.opponentName || '隊友' });
+          oppIdx++;
+        }
+      }
+      var section = el('div', 'result-history-section');
+      section.appendChild(el('h3', null, '作答紀錄'));
+      if (merged.length === 0) {
+        section.appendChild(el('p', 'result-history-empty', '沒有作答紀錄'));
+      } else {
+        merged.forEach(function(item, idx) {
+          appendGuessRow(section, item.guess, idx, item.label.substring(0, 4));
+        });
+      }
+      target.appendChild(section);
+    } else if (opts.mode === 'single') {
+      appendHistorySection(target, '作答紀錄', myGuesses);
+    } else if (opts.mode === 'race') {
+      appendHistorySection(target, '我的作答（' + myGuesses.length + ' 次 / ' + formatTime(finishedAt || elapsedMs()) + '）', myGuesses);
+      appendHistorySection(target, (opts.opponentName || '對方') + ' 的作答（' + opponentProgress.attempts + ' 次 / ' + formatTime(opponentProgress.elapsed) + '）', opponentGuesses);
+    } else {
+      appendHistorySection(target, '我的作答', myGuesses);
+      appendHistorySection(target, (opts.opponentName || '對方') + ' 的作答', opponentGuesses);
+    }
   }
 
   // ===== Game Screen =====
   function showGameScreen() {
     container.innerHTML =
-      '<div class="game-header my-turn" id="gc-turn-indicator">你的回合</div>' +
-      '<div class="card">' +
-        '<h2 id="gc-my-title" style="font-size:1rem;margin-bottom:8px">我的猜測</h2>' +
-        '<div class="guess-area" id="gc-my-guesses"></div>' +
-      '</div>' +
-      '<div class="opponent-section" id="gc-opponent-section">' +
-        '<h3 id="gc-opponent-label">對方進度</h3>' +
-        '<div id="gc-opponent-guesses"></div>' +
-      '</div>' +
-      '<div class="card" id="gc-input-area">' +
-        '<div class="selection-display" id="gc-guess-display"></div>' +
-        '<div class="color-palette" id="gc-guess-palette"></div>' +
-        '<button class="btn btn-primary" id="gc-btn-submit" disabled>確認猜測</button>' +
-      '</div>' +
-      '<button class="btn-leave" id="gc-btn-show-answer" style="color:#c0392b">看答案</button>' +
-      '<button class="btn-leave" id="gc-btn-leave-game">離開遊戲</button>';
+      '<div class="gc-shell">' +
+        '<div class="gc-topbar">' +
+          '<div>' +
+            '<div class="gc-title" id="gc-turn-indicator">你的回合</div>' +
+          '</div>' +
+          '<div class="gc-actions">' +
+            '<button class="gc-icon-btn" id="gc-btn-leave-game" aria-label="離開遊戲">×</button>' +
+          '</div>' +
+        '</div>' +
+        '<div class="gc-playfield">' +
+          '<section class="gc-board-panel">' +
+            '<div class="gc-board-head">' +
+              '<h2 id="gc-my-title">我的猜測</h2>' +
+              '<span id="gc-attempt-label">1/' + MAX_ROWS + '</span>' +
+            '</div>' +
+            '<div class="guess-area" id="gc-my-guesses"></div>' +
+          '</section>' +
+          '<section class="opponent-section" id="gc-opponent-section">' +
+            '<h3 id="gc-opponent-label">對方進度</h3>' +
+            '<div id="gc-opponent-guesses"></div>' +
+          '</section>' +
+          '<section class="gc-input-panel" id="gc-input-area">' +
+            '<div class="selection-display" id="gc-guess-display"></div>' +
+            '<div class="color-palette" id="gc-guess-palette"></div>' +
+            '<button class="btn btn-primary" id="gc-btn-submit" disabled>確認猜測</button>' +
+          '</section>' +
+        '</div>' +
+      '</div>';
 
     document.getElementById('gc-btn-submit').onclick = submitGuess;
-    document.getElementById('gc-btn-show-answer').onclick = showAnswer;
     document.getElementById('gc-btn-leave-game').onclick = function() {
       App.Lobby.goHome();
     };
@@ -193,6 +201,13 @@
       myTitle.textContent = '合力猜測';
       renderCoopMergedGuesses();
       renderGuessInput();
+    } else if (mode === 'race') {
+      oppSection.style.display = 'block';
+      myTitle.textContent = '我的競速';
+      document.getElementById('gc-opponent-label').textContent = opts.opponentName || '對方';
+      renderMyGuesses();
+      renderRaceProgress();
+      renderGuessInput();
     } else {
       oppSection.style.display = 'block';
       myTitle.textContent = '我的猜測';
@@ -208,19 +223,23 @@
     var c = document.getElementById('gc-my-guesses');
     if (!c) return;
     c.innerHTML = '';
+    var unlimited = opts.mode === 'race';
+    var visibleStart = unlimited ? Math.max(0, myGuesses.length - MAX_ROWS + 1) : 0;
     for (var i = 0; i < MAX_ROWS; i++) {
-      var row = el('div', 'guess-row' + (i === myGuesses.length && !gameOver && myTurn ? ' current' : ''));
-      row.appendChild(el('div', 'row-num', i + 1));
+      var guessIdx = visibleStart + i;
+      var isCurrent = guessIdx === myGuesses.length && !gameOver && myTurn;
+      var row = el('div', 'guess-row' + (isCurrent ? ' current' : ''));
+      row.appendChild(el('div', 'row-num', guessIdx + 1));
       var pins = el('div', 'pins');
       for (var j = 0; j < SLOTS; j++) {
         var pin = el('div', 'pin');
-        if (i < myGuesses.length) pin.dataset.color = myGuesses[i].colors[j];
+        if (guessIdx < myGuesses.length) pin.dataset.color = myGuesses[guessIdx].colors[j];
         pins.appendChild(pin);
       }
       row.appendChild(pins);
       var result = el('div', 'result');
-      if (i < myGuesses.length) {
-        var g = myGuesses[i];
+      if (guessIdx < myGuesses.length) {
+        var g = myGuesses[guessIdx];
         for (var h = 0; h < g.hits; h++) result.appendChild(dot('hit-dot'));
         for (var b = 0; b < g.blows; b++) result.appendChild(dot('blow-dot'));
         for (var e = 0; e < SLOTS - g.hits - g.blows; e++) result.appendChild(dot('empty-dot'));
@@ -228,6 +247,19 @@
       row.appendChild(result);
       c.appendChild(row);
     }
+  }
+
+  function renderRaceProgress() {
+    var c = document.getElementById('gc-opponent-guesses');
+    if (!c) return;
+    c.innerHTML =
+      '<div class="race-status-grid">' +
+        '<div><span>我的次數</span><strong>' + myGuesses.length + '</strong></div>' +
+        '<div><span>我的時間</span><strong>' + formatTime(finishedAt || elapsedMs()) + '</strong></div>' +
+        '<div><span>對方次數</span><strong>' + opponentProgress.attempts + '</strong></div>' +
+        '<div><span>對方時間</span><strong>' + formatTime(opponentProgress.elapsed) + '</strong></div>' +
+      '</div>' +
+      (opponentProgress.finished ? '<p class="race-finished-note">對方已完成</p>' : '');
   }
 
   function renderOpponentGuesses() {
@@ -276,26 +308,30 @@
         oppIdx++;
       }
     }
+    var visibleStart = Math.max(0, total - MAX_ROWS + 1);
+    var visibleMerged = merged.slice(visibleStart, visibleStart + MAX_ROWS);
     for (var i = 0; i < MAX_ROWS; i++) {
-      var row = el('div', 'guess-row' + (i === merged.length && !gameOver && myTurn ? ' current' : ''));
-      if (i < merged.length) {
-        row.classList.add(merged[i].isMe ? 'player-me' : 'player-opponent');
+      var rowIdx = visibleStart + i;
+      var mergedIdx = i;
+      var row = el('div', 'guess-row' + (rowIdx === total && !gameOver && myTurn ? ' current' : ''));
+      if (mergedIdx < visibleMerged.length) {
+        row.classList.add(visibleMerged[mergedIdx].isMe ? 'player-me' : 'player-opponent');
       }
-      row.appendChild(el('div', 'row-num', i + 1));
-      if (i < merged.length) {
-        var nameTag = el('div', 'player-name', merged[i].name.substring(0, 4));
+      row.appendChild(el('div', 'row-num', rowIdx + 1));
+      if (mergedIdx < visibleMerged.length) {
+        var nameTag = el('div', 'player-name', visibleMerged[mergedIdx].name.substring(0, 4));
         row.appendChild(nameTag);
       }
       var pins = el('div', 'pins');
       for (var j = 0; j < SLOTS; j++) {
         var pin = el('div', 'pin');
-        if (i < merged.length && merged[i].guess.colors[j]) pin.dataset.color = merged[i].guess.colors[j];
+        if (mergedIdx < visibleMerged.length && visibleMerged[mergedIdx].guess.colors[j]) pin.dataset.color = visibleMerged[mergedIdx].guess.colors[j];
         pins.appendChild(pin);
       }
       row.appendChild(pins);
       var result = el('div', 'result');
-      if (i < merged.length) {
-        var g = merged[i].guess;
+      if (mergedIdx < visibleMerged.length) {
+        var g = visibleMerged[mergedIdx].guess;
         for (var h = 0; h < g.hits; h++) result.appendChild(dot('hit-dot'));
         for (var b = 0; b < g.blows; b++) result.appendChild(dot('blow-dot'));
         for (var e = 0; e < SLOTS - g.hits - g.blows; e++) result.appendChild(dot('empty-dot'));
@@ -315,7 +351,15 @@
       else pin.textContent = i + 1;
       (function(idx) {
         pin.onclick = function() {
-          if (myTurn && !gameOver) { guessActiveSlot = idx; renderGuessInput(); }
+          if (myTurn && !gameOver) {
+            if (guessSelection[idx]) {
+              guessSelection[idx] = null;
+              guessActiveSlot = idx;
+            } else {
+              guessActiveSlot = idx;
+            }
+            renderGuessInput();
+          }
         };
       })(i);
       c.appendChild(pin);
@@ -344,10 +388,11 @@
   function updateTurnIndicator() {
     var indicator = document.getElementById('gc-turn-indicator');
     var inputArea = document.getElementById('gc-input-area');
+    var attemptLabel = document.getElementById('gc-attempt-label');
     if (!indicator || !inputArea) return;
 
     if (gameOver) {
-      indicator.className = 'game-header waiting';
+      indicator.className = 'gc-title waiting';
       indicator.textContent = '遊戲結束';
       inputArea.style.display = 'none';
       return;
@@ -355,32 +400,42 @@
 
     var mode = opts.mode;
     if (mode === 'single') {
-      indicator.className = 'game-header my-turn';
-      indicator.textContent = '第 ' + (myGuesses.length + 1) + ' / ' + MAX_ROWS + ' 次嘗試';
+      indicator.className = 'gc-title my-turn';
+      indicator.textContent = '第 ' + (myGuesses.length + 1) + ' 次嘗試';
+      if (attemptLabel) attemptLabel.textContent = (myGuesses.length + 1) + '/' + MAX_ROWS;
       inputArea.style.display = 'block';
       setTitle('🎯 第 ' + (myGuesses.length + 1) + '/' + MAX_ROWS + ' 次嘗試');
     } else if (mode === 'coop') {
       var totalAttempts = myGuesses.length + opponentGuesses.length;
+      if (attemptLabel) attemptLabel.textContent = String(totalAttempts + 1);
       if (myTurn) {
-        indicator.className = 'game-header my-turn';
-        indicator.textContent = '你的回合（共 ' + (totalAttempts + 1) + ' / ' + MAX_ROWS + ' 次）';
+        indicator.className = 'gc-title my-turn';
+        indicator.textContent = '你的回合';
         inputArea.style.display = 'block';
         setTitle('🔔 輪到你了');
       } else {
-        indicator.className = 'game-header their-turn';
+        indicator.className = 'gc-title their-turn';
         var waitName = opts.opponentName || '隊友';
         indicator.textContent = waitName + ' 思考中...';
         inputArea.style.display = 'none';
         setTitle('⏳ 等待 ' + waitName);
       }
+    } else if (mode === 'race') {
+      indicator.className = 'gc-title my-turn';
+      indicator.textContent = gameOver ? '競速結束' : '競速中 ' + formatTime(elapsedMs());
+      if (attemptLabel) attemptLabel.textContent = myGuesses.length + ' 次';
+      inputArea.style.display = gameOver ? 'none' : 'block';
+      setTitle('競速中 ' + formatTime(elapsedMs()));
+      renderRaceProgress();
     } else {
+      if (attemptLabel) attemptLabel.textContent = (myGuesses.length + 1) + '/' + MAX_ROWS;
       if (myTurn) {
-        indicator.className = 'game-header my-turn';
-        indicator.textContent = '你的回合（第 ' + (myGuesses.length + 1) + ' 次）';
+        indicator.className = 'gc-title my-turn';
+        indicator.textContent = '你的回合';
         inputArea.style.display = 'block';
         setTitle('🔔 輪到你了');
       } else {
-        indicator.className = 'game-header their-turn';
+        indicator.className = 'gc-title their-turn';
         var waitName2 = opts.opponentName || '對方';
         indicator.textContent = waitName2 + ' 思考中...';
         inputArea.style.display = 'none';
@@ -414,8 +469,10 @@
       submitSingleGuess(colors);
     } else if (opts.mode === 'coop') {
       submitCoopGuess(colors);
+    } else if (opts.mode === 'race') {
+      submitRaceGuess(colors);
     } else {
-      submitVersusGuess(colors);
+      submitCoopGuess(colors);
     }
   }
 
@@ -424,7 +481,7 @@
     gameOver = true;
     if (opts.mode !== 'single') {
       send({ type: 'game_over', winner: opts.mode === 'coop' ? 'none' : 'opponent' });
-      send({ type: 'reveal', code: myCode });
+      send({ type: 'reveal', code: computerCode });
     }
     updateTurnIndicator();
     showResult(false);
@@ -451,37 +508,53 @@
     }
   }
 
-  function submitVersusGuess(colors) {
-    if (!myTurn) return;
-    pendingGuess = colors;
-    myTurn = false;
-    send({ type: 'guess', colors: colors, row: myGuesses.length });
-    guessSelection = [null,null,null,null];
-    guessActiveSlot = 0;
-    updateTurnIndicator();
-  }
-
   function submitCoopGuess(colors) {
     if (!myTurn || gameOver) return;
     var result = calculateHitBlow(colors, computerCode);
     myGuesses.push({ colors: colors, hits: result.hits, blows: result.blows });
-    send({ type: 'coop_guess', colors: colors, hits: result.hits, blows: result.blows });
     guessSelection = [null,null,null,null];
     guessActiveSlot = 0;
     if (result.hits === SLOTS) {
       gameOver = true;
-      send({ type: 'game_over', winner: 'team' });
+      send({ type: 'coop_guess', colors: colors, hits: result.hits, blows: result.blows, code: computerCode });
+      send({ type: 'game_over', winner: 'team', code: computerCode });
       renderGameBoard();
       updateTurnIndicator();
       showResult(true);
-    } else if (myGuesses.length + opponentGuesses.length >= MAX_ROWS) {
-      gameOver = true;
-      send({ type: 'game_over', winner: 'none' });
+    } else {
+      send({ type: 'coop_guess', colors: colors, hits: result.hits, blows: result.blows });
+      myTurn = false;
       renderGameBoard();
       updateTurnIndicator();
-      showResult(false);
+    }
+  }
+
+  function submitRaceGuess(colors) {
+    if (gameOver) return;
+    var result = calculateHitBlow(colors, computerCode);
+    myGuesses.push({ colors: colors, hits: result.hits, blows: result.blows, elapsed: elapsedMs() });
+    guessSelection = [null,null,null,null];
+    guessActiveSlot = 0;
+    send({
+      type: 'race_progress',
+      attempts: myGuesses.length,
+      elapsed: elapsedMs(),
+      finished: result.hits === SLOTS
+    });
+    if (result.hits === SLOTS) {
+      finishedAt = elapsedMs();
+      gameOver = true;
+      send({
+        type: 'race_finish',
+        attempts: myGuesses.length,
+        elapsed: finishedAt,
+        guesses: myGuesses,
+        code: computerCode
+      });
+      renderGameBoard();
+      updateTurnIndicator();
+      showResult(!opponentProgress.finished || finishedAt <= opponentProgress.elapsed);
     } else {
-      myTurn = false;
       renderGameBoard();
       updateTurnIndicator();
     }
@@ -490,78 +563,36 @@
   // ===== Message Handling =====
   function handleMessage(msg) {
     switch (msg.type) {
-      case 'code_ready':
-        opponentCodeLocked = true;
-        updateSetupStatus();
-        if (codeLocked && opponentCodeLocked) startVersusGame();
-        break;
-      case 'guess':
-        handleOpponentGuess(msg);
-        break;
-      case 'guess_result':
-        handleMyGuessResult(msg);
-        break;
       case 'game_over':
         handleGameOver(msg);
         break;
       case 'reveal':
-        opponentCode = msg.code;
+        computerCode = msg.code || computerCode;
         var revealEl = document.getElementById('gc-reveal-opp-code');
-        if (revealEl) renderCodeReveal(revealEl, opponentCode);
+        if (revealEl) renderCodeReveal(revealEl, computerCode);
         break;
       case 'rematch':
-        if (opts.mode === 'coop') {
-          startCoopRematch();
+        if (opts.mode === 'single') {
+          startSingleGame();
+        } else if (opts.isHost) {
+          startMultiplayerRound(true);
         } else {
-          resetForRematch();
+          showWaitingForStart();
         }
         break;
-      case 'coop_start':
+      case 'round_start':
         computerCode = msg.code;
-        startCoopGameBoard();
+        startMultiplayerRound(false);
         break;
       case 'coop_guess':
         handleCoopGuess(msg);
         break;
-    }
-  }
-
-  function handleOpponentGuess(msg) {
-    var result = calculateHitBlow(msg.colors, myCode);
-    opponentGuesses.push({ colors: msg.colors, hits: result.hits, blows: result.blows });
-    send({ type: 'guess_result', row: msg.row, hits: result.hits, blows: result.blows });
-    if (result.hits === SLOTS) {
-      gameOver = true;
-      send({ type: 'game_over', winner: 'opponent' });
-      send({ type: 'reveal', code: myCode });
-      renderOpponentGuesses();
-      showResult(false);
-    } else {
-      renderOpponentGuesses();
-      myTurn = true;
-      updateTurnIndicator();
-    }
-  }
-
-  function handleMyGuessResult(msg) {
-    if (!pendingGuess) return;
-    myGuesses.push({ colors: pendingGuess, hits: msg.hits, blows: msg.blows });
-    pendingGuess = null;
-    renderMyGuesses();
-    if (msg.hits === SLOTS) {
-      gameOver = true;
-      send({ type: 'game_over', winner: 'me' });
-      send({ type: 'reveal', code: myCode });
-      updateTurnIndicator();
-      showResult(true);
-    } else if (myGuesses.length >= MAX_ROWS) {
-      gameOver = true;
-      send({ type: 'game_over', winner: 'draw' });
-      send({ type: 'reveal', code: myCode });
-      updateTurnIndicator();
-      showResult(false);
-    } else {
-      updateTurnIndicator();
+      case 'race_progress':
+        handleRaceProgress(msg);
+        break;
+      case 'race_finish':
+        handleRaceFinish(msg);
+        break;
     }
   }
 
@@ -571,27 +602,59 @@
     renderOpponentGuesses();
     if (msg.hits === SLOTS) {
       gameOver = true;
+      computerCode = msg.code || computerCode;
       updateTurnIndicator();
       showResult(true);
-    } else if (myGuesses.length + opponentGuesses.length >= MAX_ROWS) {
-      gameOver = true;
-      updateTurnIndicator();
-      showResult(false);
     } else {
       myTurn = true;
       updateTurnIndicator();
     }
   }
 
+  function handleRaceProgress(msg) {
+    opponentProgress = {
+      attempts: msg.attempts || 0,
+      elapsed: msg.elapsed || 0,
+      finished: !!msg.finished
+    };
+    if (!gameOver) {
+      renderRaceProgress();
+      updateTurnIndicator();
+    }
+  }
+
+  function handleRaceFinish(msg) {
+    opponentProgress = {
+      attempts: msg.attempts || 0,
+      elapsed: msg.elapsed || 0,
+      finished: true
+    };
+    opponentGuesses = msg.guesses || opponentGuesses;
+    computerCode = msg.code || computerCode;
+    if (!gameOver) {
+      gameOver = true;
+      updateTurnIndicator();
+      showResult(false);
+    } else {
+      renderResultHistory();
+      var summary = document.getElementById('gc-race-result-summary');
+      if (summary) {
+        summary.textContent = '你：' + myGuesses.length + ' 次 / ' + formatTime(finishedAt || elapsedMs()) + '　對方：' + opponentProgress.attempts + ' 次 / ' + formatTime(opponentProgress.elapsed);
+      }
+    }
+  }
+
   function handleGameOver(msg) {
     if (gameOver) return;
     gameOver = true;
-    send({ type: 'reveal', code: myCode });
+    if (msg.code) computerCode = msg.code;
     updateTurnIndicator();
     if (opts.mode === 'coop') {
       showResult(msg.winner === 'team');
-    } else {
+    } else if (opts.mode === 'race') {
       showResult(msg.winner === 'me');
+    } else {
+      showResult(msg.winner === 'opponent');
     }
   }
 
@@ -603,30 +666,27 @@
       setTitle(iWin ? '🎉 你贏了！' : '😞 你輸了...');
     } else if (mode === 'coop') {
       setTitle(iWin ? '🎉 你們贏了！' : '😞 你們輸了...');
+    } else if (mode === 'race') {
+      setTitle(iWin ? '🎉 你贏了！' : '⏱ 對方先完成');
     } else {
       setTitle(iWin ? '🎉 你贏了！' : '😞 你輸了...');
     }
 
-    var myCodeLabel, oppCodeLabel;
-    if (mode === 'single' || mode === 'coop') {
-      myCodeLabel = '';
-      oppCodeLabel = '電腦的答案';
-    } else {
-      myCodeLabel = '你的秘密代碼';
-      oppCodeLabel = '對方的秘密代碼';
-    }
+    var oppCodeLabel = '電腦的答案';
 
     container.innerHTML =
       '<div class="card">' +
         '<div class="result-title ' + (iWin ? 'result-win' : 'result-lose') + '">' +
           (mode === 'coop'
             ? (iWin ? '你們贏了！用了 ' + (myGuesses.length + opponentGuesses.length) + ' 次' : '你們輸了...')
-            : (iWin ? '你贏了！用了 ' + myGuesses.length + ' 次' : '你輸了...')) +
+            : mode === 'race'
+              ? (iWin ? '你先猜中了！' : '對方先猜中了')
+              : (iWin ? '你贏了！用了 ' + myGuesses.length + ' 次' : '你輸了...')) +
         '</div>' +
-        (myCodeLabel ? '<p style="font-size:.85rem;color:var(--muted);text-align:center;margin-bottom:12px">' + myCodeLabel + '</p>' : '') +
-        (myCodeLabel ? '<div class="reveal-row" id="gc-reveal-my-code"></div>' : '') +
+        (mode === 'race' ? '<p class="race-result-summary" id="gc-race-result-summary">你：' + myGuesses.length + ' 次 / ' + formatTime(finishedAt || elapsedMs()) + '　對方：' + opponentProgress.attempts + ' 次 / ' + formatTime(opponentProgress.elapsed) + '</p>' : '') +
         '<p style="font-size:.85rem;color:var(--muted);text-align:center;margin:12px 0">' + oppCodeLabel + '</p>' +
         '<div class="reveal-row" id="gc-reveal-opp-code"></div>' +
+        '<div class="result-history" id="gc-result-history"></div>' +
         '<button class="btn btn-primary" style="margin-top:16px" id="gc-btn-rematch">再來一局</button>' +
         '<button class="btn btn-secondary" id="gc-btn-back-home">返回大廳</button>' +
       '</div>';
@@ -636,11 +696,8 @@
       App.GameManager.endGame();
     };
 
-    if (myCodeLabel) {
-      renderCodeReveal(document.getElementById('gc-reveal-my-code'), myCode);
-    }
-    var revealTarget = (mode === 'single' || mode === 'coop') ? computerCode : (opponentCode.length === SLOTS ? opponentCode : []);
-    renderCodeReveal(document.getElementById('gc-reveal-opp-code'), revealTarget);
+    renderCodeReveal(document.getElementById('gc-reveal-opp-code'), computerCode);
+    renderResultHistory();
   }
 
   // ===== Rematch =====
@@ -648,34 +705,34 @@
     if (opts.mode === 'single') {
       computerCode = generateComputerCode();
       startSingleGame();
-    } else if (opts.mode === 'coop') {
+    } else if (opts.isHost) {
       send({ type: 'rematch' });
-      startCoopRematch();
+      startMultiplayerRound(true);
     } else {
       send({ type: 'rematch' });
-      resetForRematch();
+      showWaitingForStart();
     }
   }
 
-  function resetForRematch() {
-    myCode = []; opponentCode = [];
+  function resetRoundState() {
     myGuesses = []; opponentGuesses = [];
-    myTurn = true; codeLocked = false; opponentCodeLocked = false;
     gameOver = false; pendingGuess = null;
-    setupSelection = [null,null,null,null]; setupActiveSlot = 0;
     guessSelection = [null,null,null,null]; guessActiveSlot = 0;
-    showSetupScreen();
+    finishedAt = 0;
+    opponentProgress = { attempts: 0, elapsed: 0, finished: false };
+    startTime = Date.now();
   }
 
-  function startCoopRematch() {
-    myGuesses = []; opponentGuesses = [];
-    gameOver = false; pendingGuess = null;
-    myTurn = opts.isHost;
-    guessSelection = [null,null,null,null];
-    guessActiveSlot = 0;
-    if (opts.isHost) {
+  function showWaitingForStart() {
+    container.innerHTML = '<div class="card"><div class="waiting-text"><span class="spinner"></span>等待房主開始遊戲...</div></div>';
+  }
+
+  function startMultiplayerRound(shouldSend) {
+    resetRoundState();
+    myTurn = opts.mode === 'race' ? true : opts.isHost;
+    if (opts.isHost && shouldSend) {
       computerCode = generateComputerCode();
-      send({ type: 'coop_start', code: computerCode });
+      send({ type: 'round_start', code: computerCode });
     }
     showGameScreen();
   }
@@ -684,24 +741,9 @@
     myGuesses = [];
     gameOver = false;
     pendingGuess = null;
-    guessSelection = [null,null,null,null];
-    guessActiveSlot = 0;
-    showGameScreen();
-  }
-
-  function startVersusGame() {
-    myTurn = opts.isHost;
-    myGuesses = []; opponentGuesses = [];
-    gameOver = false; pendingGuess = null;
-    guessSelection = [null,null,null,null];
-    guessActiveSlot = 0;
-    showGameScreen();
-  }
-
-  function startCoopGameBoard() {
-    myGuesses = []; opponentGuesses = [];
-    gameOver = false; pendingGuess = null;
-    myTurn = opts.isHost;
+    finishedAt = 0;
+    opponentProgress = { attempts: 0, elapsed: 0, finished: false };
+    startTime = Date.now();
     guessSelection = [null,null,null,null];
     guessActiveSlot = 0;
     showGameScreen();
@@ -716,16 +758,16 @@
     if (opts.mode === 'single') {
       computerCode = generateComputerCode();
       startSingleGame();
-    } else if (opts.mode === 'coop') {
+    } else if (opts.mode === 'coop' || opts.mode === 'race') {
       if (opts.isHost) {
         computerCode = generateComputerCode();
-        send({ type: 'coop_start', code: computerCode });
-        startCoopGameBoard();
+        send({ type: 'round_start', code: computerCode });
+        startMultiplayerRound(false);
       } else {
-        container.innerHTML = '<div class="card"><div class="waiting-text"><span class="spinner"></span>等待遊戲開始...</div></div>';
+        showWaitingForStart();
       }
     } else {
-      showSetupScreen();
+      showWaitingForStart();
     }
   }
 
@@ -742,6 +784,7 @@
     description: 'Hit & Blow',
     supportsSingle: true,
     supportsMultiplayer: true,
+    multiplayerModes: ['coop', 'race'],
     init: init,
     handleMessage: handleMessage,
     destroy: destroy

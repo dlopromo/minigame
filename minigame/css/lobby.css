@@ -1,5 +1,14 @@
 .mode-buttons{display:flex;gap:10px;margin-bottom:20px}
 .mode-buttons .btn{flex:1}
+.mode-choice-grid{display:grid;grid-template-columns:1fr;gap:10px}
+.mode-choice-card{
+  display:block;width:100%;text-align:left;padding:16px;border-radius:10px;
+  border:1px solid #dfe5ee;background:#fff;cursor:pointer;
+  box-shadow:0 4px 14px rgba(31,41,51,.06);
+}
+.mode-choice-card:active{transform:scale(.98)}
+.mode-choice-name{display:block;font-size:1rem;font-weight:800;color:var(--text);margin-bottom:4px}
+.mode-choice-desc{display:block;font-size:.82rem;line-height:1.45;color:var(--muted)}
 .game-grid{
   display:grid;grid-template-columns:repeat(2,1fr);gap:12px;margin:16px 0
 }
