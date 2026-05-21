@@ -1,0 +1,105 @@
+/* Color palette & pins */
+.color-palette{
+  display:flex;justify-content:center;gap:12px;flex-wrap:wrap;margin:16px 0
+}
+.color-btn{
+  width:48px;height:48px;border-radius:50%;border:3px solid transparent;
+  cursor:pointer;transition:transform .15s,border-color .15s;
+}
+.color-btn:hover{transform:scale(1.1)}
+.color-btn[data-color="red"]{background:var(--red)}
+.color-btn[data-color="blue"]{background:var(--blue)}
+.color-btn[data-color="yellow"]{background:var(--yellow)}
+.color-btn[data-color="green"]{background:var(--green)}
+.color-btn[data-color="orange"]{background:var(--orange)}
+.color-btn[data-color="pink"]{background:var(--pink)}
+.pin{
+  width:36px;height:36px;border-radius:50%;border:2px solid #ccc;
+  display:flex;align-items:center;justify-content:center;font-size:.7rem;color:#999
+}
+.pin[data-color="red"]{background:var(--red);border-color:var(--red)}
+.pin[data-color="blue"]{background:var(--blue);border-color:var(--blue)}
+.pin[data-color="yellow"]{background:var(--yellow);border-color:var(--yellow)}
+.pin[data-color="green"]{background:var(--green);border-color:var(--green)}
+.pin[data-color="orange"]{background:var(--orange);border-color:var(--orange)}
+.pin[data-color="pink"]{background:var(--pink);border-color:var(--pink)}
+
+/* Game header */
+.game-header{
+  text-align:center;padding:12px;font-weight:700;font-size:1rem;
+  border-radius:var(--radius);margin-bottom:12px;
+}
+.game-header.my-turn{background:#d4edda;color:#155724}
+.game-header.their-turn{background:#f8d7da;color:#721c24}
+.game-header.waiting{background:#fff3cd;color:#856404}
+
+/* Guess area */
+.guess-area{margin-bottom:12px}
+.guess-row{
+  display:flex;align-items:center;gap:6px;padding:6px 8px;
+  border-radius:8px;margin-bottom:4px;background:rgba(0,0,0,.03)
+}
+.guess-row.current{background:rgba(0,0,0,.07);border:1px dashed #ccc}
+.guess-row .row-num{
+  width:22px;text-align:center;font-size:.75rem;color:var(--muted);flex-shrink:0
+}
+.guess-row .pins{display:flex;gap:4px;flex-shrink:0}
+.guess-row .pins .pin{width:30px;height:30px}
+.guess-row .result{display:flex;gap:3px;margin-left:auto;flex-shrink:0}
+.hit-dot,.blow-dot,.empty-dot{
+  width:14px;height:14px;border-radius:50%;display:inline-block
+}
+.hit-dot{background:var(--hit)}
+.blow-dot{background:var(--blow)}
+.empty-dot{border:1px solid #ddd}
+
+/* Opponent section */
+.opponent-section{
+  padding:12px;border-radius:var(--radius);background:rgba(0,0,0,.04);margin-bottom:12px
+}
+.opponent-section h3{font-size:.9rem;margin-bottom:8px;color:var(--muted)}
+
+/* Player-tagged rows (co-op) */
+.guess-row.player-me{background:rgba(52,152,219,.08)}
+.guess-row.player-opponent{background:rgba(231,76,60,.08)}
+.guess-row .player-name{
+  font-size:.7rem;font-weight:600;padding:2px 6px;border-radius:4px;
+  margin-right:4px;flex-shrink:0;min-width:32px;text-align:center
+}
+.guess-row.player-me .player-name{background:rgba(52,152,219,.2);color:#2980b9}
+.guess-row.player-opponent .player-name{background:rgba(231,76,60,.2);color:#c0392b}
+
+/* Selection display */
+.selection-display{
+  display:flex;justify-content:center;gap:8px;margin:12px 0
+}
+.selection-pin{
+  width:44px;height:44px;border-radius:50%;border:3px dashed #ccc;
+  cursor:pointer;display:flex;align-items:center;justify-content:center;
+  font-size:.7rem;color:#bbb;transition:border-color .15s
+}
+.selection-pin.filled{border-style:solid}
+.selection-pin.active-slot{border-color:#333;border-width:3px}
+.selection-pin[data-color="red"]{background:var(--red);border-color:var(--red)}
+.selection-pin[data-color="blue"]{background:var(--blue);border-color:var(--blue)}
+.selection-pin[data-color="yellow"]{background:var(--yellow);border-color:var(--yellow)}
+.selection-pin[data-color="green"]{background:var(--green);border-color:var(--green)}
+.selection-pin[data-color="orange"]{background:var(--orange);border-color:var(--orange)}
+.selection-pin[data-color="pink"]{background:var(--pink);border-color:var(--pink)}
+
+/* Status & reveal */
+.status-bar{
+  text-align:center;padding:8px;font-size:.85rem;color:var(--muted);margin-top:8px
+}
+.reveal-row{display:flex;justify-content:center;gap:8px;margin:12px 0}
+.reveal-row .pin{width:40px;height:40px}
+.result-title{font-size:1.4rem;text-align:center;margin-bottom:16px}
+.result-win{color:var(--hit)}
+.result-lose{color:var(--red)}
+
+/* Responsive */
+@media(max-width:480px){
+  .color-btn{width:42px;height:42px}
+  .pin{width:30px;height:30px}
+  .selection-pin{width:38px;height:38px}
+}
