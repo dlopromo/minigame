@@ -3,6 +3,7 @@ var App = window.App || {};
 App.WebRTC = (function() {
   var pc = null;
   var dc = null;
+  var peers = {};
   var connected = false;
   var isHost = false;
   var retryCount = 0;
@@ -27,7 +28,7 @@ App.WebRTC = (function() {
     listeners[event].forEach(function(fn) { try { fn(data); } catch(e) {} });
   }
 
-  function createPC() {
+  function createPC(peerId) {
     var conn = new RTCPeerConnection({ iceServers: [] });
 
     conn.oniceconnectionstatechange = function() {
@@ -54,7 +55,7 @@ App.WebRTC = (function() {
       }
     };
 
-    pc = conn;
+    if (!peerId) pc = conn;
     return conn;
   }
 
@@ -71,29 +72,70 @@ App.WebRTC = (function() {
     });
   }
 
-  function bindChannel(channel) {
+  function bindChannel(channel, peerId) {
     dc = channel;
     channel.onopen = function() {
       connected = true;
-      emit('open');
+      if (peerId && peers[peerId]) peers[peerId].connected = true;
+      emit('open', { peerId: peerId || null });
     };
     channel.onclose = function() {
-      if (connected) {
+      if (peerId && peers[peerId]) peers[peerId].connected = false;
+      if (connected && !hasOpenChannel()) {
         connected = false;
-        emit('close');
+        emit('close', { peerId: peerId || null });
       }
     };
     channel.onmessage = function(e) {
       try {
-        emit('message', JSON.parse(e.data));
+        var msg = JSON.parse(e.data);
+        if (peerId) msg._from = peerId;
+        emit('message', msg);
       } catch(err) {}
     };
   }
 
   function send(msg) {
+    if (Object.keys(peers).length > 0 && isHost) {
+      broadcast(msg);
+      return;
+    }
     if (dc && dc.readyState === 'open') {
       dc.send(JSON.stringify(msg));
     }
+  }
+
+  function sendTo(peerId, msg) {
+    var peer = peers[peerId];
+    if (peer && peer.dc && peer.dc.readyState === 'open') {
+      peer.dc.send(JSON.stringify(msg));
+    }
+  }
+
+  function broadcast(msg, exceptPeerId) {
+    Object.keys(peers).forEach(function(peerId) {
+      if (peerId !== exceptPeerId) sendTo(peerId, msg);
+    });
+  }
+
+  function hasOpenChannel() {
+    if (dc && dc.readyState === 'open') return true;
+    return Object.keys(peers).some(function(peerId) {
+      return peers[peerId].dc && peers[peerId].dc.readyState === 'open';
+    });
+  }
+
+  function ensurePeer(peerId, hostFlag) {
+    if (!peers[peerId]) {
+      peers[peerId] = {
+        id: peerId,
+        pc: createPC(peerId),
+        dc: null,
+        connected: false,
+        isHostSide: !!hostFlag
+      };
+    }
+    return peers[peerId];
   }
 
   function createOffer() {
@@ -139,24 +181,83 @@ App.WebRTC = (function() {
     });
   }
 
+  function createPeerOffer(peerId) {
+    isHost = true;
+    var peer = ensurePeer(peerId, true);
+    peer.dc = peer.pc.createDataChannel('game-' + peerId);
+    bindChannel(peer.dc, peerId);
+    return peer.pc.createOffer().then(function(offer) {
+      return peer.pc.setLocalDescription(offer);
+    }).then(function() {
+      return waitGathering(peer.pc);
+    }).then(function() {
+      if (peer.pc.localDescription) {
+        return App.Common.encodeSDP(peer.pc.localDescription.sdp);
+      }
+      throw new Error('Failed to create peer offer');
+    });
+  }
+
+  function acceptPeerAnswer(peerId, answerB64) {
+    var peer = peers[peerId];
+    if (!peer || !peer.pc || peer.pc.signalingState !== 'have-local-offer') {
+      throw new Error('Invalid peer state');
+    }
+    var sdp = App.Common.decodeSDP(answerB64);
+    return peer.pc.setRemoteDescription(new RTCSessionDescription({ type: 'answer', sdp: sdp }));
+  }
+
+  function createPeerAnswer(peerId, offerB64) {
+    isHost = false;
+    var peer = ensurePeer(peerId, false);
+    var sdp = App.Common.decodeSDP(offerB64);
+    peer.pc.ondatachannel = function(e) {
+      peer.dc = e.channel;
+      bindChannel(e.channel, peerId);
+    };
+    return peer.pc.setRemoteDescription(new RTCSessionDescription({ type: 'offer', sdp: sdp })).then(function() {
+      return peer.pc.createAnswer();
+    }).then(function(answer) {
+      return peer.pc.setLocalDescription(answer);
+    }).then(function() {
+      return waitGathering(peer.pc);
+    }).then(function() {
+      if (peer.pc.localDescription) {
+        return App.Common.encodeSDP(peer.pc.localDescription.sdp);
+      }
+      throw new Error('Failed to create peer answer');
+    });
+  }
+
   function cleanDisconnect() {
     if (pc) { try { pc.close(); } catch(e) {} }
+    Object.keys(peers).forEach(function(peerId) {
+      if (peers[peerId].pc) { try { peers[peerId].pc.close(); } catch(e) {} }
+    });
+    peers = {};
     pc = null; dc = null; connected = false; retryCount = 0;
   }
 
   function getIsHost() { return isHost; }
   function isConnected() { return connected; }
+  function getPeerIds() { return Object.keys(peers); }
 
   return {
     on: on,
     off: off,
     send: send,
+    sendTo: sendTo,
+    broadcast: broadcast,
     createOffer: createOffer,
     acceptAnswer: acceptAnswer,
     createAnswer: createAnswer,
+    createPeerOffer: createPeerOffer,
+    acceptPeerAnswer: acceptPeerAnswer,
+    createPeerAnswer: createPeerAnswer,
     cleanDisconnect: cleanDisconnect,
     getIsHost: getIsHost,
-    isConnected: isConnected
+    isConnected: isConnected,
+    getPeerIds: getPeerIds
   };
 })();
 

@@ -1,4 +1,4 @@
-.mode-buttons{display:flex;gap:10px;margin-bottom:20px}
+.mode-buttons{display:flex;gap:10px;margin-bottom:20px;flex-wrap:wrap}
 .mode-buttons .btn{flex:1}
 .mode-choice-grid{display:grid;grid-template-columns:1fr;gap:10px}
 .mode-choice-card{
@@ -29,3 +29,35 @@
   text-align:center;padding:40px 20px;color:var(--muted);font-size:1rem
 }
 .waiting-text .spinner{width:24px;height:24px;border-width:3px;margin-right:8px}
+.room-code-input{text-transform:uppercase;letter-spacing:.28em;font-weight:800}
+.room-config-note{font-size:.8rem;line-height:1.45;color:var(--muted);text-align:center;margin-top:8px}
+.room-config-note.error{color:#b42318}
+.room-card{padding:22px}
+.room-code-line{
+  display:flex;align-items:center;justify-content:space-between;gap:16px;
+  border:1px solid #e5e9f0;border-radius:10px;padding:14px;background:#fafbfc;
+}
+.room-eyebrow{display:block;font-size:.72rem;color:var(--muted);margin-bottom:2px}
+#room-code-label{font-size:1.8rem;letter-spacing:.2em}
+.room-role-label{font-size:.86rem;color:var(--muted);text-align:center;margin-top:12px}
+.room-list{display:grid;gap:8px}
+.room-list-empty{font-size:.85rem;color:var(--muted)}
+.room-person{
+  display:flex;align-items:center;justify-content:space-between;gap:10px;
+  padding:10px 12px;border:1px solid #e2e8f0;border-radius:10px;background:#fff;
+}
+.room-person-name{
+  font-weight:700;max-width:12ch;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+}
+.room-person-meta{font-size:.75rem;color:var(--muted)}
+.room-person.offline{opacity:.52}
+.room-badge{
+  display:inline-flex;align-items:center;border-radius:999px;
+  padding:3px 8px;font-size:.72rem;font-weight:800;background:#eef2f7;color:#425466;
+}
+.room-badge.host{background:#ecfdf3;color:#027a48}
+.room-badge.self{background:#fff7ed;color:#c2410c}
+@media(max-width:480px){
+  .mode-buttons{display:block}
+  #room-code-label{font-size:1.5rem}
+}

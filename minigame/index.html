@@ -18,18 +18,69 @@
     <p class="subtitle">選擇遊玩方式</p>
     <div class="mode-buttons">
       <button class="btn btn-primary" onclick="App.Lobby.selectMode('single')">本機遊玩</button>
-      <button class="btn btn-secondary" onclick="App.Lobby.selectMode('multiplayer')">雙人連線</button>
+      <button class="btn btn-secondary" onclick="App.Lobby.selectMode('room')">短碼房間</button>
+      <button class="btn btn-secondary" onclick="App.Lobby.selectMode('multiplayer')">手動雙人</button>
     </div>
   </div>
   <div class="card">
-    <h2>連線說明（雙人模式）</h2>
+    <h2>連線說明</h2>
     <p style="font-size:.85rem;line-height:1.6;color:var(--muted)">
-      雙方需在同一 WiFi / 區域網路內。<br>
+      短碼房間使用 Firebase 建立 4 位數字房間碼，朋友輸入名字即可加入。<br>
+      超過遊戲人數或中途加入的人會成為觀戰者。<br>
+      手動雙人模式仍可用邀請碼 / 回應碼直接連線。<br>
+      <br>
+      手動模式：雙方需在同一 WiFi / 區域網路內。<br>
       玩家 A 創建房間後，複製邀請碼傳給玩家 B。<br>
       玩家 B 貼上邀請碼產生回應碼，再傳回給玩家 A。<br>
       玩家 A 貼上回應碼即可連線。
     </p>
   </div>
+</div>
+
+<!-- Short Code Room Screen -->
+<div id="screen-room-connect" class="screen">
+  <div class="card">
+    <h2>短碼房間</h2>
+    <p style="font-size:.85rem;color:var(--muted);margin-bottom:12px">
+      輸入名字後可建立房間，或用 4 位數字房間碼加入朋友的房間。
+    </p>
+    <input type="text" id="room-player-name-input" placeholder="輸入你的名字" maxlength="12" class="text-input">
+    <button class="btn btn-primary" onclick="App.Lobby.createShortRoom()">創建短碼房間</button>
+    <input type="text" id="room-code-input" placeholder="輸入 4 位數字" maxlength="4" inputmode="numeric" pattern="[0-9]*" class="text-input room-code-input">
+    <button class="btn btn-secondary" onclick="App.Lobby.joinShortRoom()">加入房間</button>
+    <p class="room-config-note" id="room-config-note"></p>
+  </div>
+  <button class="btn btn-secondary" onclick="App.Lobby.goHome()">← 返回</button>
+</div>
+
+<!-- Room Lobby Screen -->
+<div id="screen-room-lobby" class="screen">
+  <div class="card room-card">
+    <div class="room-code-line">
+      <div>
+        <span class="room-eyebrow">房間碼</span>
+        <strong id="room-code-label">----</strong>
+      </div>
+      <button class="btn-small btn-copy" onclick="App.Lobby.copyRoomCode()">複製</button>
+    </div>
+    <p class="room-role-label" id="room-role-label">等待同步...</p>
+  </div>
+  <div class="card">
+    <h2>玩家</h2>
+    <div class="room-list" id="room-player-list"></div>
+  </div>
+  <div class="card">
+    <h2>觀戰</h2>
+    <div class="room-list" id="room-spectator-list"></div>
+  </div>
+  <div class="card" id="room-host-actions">
+    <h2>房主操作</h2>
+    <p style="font-size:.85rem;color:var(--muted);margin-bottom:12px">
+      選擇遊戲後，系統會按遊戲人數上限分配玩家，其餘成為觀戰者。
+    </p>
+    <button class="btn btn-primary" onclick="App.Lobby.showGameSelect('room')">選擇遊戲</button>
+  </div>
+  <button class="btn btn-secondary" onclick="App.Lobby.goHome()">離開房間</button>
 </div>
 
 <!-- Game Selection Screen -->
@@ -133,7 +184,12 @@
 </div>
 
 <!-- Scripts -->
+<script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-database-compat.js"></script>
 <script src="js/common.js"></script>
+<script src="js/firebaseConfig.js"></script>
+<script src="js/signaling.js"></script>
 <script src="js/webrtc.js"></script>
 <script src="js/gameManager.js"></script>
 <script src="games/guessColor/guessColor.js"></script>

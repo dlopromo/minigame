@@ -14,6 +14,14 @@
   var opponentProgress = { attempts: 0, elapsed: 0, finished: false };
   var guessSelection = [null,null,null,null], guessActiveSlot = 0;
 
+  function isSpectator() {
+    return opts && opts.role === 'spectator';
+  }
+
+  function isRoomMode() {
+    return opts && opts.roomId;
+  }
+
   function resetGameState() {
     myGuesses = []; opponentGuesses = [];
     myTurn = true;
@@ -32,6 +40,7 @@
   }
 
   function send(msg) {
+    if (isSpectator()) return;
     App.WebRTC.send({ type: 'game_msg', payload: msg });
   }
 
@@ -130,7 +139,7 @@
         section.appendChild(el('p', 'result-history-empty', '沒有作答紀錄'));
       } else {
         merged.forEach(function(item, idx) {
-          appendGuessRow(section, item.guess, idx, item.label.substring(0, 4));
+          appendGuessRow(section, item.guess, idx, item.label);
         });
       }
       target.appendChild(section);
@@ -159,6 +168,7 @@
         '</div>' +
         '<div class="gc-playfield">' +
           '<section class="gc-board-panel">' +
+            '<div class="spectator-answer" id="gc-spectator-answer" style="display:none"></div>' +
             '<div class="gc-board-head">' +
               '<h2 id="gc-my-title">我的猜測</h2>' +
               '<span id="gc-attempt-label">1/' + MAX_ROWS + '</span>' +
@@ -190,6 +200,7 @@
     var mode = opts.mode;
     var oppSection = document.getElementById('gc-opponent-section');
     var myTitle = document.getElementById('gc-my-title');
+    renderSpectatorAnswer();
 
     if (mode === 'single') {
       oppSection.style.display = 'none';
@@ -217,6 +228,18 @@
       renderOpponentGuesses();
       renderGuessInput();
     }
+  }
+
+  function renderSpectatorAnswer() {
+    var target = document.getElementById('gc-spectator-answer');
+    if (!target) return;
+    if (!isSpectator()) {
+      target.style.display = 'none';
+      return;
+    }
+    target.style.display = 'block';
+    target.innerHTML = '<span>觀戰答案</span><div class="reveal-row" id="gc-spectator-code"></div>';
+    renderCodeReveal(document.getElementById('gc-spectator-code'), computerCode);
   }
 
   function renderMyGuesses() {
@@ -319,7 +342,7 @@
       }
       row.appendChild(el('div', 'row-num', rowIdx + 1));
       if (mergedIdx < visibleMerged.length) {
-        var nameTag = el('div', 'player-name', visibleMerged[mergedIdx].name.substring(0, 4));
+        var nameTag = el('div', 'player-name', visibleMerged[mergedIdx].name);
         row.appendChild(nameTag);
       }
       var pins = el('div', 'pins');
@@ -351,7 +374,7 @@
       else pin.textContent = i + 1;
       (function(idx) {
         pin.onclick = function() {
-          if (myTurn && !gameOver) {
+          if (!isSpectator() && myTurn && !gameOver) {
             if (guessSelection[idx]) {
               guessSelection[idx] = null;
               guessActiveSlot = idx;
@@ -371,7 +394,7 @@
       var btn = el('div', 'color-btn');
       btn.dataset.color = color;
       btn.onclick = function() {
-        if (myTurn && !gameOver) {
+        if (!isSpectator() && myTurn && !gameOver) {
           guessSelection[guessActiveSlot] = color;
           guessActiveSlot = (guessActiveSlot + 1) % SLOTS;
           renderGuessInput();
@@ -381,7 +404,7 @@
     });
     var submitBtn = document.getElementById('gc-btn-submit');
     if (submitBtn) {
-      submitBtn.disabled = !guessSelection.every(function(s) { return s !== null; }) || !myTurn || gameOver;
+      submitBtn.disabled = isSpectator() || !guessSelection.every(function(s) { return s !== null; }) || !myTurn || gameOver;
     }
   }
 
@@ -395,6 +418,16 @@
       indicator.className = 'gc-title waiting';
       indicator.textContent = '遊戲結束';
       inputArea.style.display = 'none';
+      return;
+    }
+
+    if (isSpectator()) {
+      indicator.className = 'gc-title waiting';
+      indicator.textContent = '觀戰中';
+      inputArea.style.display = 'none';
+      if (attemptLabel) attemptLabel.textContent = '觀戰';
+      setTitle('觀戰中');
+      renderSpectatorAnswer();
       return;
     }
 
@@ -461,7 +494,7 @@
   }
 
   function submitGuess() {
-    if (gameOver) return;
+    if (gameOver || isSpectator()) return;
     var colors = guessSelection.slice();
     if (colors.some(function(c) { return c === null; })) return;
 
@@ -687,11 +720,12 @@
         '<p style="font-size:.85rem;color:var(--muted);text-align:center;margin:12px 0">' + oppCodeLabel + '</p>' +
         '<div class="reveal-row" id="gc-reveal-opp-code"></div>' +
         '<div class="result-history" id="gc-result-history"></div>' +
-        '<button class="btn btn-primary" style="margin-top:16px" id="gc-btn-rematch">再來一局</button>' +
+        (isSpectator() || isRoomMode() ? '' : '<button class="btn btn-primary" style="margin-top:16px" id="gc-btn-rematch">再來一局</button>') +
         '<button class="btn btn-secondary" id="gc-btn-back-home">返回大廳</button>' +
       '</div>';
 
-    document.getElementById('gc-btn-rematch').onclick = rematch;
+    var rematchBtn = document.getElementById('gc-btn-rematch');
+    if (rematchBtn) rematchBtn.onclick = rematch;
     document.getElementById('gc-btn-back-home').onclick = function() {
       App.GameManager.endGame();
     };
@@ -702,6 +736,7 @@
 
   // ===== Rematch =====
   function rematch() {
+    if (isSpectator() || isRoomMode()) return;
     if (opts.mode === 'single') {
       computerCode = generateComputerCode();
       startSingleGame();
@@ -729,7 +764,7 @@
 
   function startMultiplayerRound(shouldSend) {
     resetRoundState();
-    myTurn = opts.mode === 'race' ? true : opts.isHost;
+    myTurn = isSpectator() ? false : (opts.mode === 'race' ? true : opts.isHost);
     if (opts.isHost && shouldSend) {
       computerCode = generateComputerCode();
       send({ type: 'round_start', code: computerCode });
@@ -754,12 +789,16 @@
     container = containerEl;
     opts = gameOpts;
     resetGameState();
+    var initialCode = (opts.initialState && opts.initialState.computerCode) || opts.initialCode;
 
     if (opts.mode === 'single') {
       computerCode = generateComputerCode();
       startSingleGame();
     } else if (opts.mode === 'coop' || opts.mode === 'race') {
-      if (opts.isHost) {
+      if (initialCode && initialCode.length === SLOTS) {
+        computerCode = initialCode.slice();
+        startMultiplayerRound(false);
+      } else if (opts.isHost && !isSpectator()) {
         computerCode = generateComputerCode();
         send({ type: 'round_start', code: computerCode });
         startMultiplayerRound(false);
@@ -784,7 +823,11 @@
     description: 'Hit & Blow',
     supportsSingle: true,
     supportsMultiplayer: true,
+    maxPlayers: 2,
     multiplayerModes: ['coop', 'race'],
+    buildRoomStart: function() {
+      return { computerCode: generateComputerCode() };
+    },
     init: init,
     handleMessage: handleMessage,
     destroy: destroy

@@ -5,11 +5,14 @@ This document records the current implemented behavior so future agents can unde
 ## Architecture
 
 - `index.html` owns the static screens and loads scripts in this order:
-  `common.js`, `webrtc.js`, `gameManager.js`, game modules, then `lobby.js`.
+  Firebase compat CDN, `common.js`, `firebaseConfig.js`, `signaling.js`, `webrtc.js`, `gameManager.js`, game modules, then `lobby.js`.
 - `App.Common` owns shared UI utilities:
   toast display, clipboard copy, SDP encode/decode, and screen switching.
 - `App.WebRTC` owns peer connection setup and the data channel.
-  It does not know game rules; it only sends JSON messages.
+  It supports the original single peer connection and the newer host-mesh peer map.
+- `App.Signaling` owns Firebase Realtime Database room signaling for 4-digit numeric room codes.
+  It uses Anonymous Auth and stores temporary room/lobby/round-start/SDP data.
+  Firebase `auth.uid` is stored as metadata, but room seats use a per-page-load client id so multiple tabs from the same browser can appear as separate room clients during testing.
 - `App.GameManager` registers games and starts the active game module in `#game-container`.
 - `App.Lobby` owns app-level flow:
   local play, multiplayer connection, game selection, multiplayer mode selection, and launching games.
@@ -17,13 +20,20 @@ This document records the current implemented behavior so future agents can unde
 
 ## Lobby Flow
 
-The home screen has two entry points:
+The home screen has three entry points:
 
 - `本機遊玩`
   - Sets lobby context to `single`.
   - Shows game selection.
   - Starts selected game with `mode: "single"`.
-- `雙人連線`
+- `短碼房間`
+  - Uses Firebase RTDB when `js/firebaseConfig.js` is filled.
+  - Host creates a 4-digit numeric room code.
+  - Joiners enter the room code and a required username.
+  - Lobby stores users under `players` or `spectators`.
+  - Host creates a WebRTC data channel to each online non-host user.
+  - Host chooses game and mode, writes `gameStart` to Firebase, then launches the game.
+- `手動雙人`
   - Shows the manual WebRTC offer/answer flow.
   - Host creates an offer.
   - Joiner pastes the offer and creates an answer.
@@ -50,6 +60,44 @@ Current Guess Color multiplayer modes:
 
 ## WebRTC Message Layers
 
+Short-code room state:
+
+- `rooms/{roomCode}`
+  - `hostId`
+  - `status`: `"lobby"`, `"starting"`, or `"playing"`
+  - `gameId`
+  - `mode`
+  - `roundId`
+  - `maxPlayers`
+  - `players/{clientId}`
+  - `spectators/{clientId}`
+  - `offers/{clientId}`
+  - `answers/{clientId}`
+  - `gameStart`
+
+`gameStart` is the authoritative start payload in short-code rooms:
+
+- `gameId`
+- `mode`
+- `roundId`
+- `hostId`
+- `players`
+- `spectators`
+- `rolesByClientId`
+- `initialState`
+
+Games should use `initialState` to enter the first game screen in short-code rooms.
+They must not wait for WebRTC `round_start` before rendering the round.
+
+Room roles:
+
+- `player`
+  - Can interact with the active game.
+- `spectator`
+  - Can watch with a full god view.
+  - Cannot submit game actions.
+  - Joins as spectator when the game is full or already started.
+
 Top-level lobby messages:
 
 - `player_info`
@@ -62,7 +110,7 @@ Top-level lobby messages:
   - Payload: `{ mode }`
   - Informational mode selection message.
 - `game_start`
-  - Payload: `{ gameId, mode }`
+  - Payload: `{ gameId, mode, room? }`
   - Starts the selected game on the receiving peer.
 - `game_msg`
   - Payload: arbitrary game-owned message.
@@ -73,6 +121,8 @@ Game modules should only send game-specific messages through:
 ```js
 App.WebRTC.send({ type: 'game_msg', payload: msg });
 ```
+
+In short-code rooms, host rebroadcasts messages from one peer to all other peers.
 
 ## Guess Color Shared Rules
 
@@ -109,7 +159,8 @@ Single mode behavior:
 Coop mode behavior:
 
 - Host generates one computer code.
-- Host sends it to joiner using `round_start`.
+- Manual two-player mode sends it to joiner using `round_start`.
+- Short-code room mode stores it in `gameStart.initialState.computerCode`.
 - Host starts first.
 - Players alternate turns.
 - There is no 12-guess failure limit.
@@ -136,7 +187,8 @@ Coop game messages:
 Race mode behavior:
 
 - Host generates one computer code.
-- Host sends it to joiner using `round_start`.
+- Manual two-player mode sends it to joiner using `round_start`.
+- Short-code room mode stores it in `gameStart.initialState.computerCode`.
 - Both players can guess at the same time.
 - There is no turn lock.
 - First player to guess 4 hits wins.
@@ -166,6 +218,18 @@ Race game messages:
   - Sent when a player finishes.
   - Ends the race for the opponent and supplies final history.
 
+## Guess Color Spectator Mode
+
+Guess Color accepts `opts.role`.
+
+- `role: "player"`
+  - Normal interactive gameplay.
+- `role: "spectator"`
+  - Input panel is hidden.
+  - Guess submission and rematch are disabled.
+  - The computer answer is shown during the round.
+  - Incoming game messages still update the visible board/result state.
+
 ## Rematch Behavior
 
 - Single rematch:
@@ -175,6 +239,15 @@ Race game messages:
   - Non-host sends `rematch` and waits.
   - Host receives `rematch`, generates a new code, sends `round_start`, and starts the new round.
   - Host can also press rematch directly and start a new round.
+- Short-code room rematch currently returns to room/lobby flow rather than using direct in-game rematch.
+
+## Username Rules
+
+- Multiplayer username is required.
+- Trimmed username must not be empty.
+- Username is capped at 12 characters.
+- Render usernames using `textContent` or escaping helpers.
+- UI should show the full 12-character value when possible and use ellipsis only when space is constrained.
 
 ## UI Principles
 
@@ -190,9 +263,11 @@ The current design direction is Office Calm:
 
 ## Known Constraints
 
-- Short room codes are not implemented.
-  The app still uses manual WebRTC offer/answer copy-paste.
+- Short room codes require Firebase config in `js/firebaseConfig.js`.
+  Without it, the short-code UI stays visible but shows a setup warning.
 - Host-generated answer is shared with the peer.
   This is acceptable for friendly play but is not cheat-resistant.
-- Full two-peer WebRTC behavior should be manually tested in two browser contexts before release.
+- Short-code multiplayer uses host mesh and has no host migration.
+- Firebase is signaling/lobby only; it is not an authoritative game server.
+- Full multi-tab Firebase/WebRTC behavior should be manually tested with a real Firebase project before release.
 - `.DS_Store` may appear locally and should not be committed unless intentionally ignored or removed.
