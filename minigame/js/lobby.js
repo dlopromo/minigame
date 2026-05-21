@@ -29,10 +29,18 @@ App.Lobby = (function() {
     return String(value || '').trim().slice(0, 12);
   }
 
+  function isValidUsername(name) {
+    return /^[A-Za-z0-9\u4e00-\u9fff]+$/.test(name);
+  }
+
   function requireUsername(value) {
     var name = normalizeUsername(value);
     if (!name) {
       App.Common.showToast('請輸入你的名字', 'error');
+      return '';
+    }
+    if (!isValidUsername(name)) {
+      App.Common.showToast('名字只可使用中文、英文或數字', 'error');
       return '';
     }
     return name;
@@ -180,6 +188,18 @@ App.Lobby = (function() {
     showScreen('room-lobby');
   }
 
+  function notifyRoomUpdateToGame() {
+    if (!gameActive || playContext !== 'room') return;
+    App.GameManager.handleMessage({
+      type: 'room_update',
+      roomId: roomState ? roomState.code : '',
+      selfId: selfId,
+      role: getSelfRole(),
+      players: getRoomPlayers(),
+      spectators: getRoomSpectators()
+    });
+  }
+
   function copyRoomCode() {
     var code = roomState && roomState.code ? roomState.code : App.Signaling.getRoomCode();
     if (!code) return;
@@ -198,6 +218,7 @@ App.Lobby = (function() {
         return;
       }
       roomState = state;
+      notifyRoomUpdateToGame();
       if (!gameActive) renderRoomLobby();
       ensureHostOffers();
     });
@@ -218,6 +239,7 @@ App.Lobby = (function() {
         return;
       }
       roomState = state;
+      notifyRoomUpdateToGame();
       maybeLaunchRoomGameFromState();
       if (!gameActive) renderRoomLobby();
     });
@@ -461,7 +483,6 @@ App.Lobby = (function() {
         });
       }).then(function() {
         var payload = makeGameStartPayload(roomStart);
-        App.WebRTC.broadcast({ type: 'game_start', gameId: selectedGameId, mode: mode, room: payload });
         launchRoomGame(selectedGameId, mode, payload);
       }).catch(function(e) {
         App.Common.showToast('開始遊戲失敗：' + e.message, 'error');
@@ -559,7 +580,7 @@ App.Lobby = (function() {
   }
 
   function launchRoomGame(gameId, mode, roomPayload) {
-    var payload = roomPayload || makeGameStartPayload(gameId, mode);
+    var payload = roomPayload || makeGameStartPayload(roomState && roomState.gameStart);
     roomRole = payload.role || getSelfRole();
     showScreen('game');
     setTitle('載入中...');
@@ -704,7 +725,7 @@ App.Lobby = (function() {
   }
 
   function handleMessage(msg) {
-    if (playContext === 'room' && isHost && msg._from) {
+    if (playContext === 'room' && isHost && msg._from && msg.type === 'game_msg') {
       App.WebRTC.broadcast(stripInternalFields(msg), msg._from);
     }
     switch (msg.type) {
@@ -718,9 +739,9 @@ App.Lobby = (function() {
       case 'mode_select':
         break;
       case 'game_start':
+        if (playContext === 'room') return;
         selectedGameId = msg.gameId;
-        if (playContext === 'room') launchRoomGame(msg.gameId, msg.mode, msg.room);
-        else launchMultiplayerGame(msg.gameId, msg.mode);
+        launchMultiplayerGame(msg.gameId, msg.mode);
         break;
       case 'game_msg':
         App.GameManager.handleMessage(msg.payload);

@@ -22,6 +22,27 @@
     return opts && opts.roomId;
   }
 
+  function getPlayerIndex() {
+    var players = opts && opts.players ? opts.players : [];
+    if (players.length && opts.selfId) {
+      for (var i = 0; i < players.length; i++) {
+        if (players[i].id === opts.selfId) return i;
+      }
+    }
+    if (isSpectator()) return -1;
+    return opts && opts.isHost ? 0 : 1;
+  }
+
+  function getPlayerCount() {
+    var players = opts && opts.players ? opts.players : [];
+    return Math.max(2, players.length || 2);
+  }
+
+  function isMyCoopSlot(turnIndex) {
+    var playerIndex = getPlayerIndex();
+    return playerIndex >= 0 && playerIndex === (turnIndex % getPlayerCount());
+  }
+
   function resetGameState() {
     myGuesses = []; opponentGuesses = [];
     myTurn = true;
@@ -124,7 +145,7 @@
       var myIdx = 0, oppIdx = 0;
       var total = myGuesses.length + opponentGuesses.length;
       for (var turn = 0; turn < total; turn++) {
-        var isMySlot = opts.isHost ? (turn % 2 === 0) : (turn % 2 === 1);
+        var isMySlot = isMyCoopSlot(turn);
         if (isMySlot && myIdx < myGuesses.length) {
           merged.push({ guess: myGuesses[myIdx], label: opts.playerName || '你' });
           myIdx++;
@@ -166,6 +187,7 @@
             '<button class="gc-icon-btn" id="gc-btn-leave-game" aria-label="離開遊戲">×</button>' +
           '</div>' +
         '</div>' +
+        '<div class="gc-room-info" id="gc-room-info"></div>' +
         '<div class="gc-playfield">' +
           '<section class="gc-board-panel">' +
             '<div class="spectator-answer" id="gc-spectator-answer" style="display:none"></div>' +
@@ -200,6 +222,7 @@
     var mode = opts.mode;
     var oppSection = document.getElementById('gc-opponent-section');
     var myTitle = document.getElementById('gc-my-title');
+    renderRoomInfo();
     renderSpectatorAnswer();
 
     if (mode === 'single') {
@@ -240,6 +263,38 @@
     target.style.display = 'block';
     target.innerHTML = '<span>觀戰答案</span><div class="reveal-row" id="gc-spectator-code"></div>';
     renderCodeReveal(document.getElementById('gc-spectator-code'), computerCode);
+  }
+
+  function renderRoomInfo() {
+    var target = document.getElementById('gc-room-info');
+    if (!target) return;
+    var players = opts && opts.players ? opts.players : [];
+    var spectators = opts && opts.spectators ? opts.spectators : [];
+    if (!isRoomMode() && players.length === 0 && spectators.length === 0) {
+      target.style.display = 'none';
+      return;
+    }
+    target.style.display = 'flex';
+    target.innerHTML = '';
+
+    function addGroup(label, people, emptyText) {
+      var group = el('div', 'gc-room-group');
+      group.appendChild(el('span', 'gc-room-group-title', label));
+      if (!people.length) {
+        group.appendChild(el('span', 'gc-room-empty', emptyText));
+      } else {
+        people.forEach(function(person) {
+          var cls = 'gc-room-person';
+          if (person.id === opts.selfId) cls += ' self';
+          if (person.online === false) cls += ' offline';
+          group.appendChild(el('span', cls, person.name || '玩家'));
+        });
+      }
+      target.appendChild(group);
+    }
+
+    addGroup('玩家', players, '暫無');
+    addGroup('觀戰', spectators, '暫無');
   }
 
   function renderMyGuesses() {
@@ -317,12 +372,11 @@
     var c = document.getElementById('gc-my-guesses');
     if (!c) return;
     c.innerHTML = '';
-    var isHost = opts.isHost;
     var merged = [];
     var myIdx = 0, oppIdx = 0;
     var total = myGuesses.length + opponentGuesses.length;
     for (var turn = 0; turn < total; turn++) {
-      var isMySlot = isHost ? (turn % 2 === 0) : (turn % 2 === 1);
+      var isMySlot = isMyCoopSlot(turn);
       if (isMySlot && myIdx < myGuesses.length) {
         merged.push({guess: myGuesses[myIdx], isMe: true, name: opts.playerName || '你'});
         myIdx++;
@@ -626,7 +680,20 @@
       case 'race_finish':
         handleRaceFinish(msg);
         break;
+      case 'room_update':
+        handleRoomUpdate(msg);
+        break;
     }
+  }
+
+  function handleRoomUpdate(msg) {
+    if (!opts) return;
+    opts.players = msg.players || opts.players || [];
+    opts.spectators = msg.spectators || opts.spectators || [];
+    opts.role = msg.role || opts.role;
+    opts.selfId = msg.selfId || opts.selfId;
+    renderRoomInfo();
+    updateTurnIndicator();
   }
 
   function handleCoopGuess(msg) {
@@ -764,7 +831,7 @@
 
   function startMultiplayerRound(shouldSend) {
     resetRoundState();
-    myTurn = isSpectator() ? false : (opts.mode === 'race' ? true : opts.isHost);
+    myTurn = isSpectator() ? false : (opts.mode === 'race' ? true : getPlayerIndex() === 0);
     if (opts.isHost && shouldSend) {
       computerCode = generateComputerCode();
       send({ type: 'round_start', code: computerCode });

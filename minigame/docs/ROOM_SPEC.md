@@ -24,6 +24,8 @@ This spec describes the Firebase short-code room flow used by multiplayer games.
 - Trim before validation.
 - Empty or all-space values are invalid.
 - Maximum length is 12 characters.
+- Allowed characters are Chinese characters, English letters, and digits.
+- Spaces, punctuation, emoji, and symbols are invalid.
 - UI may use ellipsis if the container is too small, but game logic must keep the normalized name.
 - Never render username with raw `innerHTML`.
 
@@ -93,6 +95,10 @@ Rules:
 - Clients must not launch the same `roundId` twice.
 - Games must read opening state from `initialState`.
 - DataChannel `round_start` is not required for short-code rooms.
+- DataChannel `game_start` is ignored in short-code rooms. This prevents a joiner
+  from accidentally launching with the host's client-specific payload.
+- Firebase room membership changes are forwarded locally to the active game as
+  `room_update` so in-game Room Info can show current players and spectators.
 
 ## Status Lifecycle
 

@@ -53,7 +53,7 @@ Suggested MVP rules for friends-only testing:
 
 Short-code rooms generate a random 4-digit numeric room code.
 
-- Username is required and capped at 12 characters.
+- Username is required, capped at 12 characters, and may only use Chinese characters, English letters, or digits.
 - Host chooses the game and multiplayer mode.
 - Room state in Firebase starts each round.
 - WebRTC DataChannel is used for in-game sync.

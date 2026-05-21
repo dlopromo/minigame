@@ -88,6 +88,9 @@ App.Signaling = (function() {
   function requireUsername(username) {
     var name = String(username || '').trim().slice(0, 12);
     if (!name) throw new Error('請輸入你的名字');
+    if (!/^[A-Za-z0-9\u4e00-\u9fff]+$/.test(name)) {
+      throw new Error('名字只可使用中文、英文或數字');
+    }
     return name;
   }
 

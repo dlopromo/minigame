@@ -92,6 +92,8 @@ App.WebRTC.send({ type: 'game_msg', payload: msg });
 - Username is required for every multiplayer entry.
 - Username is trimmed and capped at 12 characters.
 - Empty or all-space names must be rejected with `請輸入你的名字`.
+- Only Chinese characters, English letters, and digits are allowed.
+- Spaces, punctuation, emoji, and symbols must be rejected with `名字只可使用中文、英文或數字`.
 - Use `textContent` or escaping when rendering username values.
 
 ## Verification
@@ -110,6 +112,7 @@ Manual checks:
 
 - Local Guess Color works.
 - Empty username is rejected for multiplayer.
+- Special-character username is rejected for multiplayer.
 - Host creates a 4-digit room.
 - Joiner enters room lobby.
 - Host starts Guess Color and joiner enters the game without waiting forever.

@@ -88,6 +88,9 @@ Short-code room state:
 
 Games should use `initialState` to enter the first game screen in short-code rooms.
 They must not wait for WebRTC `round_start` before rendering the round.
+They must also ignore WebRTC `game_start` while in short-code room context.
+Firebase `gameStart` is the only room-start authority so each client builds a
+payload with its own `selfId`, role, and player name.
 
 Room roles:
 
@@ -97,6 +100,11 @@ Room roles:
   - Can watch with a full god view.
   - Cannot submit game actions.
   - Joins as spectator when the game is full or already started.
+
+During an active short-code room game, lobby watchers forward Firebase room
+membership changes into the active game as a local `room_update` message. Games
+should refresh room info UI from `players` and `spectators` without treating it
+as an in-game action.
 
 Top-level lobby messages:
 
@@ -246,6 +254,9 @@ Guess Color accepts `opts.role`.
 - Multiplayer username is required.
 - Trimmed username must not be empty.
 - Username is capped at 12 characters.
+- Username may only contain Chinese characters, English letters, or digits.
+- Spaces, punctuation, emoji, and symbols are rejected before joining any
+  multiplayer flow.
 - Render usernames using `textContent` or escaping helpers.
 - UI should show the full 12-character value when possible and use ellipsis only when space is constrained.
 

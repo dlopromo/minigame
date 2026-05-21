@@ -44,7 +44,7 @@
     <p style="font-size:.85rem;color:var(--muted);margin-bottom:12px">
       輸入名字後可建立房間，或用 4 位數字房間碼加入朋友的房間。
     </p>
-    <input type="text" id="room-player-name-input" placeholder="輸入你的名字" maxlength="12" class="text-input">
+    <input type="text" id="room-player-name-input" placeholder="中文/英文/數字，最多12字" maxlength="12" class="text-input" autocomplete="nickname">
     <button class="btn btn-primary" onclick="App.Lobby.createShortRoom()">創建短碼房間</button>
     <input type="text" id="room-code-input" placeholder="輸入 4 位數字" maxlength="4" inputmode="numeric" pattern="[0-9]*" class="text-input room-code-input">
     <button class="btn btn-secondary" onclick="App.Lobby.joinShortRoom()">加入房間</button>
@@ -97,8 +97,8 @@
   <div class="card">
     <h2 id="connect-title">雙人模式</h2>
     <p style="font-size:.85rem;color:var(--muted);margin-bottom:12px" id="connect-desc"></p>
-    <input type="text" id="player-name-input" placeholder="輸入你的名字" maxlength="12"
-      class="text-input">
+    <input type="text" id="player-name-input" placeholder="中文/英文/數字，最多12字" maxlength="12"
+      class="text-input" autocomplete="nickname">
     <button class="btn btn-primary" onclick="App.Lobby.startHost()">創建房間</button>
     <button class="btn btn-secondary" onclick="App.Lobby.startJoin()">加入房間</button>
   </div>
