@@ -174,6 +174,19 @@ Future Big Dee example:
 - Firebase is not an authoritative game server; it is room state and round-start state.
 - If WebRTC is delayed, the game can still render initial state from Firebase.
 
+## Refresh And Resume
+
+Browser refresh cannot preserve the old WebRTC DataChannel, but the app can
+preserve the room identity and automatically rebuild WebRTC.
+The current implementation supports Level 1 resume: room/seat restore plus
+automatic WebRTC rebuild. Full game action history restore is not implemented.
+
+Read the detailed resume contract here:
+
+```text
+minigame/docs/ROOM_RESUME_SPEC.md
+```
+
 ## Failure Modes
 
 - Missing Firebase config: short-code room shows setup warning.

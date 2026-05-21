@@ -72,6 +72,22 @@ App.Lobby = (function() {
     document.title = text ? text + ' - MiniGame' : 'MiniGame';
   }
 
+  function saveRoomSession(room) {
+    if (!App.RoomSession || !room || !room.code || !room.selfId) return;
+    App.RoomSession.save({
+      roomCode: room.code,
+      clientId: room.selfId,
+      authUid: App.Signaling.getAuthUid ? App.Signaling.getAuthUid() : '',
+      username: playerName,
+      isHost: isHost,
+      lastRole: room.role || roomRole || 'player'
+    });
+  }
+
+  function clearRoomSession() {
+    if (App.RoomSession && App.RoomSession.clear) App.RoomSession.clear();
+  }
+
   function selectMode(mode) {
     selectedGameId = null;
     if (mode === 'single') {
@@ -219,14 +235,17 @@ App.Lobby = (function() {
       }
       roomState = state;
       notifyRoomUpdateToGame();
+      maybeLaunchRoomGameFromState();
       if (!gameActive) renderRoomLobby();
       ensureHostOffers();
     });
     App.Signaling.watchAnswers(function(peerId, answer) {
-      if (!answer || !answer.sdp || peerAnswers[peerId]) return;
-      peerAnswers[peerId] = true;
+      var version = answer && (answer.connectionVersion || answer.createdAt || 0);
+      if (!answer || !answer.sdp || peerAnswers[peerId] === version) return;
+      peerAnswers[peerId] = version;
       App.WebRTC.acceptPeerAnswer(peerId, answer.sdp).catch(function(e) {
         App.Common.showToast('連線回應失敗：' + e.message, 'error');
+        peerAnswers[peerId] = null;
       });
     });
   }
@@ -244,12 +263,14 @@ App.Lobby = (function() {
       if (!gameActive) renderRoomLobby();
     });
     App.Signaling.watchOffers(function(offer) {
-      if (!offer || !offer.sdp || peerAnswers[selfId]) return;
-      peerAnswers[selfId] = true;
+      var version = offer && (offer.connectionVersion || offer.createdAt || 0);
+      if (!offer || !offer.sdp || peerAnswers[selfId] === version) return;
+      peerAnswers[selfId] = version;
       App.WebRTC.createPeerAnswer(roomState.hostId || 'host', offer.sdp).then(function(answer) {
-        return App.Signaling.setAnswer(answer);
+        return App.Signaling.setAnswer(answer, version);
       }).catch(function(e) {
         App.Common.showToast('房間連線失敗：' + e.message, 'error');
+        peerAnswers[selfId] = null;
       });
     });
   }
@@ -258,13 +279,15 @@ App.Lobby = (function() {
     if (!isHost || !roomState) return;
     var people = getRoomPlayers().concat(getRoomSpectators());
     people.forEach(function(person) {
-      if (person.id === selfId || person.online === false || peerOffers[person.id]) return;
-      peerOffers[person.id] = true;
+      var version = person.connectionVersion || 0;
+      if (person.id === selfId || person.online === false) return;
+      if (peerOffers[person.id] === version) return;
+      peerOffers[person.id] = version;
       App.WebRTC.createPeerOffer(person.id).then(function(offer) {
-        return App.Signaling.setOffer(person.id, offer);
+        return App.Signaling.setOffer(person.id, offer, version);
       }).catch(function(e) {
         App.Common.showToast('建立玩家連線失敗：' + e.message, 'error');
-        peerOffers[person.id] = false;
+        peerOffers[person.id] = null;
       });
     });
   }
@@ -284,6 +307,7 @@ App.Lobby = (function() {
       selfId = room.selfId;
       peerOffers = {};
       peerAnswers = {};
+      saveRoomSession(room);
       watchRoomAsHost();
       setTitle('房間 ' + room.code);
       App.Common.showToast('房間已建立', 'success');
@@ -314,6 +338,7 @@ App.Lobby = (function() {
       selfId = room.selfId;
       roomRole = room.role;
       peerAnswers = {};
+      saveRoomSession(room);
       watchRoomAsGuest();
       setTitle('房間 ' + room.code);
     } catch (e) {
@@ -401,7 +426,9 @@ App.Lobby = (function() {
         role: target === 'players' ? 'player' : 'spectator',
         online: person.online !== false,
         authUid: person.authUid || '',
-        joinedAt: person.joinedAt || Date.now()
+        joinedAt: person.joinedAt || Date.now(),
+        lastSeenAt: person.lastSeenAt || Date.now(),
+        connectionVersion: person.connectionVersion || 0
       };
       updates[other + '/' + person.id] = null;
       updates[target + '/' + person.id] = record;
@@ -416,7 +443,9 @@ App.Lobby = (function() {
             role: 'player',
             online: person.online !== false,
             authUid: person.authUid || '',
-            joinedAt: person.joinedAt || Date.now()
+            joinedAt: person.joinedAt || Date.now(),
+            lastSeenAt: person.lastSeenAt || Date.now(),
+            connectionVersion: person.connectionVersion || 0
           };
         }),
         spectators: ordered.slice(maxPlayers).map(function(person) {
@@ -426,7 +455,9 @@ App.Lobby = (function() {
             role: 'spectator',
             online: person.online !== false,
             authUid: person.authUid || '',
-            joinedAt: person.joinedAt || Date.now()
+            joinedAt: person.joinedAt || Date.now(),
+            lastSeenAt: person.lastSeenAt || Date.now(),
+            connectionVersion: person.connectionVersion || 0
           };
         }),
         maxPlayers: maxPlayers
@@ -483,7 +514,7 @@ App.Lobby = (function() {
         });
       }).then(function() {
         var payload = makeGameStartPayload(roomStart);
-        launchRoomGame(selectedGameId, mode, payload);
+        if (!gameActive) launchRoomGame(selectedGameId, mode, payload);
       }).catch(function(e) {
         App.Common.showToast('開始遊戲失敗：' + e.message, 'error');
         App.Signaling.updateRoom({ status: 'lobby' });
@@ -601,7 +632,7 @@ App.Lobby = (function() {
   }
 
   function maybeLaunchRoomGameFromState() {
-    if (!roomState || isHost || gameActive) return;
+    if (!roomState || gameActive) return;
     if (roomState.status !== 'playing' || !roomState.gameStart || !roomState.gameStart.gameId || !roomState.gameStart.mode) return;
     var key = roomState.gameStart.roundId || (roomState.gameStart.gameId + ':' + roomState.gameStart.mode + ':' + (roomState.updatedAt || ''));
     if (launchedRoomGameKey === key) return;
@@ -695,7 +726,10 @@ App.Lobby = (function() {
   }
 
   function onConnectionOpen() {
-    if (playContext === 'room') return;
+    if (playContext === 'room') {
+      notifyRoomUpdateToGame();
+      return;
+    }
     playContext = 'multiplayer';
     App.WebRTC.send({ type: 'player_info', name: playerName });
     if (App.WebRTC.getIsHost()) {
@@ -758,6 +792,7 @@ App.Lobby = (function() {
   }
 
   function goHome() {
+    if (playContext === 'room') clearRoomSession();
     if (playContext === 'room') App.Signaling.leave();
     App.WebRTC.cleanDisconnect();
     if (gameActive) {
@@ -797,10 +832,38 @@ App.Lobby = (function() {
 
     window.addEventListener('beforeunload', function(e) {
       if (playContext === 'room') App.Signaling.leave();
-      if (App.WebRTC.isConnected() && gameActive) {
+      if (playContext !== 'room' && App.WebRTC.isConnected() && gameActive) {
         e.preventDefault();
         e.returnValue = '';
       }
+    });
+
+    attemptRoomResume();
+  }
+
+  function attemptRoomResume() {
+    if (!App.RoomSession || !App.Signaling || !App.Signaling.isConfigured()) return;
+    var ticket = App.RoomSession.get();
+    if (!ticket) return;
+    setTitle('恢復房間...');
+    App.Signaling.resumeRoom(ticket).then(function(room) {
+      playContext = 'room';
+      isHost = !!room.isHost;
+      selfId = room.selfId;
+      playerName = ticket.username;
+      roomRole = room.role;
+      peerOffers = {};
+      peerAnswers = {};
+      launchedRoomGameKey = '';
+      saveRoomSession(room);
+      if (isHost) watchRoomAsHost();
+      else watchRoomAsGuest();
+      setTitle('房間 ' + room.code);
+      App.Common.showToast('已返回房間 ' + room.code, 'success');
+    }).catch(function(e) {
+      clearRoomSession();
+      setTitle('');
+      App.Common.showToast('未能恢復房間：' + e.message, 'error');
     });
   }
 

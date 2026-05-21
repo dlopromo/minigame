@@ -97,25 +97,30 @@ App.WebRTC = (function() {
 
   function send(msg) {
     if (Object.keys(peers).length > 0 && isHost) {
-      broadcast(msg);
-      return;
+      return broadcast(msg);
     }
     if (dc && dc.readyState === 'open') {
       dc.send(JSON.stringify(msg));
+      return true;
     }
+    return false;
   }
 
   function sendTo(peerId, msg) {
     var peer = peers[peerId];
     if (peer && peer.dc && peer.dc.readyState === 'open') {
       peer.dc.send(JSON.stringify(msg));
+      return true;
     }
+    return false;
   }
 
   function broadcast(msg, exceptPeerId) {
+    var sent = false;
     Object.keys(peers).forEach(function(peerId) {
-      if (peerId !== exceptPeerId) sendTo(peerId, msg);
+      if (peerId !== exceptPeerId && sendTo(peerId, msg)) sent = true;
     });
+    return sent;
   }
 
   function hasOpenChannel() {
@@ -136,6 +141,12 @@ App.WebRTC = (function() {
       };
     }
     return peers[peerId];
+  }
+
+  function resetPeer(peerId) {
+    if (!peers[peerId]) return;
+    if (peers[peerId].pc) { try { peers[peerId].pc.close(); } catch(e) {} }
+    delete peers[peerId];
   }
 
   function createOffer() {
@@ -183,6 +194,7 @@ App.WebRTC = (function() {
 
   function createPeerOffer(peerId) {
     isHost = true;
+    resetPeer(peerId);
     var peer = ensurePeer(peerId, true);
     peer.dc = peer.pc.createDataChannel('game-' + peerId);
     bindChannel(peer.dc, peerId);
@@ -209,6 +221,7 @@ App.WebRTC = (function() {
 
   function createPeerAnswer(peerId, offerB64) {
     isHost = false;
+    resetPeer(peerId);
     var peer = ensurePeer(peerId, false);
     var sdp = App.Common.decodeSDP(offerB64);
     peer.pc.ondatachannel = function(e) {
@@ -241,6 +254,9 @@ App.WebRTC = (function() {
   function getIsHost() { return isHost; }
   function isConnected() { return connected; }
   function getPeerIds() { return Object.keys(peers); }
+  function isPeerConnected(peerId) {
+    return !!(peers[peerId] && peers[peerId].dc && peers[peerId].dc.readyState === 'open');
+  }
 
   return {
     on: on,
@@ -257,7 +273,8 @@ App.WebRTC = (function() {
     cleanDisconnect: cleanDisconnect,
     getIsHost: getIsHost,
     isConnected: isConnected,
-    getPeerIds: getPeerIds
+    getPeerIds: getPeerIds,
+    isPeerConnected: isPeerConnected
   };
 })();
 

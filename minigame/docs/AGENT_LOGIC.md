@@ -2,17 +2,23 @@
 
 This document records the current implemented behavior so future agents can understand the app without re-discovering the full flow from scratch.
 
+Related room lifecycle specs:
+
+- `minigame/docs/ROOM_SPEC.md`
+- `minigame/docs/ROOM_RESUME_SPEC.md`
+
 ## Architecture
 
 - `index.html` owns the static screens and loads scripts in this order:
-  Firebase compat CDN, `common.js`, `firebaseConfig.js`, `signaling.js`, `webrtc.js`, `gameManager.js`, game modules, then `lobby.js`.
+  Firebase compat CDN, `common.js`, `roomSession.js`, `firebaseConfig.js`, `signaling.js`, `webrtc.js`, `gameManager.js`, game modules, then `lobby.js`.
 - `App.Common` owns shared UI utilities:
   toast display, clipboard copy, SDP encode/decode, and screen switching.
 - `App.WebRTC` owns peer connection setup and the data channel.
   It supports the original single peer connection and the newer host-mesh peer map.
 - `App.Signaling` owns Firebase Realtime Database room signaling for 4-digit numeric room codes.
   It uses Anonymous Auth and stores temporary room/lobby/round-start/SDP data.
-  Firebase `auth.uid` is stored as metadata, but room seats use a per-page-load client id so multiple tabs from the same browser can appear as separate room clients during testing.
+  Firebase `auth.uid` is stored as metadata, but room seats use a stable browser client id so refresh can resume the same seat.
+- `App.RoomSession` owns the `localStorage` resume ticket used by short-code rooms.
 - `App.GameManager` registers games and starts the active game module in `#game-container`.
 - `App.Lobby` owns app-level flow:
   local play, multiplayer connection, game selection, multiplayer mode selection, and launching games.
@@ -279,6 +285,8 @@ The current design direction is Office Calm:
 - Host-generated answer is shared with the peer.
   This is acceptable for friendly play but is not cheat-resistant.
 - Short-code multiplayer uses host mesh and has no host migration.
+- Short-code rooms support Level 1 refresh resume: same room, same seat, automatic WebRTC rebuild.
+  They do not yet restore full game action history after refresh.
 - Firebase is signaling/lobby only; it is not an authoritative game server.
 - Full multi-tab Firebase/WebRTC behavior should be manually tested with a real Firebase project before release.
 - `.DS_Store` may appear locally and should not be committed unless intentionally ignored or removed.

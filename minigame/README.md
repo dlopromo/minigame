@@ -8,6 +8,7 @@ This folder contains the static mini-game app served by GitHub Pages.
 - `css/common.css`: shared layout, buttons, cards, toast, input styles.
 - `css/lobby.css`: lobby, room, game selection, and mode selection UI.
 - `js/common.js`: shared utilities.
+- `js/roomSession.js`: `localStorage` room resume ticket helper.
 - `js/firebaseConfig.js`: Firebase web config.
 - `js/signaling.js`: Firebase Realtime Database room signaling.
 - `js/webrtc.js`: manual two-player WebRTC and host-mesh DataChannel support.
@@ -66,6 +67,7 @@ There are two multiplayer paths:
 - Short-code room: Firebase RTDB room state plus host-mesh WebRTC.
 
 Short-code rooms use Firebase as the round-start authority. DataChannel messages are still used for low-latency in-game updates.
+Refresh resume is Level 1: the same browser returns to the same room/seat and WebRTC is rebuilt automatically. Full in-game action history restore is still a future game-state snapshot feature.
 
 Game-specific messages must be wrapped as:
 

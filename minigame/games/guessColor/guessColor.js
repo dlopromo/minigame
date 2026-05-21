@@ -22,6 +22,10 @@
     return opts && opts.roomId;
   }
 
+  function isRoomReconnecting() {
+    return isRoomMode() && !isSpectator() && opts.mode !== 'single' && !App.WebRTC.isConnected();
+  }
+
   function getPlayerIndex() {
     var players = opts && opts.players ? opts.players : [];
     if (players.length && opts.selfId) {
@@ -428,7 +432,7 @@
       else pin.textContent = i + 1;
       (function(idx) {
         pin.onclick = function() {
-          if (!isSpectator() && myTurn && !gameOver) {
+          if (!isSpectator() && !isRoomReconnecting() && myTurn && !gameOver) {
             if (guessSelection[idx]) {
               guessSelection[idx] = null;
               guessActiveSlot = idx;
@@ -448,7 +452,7 @@
       var btn = el('div', 'color-btn');
       btn.dataset.color = color;
       btn.onclick = function() {
-        if (!isSpectator() && myTurn && !gameOver) {
+        if (!isSpectator() && !isRoomReconnecting() && myTurn && !gameOver) {
           guessSelection[guessActiveSlot] = color;
           guessActiveSlot = (guessActiveSlot + 1) % SLOTS;
           renderGuessInput();
@@ -458,7 +462,7 @@
     });
     var submitBtn = document.getElementById('gc-btn-submit');
     if (submitBtn) {
-      submitBtn.disabled = isSpectator() || !guessSelection.every(function(s) { return s !== null; }) || !myTurn || gameOver;
+      submitBtn.disabled = isSpectator() || isRoomReconnecting() || !guessSelection.every(function(s) { return s !== null; }) || !myTurn || gameOver;
     }
   }
 
@@ -482,6 +486,15 @@
       if (attemptLabel) attemptLabel.textContent = '觀戰';
       setTitle('觀戰中');
       renderSpectatorAnswer();
+      return;
+    }
+
+    if (isRoomReconnecting()) {
+      indicator.className = 'gc-title waiting';
+      indicator.textContent = '重新連線中...';
+      inputArea.style.display = 'none';
+      setTitle('重新連線中');
+      renderGuessInput();
       return;
     }
 
@@ -549,6 +562,10 @@
 
   function submitGuess() {
     if (gameOver || isSpectator()) return;
+    if (isRoomReconnecting()) {
+      App.Common.showToast('正在重新連線，請稍候', 'error');
+      return;
+    }
     var colors = guessSelection.slice();
     if (colors.some(function(c) { return c === null; })) return;
 

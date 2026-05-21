@@ -41,6 +41,11 @@ App.Signaling = (function() {
 
   function getClientId(uid) {
     if (clientId) return clientId;
+    var ticket = App.RoomSession && App.RoomSession.get ? App.RoomSession.get() : null;
+    if (ticket && /^[A-Za-z0-9-]{8,80}$/.test(ticket.clientId)) {
+      clientId = ticket.clientId;
+      return clientId;
+    }
     var randomPart = Math.random().toString(36).slice(2, 8).toUpperCase();
     clientId = uid.slice(0, 8) + '-' + randomPart;
     return clientId;
@@ -94,6 +99,12 @@ App.Signaling = (function() {
     return name;
   }
 
+  function requireClientId(id) {
+    var value = String(id || '');
+    if (!/^[A-Za-z0-9-]{8,80}$/.test(value)) throw new Error('房間身份已失效，請重新加入');
+    return value;
+  }
+
   function normalizeRoom(snapshot) {
     var data = snapshot.val() || {};
     data.code = snapshot.key || roomCode;
@@ -139,10 +150,12 @@ App.Signaling = (function() {
             role: 'player',
             online: true,
             authUid: authUid,
-            joinedAt: firebase.database.ServerValue.TIMESTAMP
+            joinedAt: firebase.database.ServerValue.TIMESTAMP,
+            lastSeenAt: firebase.database.ServerValue.TIMESTAMP,
+            connectionVersion: 1
           }).then(function() {
             ref('rooms/' + code + '/players/' + uid + '/online').onDisconnect().set(false);
-            return { code: code, selfId: uid };
+            return { code: code, selfId: uid, role: 'player', isHost: true, connectionVersion: 1 };
           });
         });
       }
@@ -171,11 +184,58 @@ App.Signaling = (function() {
           role: role,
           online: true,
           authUid: authUid,
-          joinedAt: firebase.database.ServerValue.TIMESTAMP
+          joinedAt: firebase.database.ServerValue.TIMESTAMP,
+          lastSeenAt: firebase.database.ServerValue.TIMESTAMP,
+          connectionVersion: 1
         }).then(function() {
           ref(path + '/online').onDisconnect().set(false);
-          return { code: code, selfId: uid, role: role };
+          return { code: code, selfId: uid, role: role, isHost: false, connectionVersion: 1 };
         });
+      });
+    });
+  }
+
+  function resumeRoom(ticket) {
+    if (!ticket) return Promise.reject(new Error('沒有可恢復的房間'));
+    var code = requireRoomCode(ticket.roomCode);
+    var username = requireUsername(ticket.username);
+    var storedClientId = requireClientId(ticket.clientId);
+    clientId = storedClientId;
+    selfId = storedClientId;
+    return initFirebase().then(function(uid) {
+      selfId = uid;
+      return ref('rooms/' + code).once('value');
+    }).then(function(snapshot) {
+      if (!snapshot.exists()) throw new Error('找不到房間');
+      var data = normalizeRoom(snapshot);
+      var now = Date.now();
+      if (data.createdAt && now - data.createdAt > ROOM_TTL_MS) throw new Error('房間已過期');
+      var playerRecord = data.players && data.players[selfId];
+      var spectatorRecord = data.spectators && data.spectators[selfId];
+      var role = playerRecord ? 'player' : spectatorRecord ? 'spectator' : '';
+      if (!role) throw new Error('房間身份已失效，請重新加入');
+      if (ticket.isHost && data.hostId !== selfId) throw new Error('房主身份已失效，請重新建立房間');
+      isHost = data.hostId === selfId;
+      roomCode = code;
+      var record = playerRecord || spectatorRecord || {};
+      var path = 'rooms/' + code + '/' + (role === 'player' ? 'players' : 'spectators') + '/' + selfId;
+      var version = Number(record.connectionVersion || 0) + 1;
+      return ref(path).update({
+        name: username,
+        role: role,
+        online: true,
+        authUid: authUid,
+        lastSeenAt: firebase.database.ServerValue.TIMESTAMP,
+        connectionVersion: version
+      }).then(function() {
+        ref(path + '/online').onDisconnect().set(false);
+        return {
+          code: code,
+          selfId: selfId,
+          role: role,
+          isHost: isHost,
+          connectionVersion: version
+        };
       });
     });
   }
@@ -209,23 +269,28 @@ App.Signaling = (function() {
 
   function watchAnswers(fn) {
     if (!roomCode) return;
-    onChildAdded('rooms/' + roomCode + '/answers', function(snapshot) {
-      fn(snapshot.key, snapshot.val());
+    onValue('rooms/' + roomCode + '/answers', function(snapshot) {
+      var answers = snapshot.val() || {};
+      Object.keys(answers).forEach(function(peerId) {
+        fn(peerId, answers[peerId]);
+      });
     });
   }
 
-  function setOffer(peerId, offer) {
+  function setOffer(peerId, offer, connectionVersion) {
     return ref('rooms/' + roomCode + '/offers/' + peerId).set({
       from: selfId,
       sdp: offer,
+      connectionVersion: connectionVersion || 0,
       createdAt: firebase.database.ServerValue.TIMESTAMP
     });
   }
 
-  function setAnswer(answer) {
+  function setAnswer(answer, connectionVersion) {
     return ref('rooms/' + roomCode + '/answers/' + selfId).set({
       from: selfId,
       sdp: answer,
+      connectionVersion: connectionVersion || 0,
       createdAt: firebase.database.ServerValue.TIMESTAMP
     });
   }
@@ -258,6 +323,7 @@ App.Signaling = (function() {
     initFirebase: initFirebase,
     createRoom: createRoom,
     joinRoom: joinRoom,
+    resumeRoom: resumeRoom,
     watchRoom: watchRoom,
     watchOffers: watchOffers,
     watchAnswers: watchAnswers,
