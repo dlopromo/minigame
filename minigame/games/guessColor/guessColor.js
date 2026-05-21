@@ -165,9 +165,11 @@
         '<div class="color-palette" id="gc-guess-palette"></div>' +
         '<button class="btn btn-primary" id="gc-btn-submit" disabled>確認猜測</button>' +
       '</div>' +
+      '<button class="btn-leave" id="gc-btn-show-answer" style="color:#c0392b">看答案</button>' +
       '<button class="btn-leave" id="gc-btn-leave-game">離開遊戲</button>';
 
     document.getElementById('gc-btn-submit').onclick = submitGuess;
+    document.getElementById('gc-btn-show-answer').onclick = showAnswer;
     document.getElementById('gc-btn-leave-game').onclick = function() {
       App.Lobby.goHome();
     };
@@ -415,6 +417,17 @@
     } else {
       submitVersusGuess(colors);
     }
+  }
+
+  function showAnswer() {
+    if (gameOver) return;
+    gameOver = true;
+    if (opts.mode !== 'single') {
+      send({ type: 'game_over', winner: opts.mode === 'coop' ? 'none' : 'opponent' });
+      send({ type: 'reveal', code: myCode });
+    }
+    updateTurnIndicator();
+    showResult(false);
   }
 
   function submitSingleGuess(colors) {
