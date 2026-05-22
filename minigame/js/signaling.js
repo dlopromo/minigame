@@ -279,6 +279,15 @@ App.Signaling = (function() {
     });
   }
 
+  function watchGameActions(fn) {
+    if (!roomCode) return;
+    onChildAdded('rooms/' + roomCode + '/gameActions', function(snapshot) {
+      var action = snapshot.val();
+      if (!action || action.from === selfId) return;
+      fn(snapshot.key, action);
+    });
+  }
+
   function setOffer(peerId, offer, connectionVersion) {
     return ref('rooms/' + roomCode + '/offers/' + peerId).set({
       from: selfId,
@@ -310,6 +319,13 @@ App.Signaling = (function() {
     return ref('rooms/' + roomCode + '/gameState').set(snapshot);
   }
 
+  function sendGameAction(action) {
+    if (!roomCode || !action) return Promise.resolve();
+    action.from = selfId;
+    action.createdAt = firebase.database.ServerValue.TIMESTAMP;
+    return ref('rooms/' + roomCode + '/gameActions').push(action);
+  }
+
   function leave() {
     var code = roomCode;
     var uid = selfId;
@@ -336,10 +352,12 @@ App.Signaling = (function() {
     watchRoom: watchRoom,
     watchOffers: watchOffers,
     watchAnswers: watchAnswers,
+    watchGameActions: watchGameActions,
     setOffer: setOffer,
     setAnswer: setAnswer,
     updateRoom: updateRoom,
     setGameState: setGameState,
+    sendGameAction: sendGameAction,
     leave: leave,
     normalizeRoomCode: normalizeRoomCode,
     requireRoomCode: requireRoomCode,

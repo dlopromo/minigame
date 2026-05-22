@@ -23,8 +23,12 @@
     return opts && opts.roomId;
   }
 
+  function canUseFirebaseActionFallback() {
+    return isRoomMode() && App.Lobby && typeof App.Lobby.sendRoomGameAction === 'function';
+  }
+
   function isRoomReconnecting() {
-    return isRoomMode() && !isSpectator() && opts.mode !== 'single' && !App.WebRTC.isConnected();
+    return isRoomMode() && !isSpectator() && opts.mode !== 'single' && !App.WebRTC.isConnected() && !canUseFirebaseActionFallback();
   }
 
   function getPlayerIndex() {
@@ -64,6 +68,13 @@
     return null;
   }
 
+  function hasGuessRecord(list, msg) {
+    if (!msg || !msg.createdAt) return false;
+    return list.some(function(g) {
+      return g.createdAt === msg.createdAt && (!msg.playerId || g.playerId === msg.playerId);
+    });
+  }
+
   function resetGameState() {
     myGuesses = []; opponentGuesses = [];
     myTurn = true;
@@ -84,7 +95,10 @@
 
   function send(msg) {
     if (isSpectator()) return;
-    App.WebRTC.send({ type: 'game_msg', payload: msg });
+    var sent = App.WebRTC.send({ type: 'game_msg', payload: msg });
+    if (!sent && canUseFirebaseActionFallback()) {
+      App.Lobby.sendRoomGameAction(msg);
+    }
   }
 
   function makeGuessRecord(colors, result, extra) {
@@ -891,6 +905,7 @@
 
   function handleCoopGuess(msg) {
     if (gameOver) return;
+    if (hasGuessRecord(opponentGuesses, msg)) return;
     opponentGuesses.push({
       playerId: msg.playerId || '',
       playerName: msg.playerName || opts.opponentName || '隊友',

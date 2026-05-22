@@ -69,6 +69,16 @@ rooms/{roomCode}: {
   answers: {
     [clientId]: { from: string, sdp: string, connectionVersion: number, createdAt: serverTimestamp }
   },
+  gameActions: {
+    [actionId]: {
+      from: clientId,
+      roundId: string,
+      gameId: string,
+      mode: string,
+      payload: object,
+      createdAt: serverTimestamp
+    }
+  },
   gameStart: null | GameStart,
   gameState: null | GameStateSnapshot
 }
@@ -224,6 +234,41 @@ Future Big Dee example:
 - WebRTC uses public STUN servers for WAN/NAT traversal. Firebase lets peers
   exchange signaling over WAN, but it does not relay DataChannel traffic.
 - Some restrictive networks still require TURN; TURN is not part of this MVP.
+
+## Firebase Game Action Fallback
+
+Short-code room games prefer WebRTC DataChannel for `game_msg`, but non-host
+clients can fall back to Firebase when the DataChannel is not open.
+
+```text
+Player action
+   |
+   v
+Try WebRTC game_msg
+   |
+   +-- sent ------------------------------> host receives via DataChannel
+   |
+   +-- not sent
+          |
+          v
+   Push rooms/{code}/gameActions/{actionId}
+          |
+          v
+   Host watches gameActions
+          |
+          v
+   Host applies payload through GameManager
+          |
+          v
+   Host writes gameState snapshot
+```
+
+Rules:
+
+- `gameActions` are transport fallback messages, not authoritative history.
+- Host ignores actions from old `roundId`.
+- Game modules should make action handling idempotent where practical.
+- `gameState` remains the restore source after refresh.
 
 ## Refresh And Resume
 

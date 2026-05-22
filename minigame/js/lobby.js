@@ -12,6 +12,7 @@ App.Lobby = (function() {
   var roomRole = 'player';
   var peerOffers = {};
   var peerAnswers = {};
+  var roomActionIds = {};
   var launchedRoomGameKey = '';
 
   var modeMeta = {
@@ -249,6 +250,13 @@ App.Lobby = (function() {
         peerAnswers[peerId] = null;
       });
     });
+    App.Signaling.watchGameActions(function(actionId, action) {
+      if (roomActionIds[actionId] || !action || !action.payload) return;
+      if (roomState && action.roundId && action.roundId !== roomState.roundId) return;
+      roomActionIds[actionId] = true;
+      App.GameManager.handleMessage(action.payload);
+      App.WebRTC.broadcast({ type: 'game_msg', payload: action.payload }, action.from);
+    });
   }
 
   function watchRoomAsGuest() {
@@ -308,6 +316,7 @@ App.Lobby = (function() {
       selfId = room.selfId;
       peerOffers = {};
       peerAnswers = {};
+      roomActionIds = {};
       saveRoomSession(room);
       watchRoomAsHost();
       setTitle('房間 ' + room.code);
@@ -339,6 +348,7 @@ App.Lobby = (function() {
       selfId = room.selfId;
       roomRole = room.role;
       peerAnswers = {};
+      roomActionIds = {};
       saveRoomSession(room);
       watchRoomAsGuest();
       setTitle('房間 ' + room.code);
@@ -512,7 +522,8 @@ App.Lobby = (function() {
           mode: mode,
           roundId: roomStart.roundId,
           gameStart: roomStart,
-          gameState: null
+          gameState: null,
+          gameActions: null
         });
       }).then(function() {
         var payload = makeGameStartPayload(roomStart);
@@ -813,6 +824,7 @@ App.Lobby = (function() {
     roomRole = 'player';
     peerOffers = {};
     peerAnswers = {};
+    roomActionIds = {};
     launchedRoomGameKey = '';
     setTitle('');
     showScreen('home');
@@ -845,6 +857,20 @@ App.Lobby = (function() {
     attemptRoomResume();
   }
 
+  function sendRoomGameAction(payload) {
+    if (playContext !== 'room' || !payload || !roomState || !roomState.roundId) return false;
+    if (!App.Signaling || !App.Signaling.sendGameAction) return false;
+    App.Signaling.sendGameAction({
+      roundId: roomState.roundId,
+      gameId: roomState.gameId || '',
+      mode: roomState.mode || '',
+      payload: payload
+    }).catch(function(e) {
+      App.Common.showToast('同步動作失敗：' + e.message, 'error');
+    });
+    return true;
+  }
+
   function attemptRoomResume() {
     if (!App.RoomSession || !App.Signaling || !App.Signaling.isConfigured()) return;
     var ticket = App.RoomSession.get();
@@ -858,6 +884,7 @@ App.Lobby = (function() {
       roomRole = room.role;
       peerOffers = {};
       peerAnswers = {};
+      roomActionIds = {};
       launchedRoomGameKey = '';
       saveRoomSession(room);
       if (isHost) watchRoomAsHost();
@@ -888,6 +915,7 @@ App.Lobby = (function() {
     copyRoomCode: copyRoomCode,
     goHome: goHome,
     launchMultiplayerGame: launchMultiplayerGame,
+    sendRoomGameAction: sendRoomGameAction,
     setTitle: setTitle
   };
 })();

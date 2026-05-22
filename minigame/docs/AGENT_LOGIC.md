@@ -20,6 +20,8 @@ Related room lifecycle specs:
 - `App.Signaling` owns Firebase Realtime Database room signaling for 4-digit numeric room codes.
   It uses Anonymous Auth and stores temporary room/lobby/round-start/SDP data.
   Firebase `auth.uid` is stored as metadata, but room seats use a stable browser client id so refresh can resume the same seat.
+  It also exposes Firebase `gameActions` as a fallback transport when WebRTC
+  DataChannel is not open.
 - `App.RoomSession` owns the `localStorage` resume ticket used by short-code rooms.
 - `App.GameManager` registers games and starts the active game module in `#game-container`.
 - `App.Lobby` owns app-level flow:
@@ -83,6 +85,7 @@ Short-code room state:
   - `answers/{clientId}`
 - `gameStart`
 - `gameState`
+  - `gameActions/{actionId}`
 
 `gameStart` is the authoritative start payload in short-code rooms:
 
@@ -142,6 +145,9 @@ App.WebRTC.send({ type: 'game_msg', payload: msg });
 ```
 
 In short-code rooms, host rebroadcasts messages from one peer to all other peers.
+When `App.WebRTC.send()` returns false in a short-code room, Guess Color sends
+the same game action through `App.Lobby.sendRoomGameAction()`, which writes
+`rooms/{code}/gameActions`. Host watches those actions and applies them locally.
 
 ## Guess Color Shared Rules
 
