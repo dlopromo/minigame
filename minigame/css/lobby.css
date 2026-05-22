@@ -72,8 +72,26 @@
 .room-badge.host{background:#ecfdf3;color:#027a48}
 .room-badge.self{background:#fff7ed;color:#c2410c}
 .room-badge.transport{background:#eef4ff;color:#175cd3}
+.room-badge.queue{background:#fff7ed;color:#c2410c}
+.room-badge.ai{background:#f4f3ff;color:#5925dc}
+.room-chat-card{display:grid;gap:10px}
+.room-chat-list{
+  min-height:120px;max-height:180px;overflow:auto;border:1px solid #e2e8f0;
+  border-radius:10px;background:#fafbfc;padding:8px;display:grid;align-content:start;gap:6px;
+}
+.room-chat-message{
+  display:grid;grid-template-columns:auto minmax(0,1fr);gap:8px;align-items:baseline;
+  font-size:.82rem;
+}
+.room-chat-message strong{
+  max-width:10ch;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text);
+}
+.room-chat-message span{min-width:0;color:#475467;overflow-wrap:anywhere}
+.room-chat-input-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:center}
+.room-chat-input-row .text-input{margin:0}
 @media(max-width:480px){
   .mode-buttons{display:block}
   #room-code-label{font-size:1.5rem}
   .room-debug-panel{grid-template-columns:repeat(2,1fr)}
+  .room-chat-list{min-height:96px;max-height:130px}
 }

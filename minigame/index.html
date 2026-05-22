@@ -20,21 +20,15 @@
     <p class="subtitle">選擇遊玩方式</p>
     <div class="mode-buttons">
       <button class="btn btn-primary" onclick="App.Lobby.selectMode('single')">本機遊玩</button>
-      <button class="btn btn-secondary" onclick="App.Lobby.selectMode('room')">短碼房間</button>
-      <button class="btn btn-secondary" onclick="App.Lobby.selectMode('multiplayer')">手動雙人</button>
+      <button class="btn btn-secondary" onclick="App.Lobby.selectMode('room')">Party Room</button>
     </div>
   </div>
   <div class="card">
     <h2>連線說明</h2>
     <p style="font-size:.85rem;line-height:1.6;color:var(--muted)">
-      短碼房間使用 Firebase 建立 4 位數字房間碼，朋友輸入名字即可加入。<br>
-      超過遊戲人數或中途加入的人會成為觀戰者。<br>
-      手動雙人模式仍可用邀請碼 / 回應碼直接連線。<br>
-      <br>
-      手動模式：雙方需在同一 WiFi / 區域網路內。<br>
-      玩家 A 創建房間後，複製邀請碼傳給玩家 B。<br>
-      玩家 B 貼上邀請碼產生回應碼，再傳回給玩家 A。<br>
-      玩家 A 貼上回應碼即可連線。
+      Party Room 使用 Firebase 建立 4 位數字房間碼，朋友輸入名字即可加入。<br>
+      大家留在同一房間聊天、排隊、觀戰，房主可切換遊戲並開下一局。<br>
+      未加入隊列的人一律觀戰；新一局會自動從隊列抽人入座，不足人數時按遊戲規則補 AI。
     </p>
   </div>
 </div>
@@ -42,12 +36,12 @@
 <!-- Short Code Room Screen -->
 <div id="screen-room-connect" class="screen">
   <div class="card">
-    <h2>短碼房間</h2>
+    <h2>Party Room</h2>
     <p style="font-size:.85rem;color:var(--muted);margin-bottom:12px">
       輸入名字後可建立房間，或用 4 位數字房間碼加入朋友的房間。
     </p>
     <input type="text" id="room-player-name-input" placeholder="中文/英文/數字，最多12字" maxlength="12" class="text-input" autocomplete="nickname">
-    <button class="btn btn-primary" onclick="App.Lobby.createShortRoom()">創建短碼房間</button>
+    <button class="btn btn-primary" onclick="App.Lobby.createShortRoom()">創建 Party Room</button>
     <input type="text" id="room-code-input" placeholder="輸入 4 位數字" maxlength="4" inputmode="numeric" pattern="[0-9]*" class="text-input room-code-input">
     <button class="btn btn-secondary" onclick="App.Lobby.joinShortRoom()">加入房間</button>
     <p class="room-config-note" id="room-config-note"></p>
@@ -84,8 +78,8 @@
         <strong id="room-round-label">未開始</strong>
       </div>
       <div>
-        <span>Peers</span>
-        <strong id="room-peers-label">0/0</strong>
+        <span>隊列</span>
+        <strong id="room-queue-label">0 人</strong>
       </div>
       <div>
         <span>Queue</span>
@@ -93,21 +87,30 @@
       </div>
     </div>
   </div>
-  <div class="card">
-    <h2>玩家</h2>
+  <div class="card room-party-card">
+    <h2>房間成員</h2>
     <div class="room-list" id="room-player-list"></div>
   </div>
-  <div class="card">
-    <h2>觀戰</h2>
+  <div class="card room-party-card">
+    <h2>隊列 / 觀戰</h2>
     <div class="room-list" id="room-spectator-list"></div>
+  </div>
+  <div class="card room-chat-card">
+    <h2>Chat</h2>
+    <div class="room-chat-list" id="room-chat-list"></div>
+    <div class="room-chat-input-row">
+      <input type="text" id="room-chat-input" class="text-input" maxlength="120" placeholder="輸入訊息..." autocomplete="off">
+      <button class="btn-small btn-copy" onclick="App.Lobby.sendRoomChat()">送出</button>
+    </div>
   </div>
   <div class="card" id="room-host-actions">
     <h2>房主操作</h2>
     <p style="font-size:.85rem;color:var(--muted);margin-bottom:12px">
-      選擇遊戲後，系統會按遊戲人數上限分配玩家，其餘成為觀戰者。
+      選擇遊戲後，系統會從隊列抽人入座，不足人數按遊戲規則補 AI。
     </p>
     <button class="btn btn-primary" onclick="App.Lobby.showGameSelect('room')">選擇遊戲</button>
   </div>
+  <button class="btn btn-primary" id="room-queue-toggle" onclick="App.Lobby.toggleQueue()">加入隊列</button>
   <button class="btn btn-secondary" onclick="App.Lobby.goHome()">離開房間</button>
 </div>
 
@@ -117,20 +120,7 @@
     <h2 id="game-select-title">選擇遊戲</h2>
     <div class="game-grid" id="game-grid"></div>
   </div>
-  <button class="btn btn-secondary" onclick="App.Lobby.goHome()">← 返回</button>
-</div>
-
-<!-- Connect Screen -->
-<div id="screen-connect" class="screen">
-  <div class="card">
-    <h2 id="connect-title">雙人模式</h2>
-    <p style="font-size:.85rem;color:var(--muted);margin-bottom:12px" id="connect-desc"></p>
-    <input type="text" id="player-name-input" placeholder="中文/英文/數字，最多12字" maxlength="12"
-      class="text-input" autocomplete="nickname">
-    <button class="btn btn-primary" onclick="App.Lobby.startHost()">創建房間</button>
-    <button class="btn btn-secondary" onclick="App.Lobby.startJoin()">加入房間</button>
-  </div>
-  <button class="btn btn-secondary" onclick="App.Lobby.goHome()">← 返回</button>
+  <button class="btn btn-secondary" onclick="App.Lobby.backFromGameSelect()">← 返回</button>
 </div>
 
 <!-- Multiplayer Mode Selection Screen -->
@@ -142,58 +132,7 @@
     </p>
     <div class="mode-choice-grid" id="mode-choice-grid"></div>
   </div>
-  <button class="btn btn-secondary" onclick="App.Lobby.showGameSelect('multiplayer')">← 返回遊戲選擇</button>
-</div>
-
-<!-- Host Screen -->
-<div id="screen-host" class="screen">
-  <div class="card">
-    <h2>創建房間</h2>
-    <p style="font-size:.85rem;color:var(--muted);margin-bottom:12px">
-      步驟 1：複製下方邀請碼，傳給對方
-    </p>
-    <textarea id="offer-code" class="code-area" readonly placeholder="產生中..."></textarea>
-    <button class="btn-small btn-copy" onclick="App.Common.copyText('offer-code')">複製邀請碼</button>
-  </div>
-  <div class="card">
-    <p style="font-size:.85rem;color:var(--muted);margin-bottom:12px">
-      步驟 2：貼上對方的回應碼，然後按連線
-    </p>
-    <textarea id="answer-input" class="code-area" placeholder="貼上對方的回應碼..."></textarea>
-    <button class="btn btn-primary" id="btn-connect-host" onclick="App.Lobby.connectHost()">連線</button>
-  </div>
-  <div class="card" id="host-retry-card" style="display:none">
-    <p style="text-align:center;color:var(--muted);font-size:.9rem;margin-bottom:12px">連線已中斷</p>
-    <button class="btn btn-primary" onclick="App.Lobby.retryHost()">重新產生邀請碼</button>
-  </div>
-  <button class="btn btn-secondary" onclick="App.Lobby.goHome()">← 返回</button>
-</div>
-
-<!-- Join Screen -->
-<div id="screen-join" class="screen">
-  <div class="card">
-    <h2>加入房間</h2>
-    <p style="font-size:.85rem;color:var(--muted);margin-bottom:12px">
-      步驟 1：貼上對方的邀請碼，然後按產生回應碼
-    </p>
-    <textarea id="offer-input" class="code-area" placeholder="貼上對方的邀請碼..."></textarea>
-    <button class="btn btn-primary" id="btn-gen-answer" onclick="App.Lobby.generateAnswer()">產生回應碼</button>
-  </div>
-  <div class="card" id="join-answer-card" style="display:none">
-    <p style="font-size:.85rem;color:var(--muted);margin-bottom:12px">
-      步驟 2：複製下方回應碼，傳給對方，等他連線
-    </p>
-    <textarea id="answer-code" class="code-area" readonly></textarea>
-    <button class="btn-small btn-copy" onclick="App.Common.copyText('answer-code')">複製回應碼</button>
-    <p style="text-align:center;margin-top:12px;color:var(--muted);font-size:.85rem">
-      <span class="spinner"></span>等待對方連線...
-    </p>
-  </div>
-  <div class="card" id="join-retry-card" style="display:none">
-    <p style="text-align:center;color:var(--muted);font-size:.9rem;margin-bottom:12px">連線已中斷</p>
-    <button class="btn btn-primary" onclick="App.Lobby.retryJoin()">重新輸入邀請碼</button>
-  </div>
-  <button class="btn btn-secondary" onclick="App.Lobby.goHome()">← 返回</button>
+  <button class="btn btn-secondary" onclick="App.Lobby.showGameSelect('room')">← 返回遊戲選擇</button>
 </div>
 
 <!-- Waiting Screen -->
@@ -219,7 +158,6 @@
 <script src="js/roomSession.js"></script>
 <script src="js/firebaseConfig.js"></script>
 <script src="js/signaling.js"></script>
-<script src="js/webrtc.js"></script>
 <script src="js/gameManager.js"></script>
 <script src="games/guessColor/guessColor.js"></script>
 <script src="games/bigDee/bigDee.js"></script>

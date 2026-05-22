@@ -24,14 +24,6 @@ App.Common = {
     }
   },
 
-  encodeSDP: function(sdp) {
-    return btoa(unescape(encodeURIComponent(sdp)));
-  },
-
-  decodeSDP: function(b64) {
-    return decodeURIComponent(escape(atob(b64)));
-  },
-
   showScreen: function(id) {
     document.querySelectorAll('.screen').forEach(function(s) { s.classList.remove('active'); });
     var el = document.getElementById('screen-' + id);

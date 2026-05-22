@@ -26,23 +26,35 @@
         "maxPlayers": {
           ".validate": "newData.isNumber() && newData.val() >= 1 && newData.val() <= 8"
         },
+        "activeGameId": {
+          ".validate": "newData.isString() && newData.val().length <= 40"
+        },
+        "activeMode": {
+          ".validate": "newData.isString() && newData.val().length <= 20"
+        },
         "createdAt": {
           ".validate": "newData.isNumber()"
         },
         "updatedAt": {
           ".validate": "newData.isNumber()"
         },
-        "players": {
+        "members": {
           "$clientId": {
             ".validate": "$clientId.matches(/^[A-Za-z0-9-]{8,80}$/) && newData.hasChildren(['name', 'role', 'online', 'authUid'])",
             "name": {
               ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 12 && newData.val().matches(/^[A-Za-z0-9\\u4e00-\\u9fff]+$/)"
             },
             "role": {
-              ".validate": "newData.val() === 'player'"
+              ".validate": "newData.val() === 'host' || newData.val() === 'member'"
             },
             "online": {
               ".validate": "newData.isBoolean()"
+            },
+            "presence": {
+              ".validate": "newData.isString() && newData.val().matches(/^(lobby|playing|spectating)$/)"
+            },
+            "queueStatus": {
+              ".validate": "newData.isString() && newData.val().matches(/^(none|queued)$/)"
             },
             "authUid": {
               ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 128"
@@ -59,75 +71,50 @@
             "$other": {
               ".validate": false
             }
+          }
+        },
+        "queue": {
+          "$clientId": {
+            ".validate": "$clientId.matches(/^[A-Za-z0-9-]{8,80}$/) && newData.hasChildren(['name', 'queuedAt'])",
+            "name": {
+              ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 12 && newData.val().matches(/^[A-Za-z0-9\\u4e00-\\u9fff]+$/)"
+            },
+            "queuedAt": {
+              ".validate": "newData.isNumber()"
+            },
+            "$other": {
+              ".validate": false
+            }
+          }
+        },
+        "chat": {
+          "$messageId": {
+            ".validate": "newData.hasChildren(['from', 'name', 'text', 'createdAt'])",
+            "from": {
+              ".validate": "newData.isString() && newData.val().matches(/^[A-Za-z0-9-]{8,80}$/)"
+            },
+            "name": {
+              ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 12 && newData.val().matches(/^[A-Za-z0-9\\u4e00-\\u9fff]+$/)"
+            },
+            "text": {
+              ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 120"
+            },
+            "createdAt": {
+              ".validate": "newData.isNumber()"
+            },
+            "$other": {
+              ".validate": false
+            }
+          }
+        },
+        "players": {
+          "$clientId": {
+            ".validate": false
           }
         },
         "spectators": {
           "$clientId": {
-            ".validate": "$clientId.matches(/^[A-Za-z0-9-]{8,80}$/) && newData.hasChildren(['name', 'role', 'online', 'authUid'])",
-            "name": {
-              ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 12 && newData.val().matches(/^[A-Za-z0-9\\u4e00-\\u9fff]+$/)"
-            },
-            "role": {
-              ".validate": "newData.val() === 'spectator'"
-            },
-            "online": {
-              ".validate": "newData.isBoolean()"
-            },
-            "authUid": {
-              ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 128"
-            },
-            "joinedAt": {
-              ".validate": "newData.isNumber()"
-            },
-            "lastSeenAt": {
-              ".validate": "newData.isNumber()"
-            },
-            "connectionVersion": {
-              ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 999999"
-            },
-            "$other": {
-              ".validate": false
-            }
-          }
-        },
-        "offers": {
-          "$clientId": {
-            ".validate": "$clientId.matches(/^[A-Za-z0-9-]{8,80}$/) && newData.hasChildren(['from', 'sdp', 'createdAt'])",
-            "from": {
-              ".validate": "newData.isString() && newData.val().matches(/^[A-Za-z0-9-]{8,80}$/)"
-            },
-            "sdp": {
-              ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 300000"
-            },
-            "connectionVersion": {
-              ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 999999"
-            },
-            "createdAt": {
-              ".validate": "newData.isNumber()"
-            },
-            "$other": {
-              ".validate": false
-            }
-          }
-        },
-        "answers": {
-          "$clientId": {
-            ".validate": "$clientId.matches(/^[A-Za-z0-9-]{8,80}$/) && newData.hasChildren(['from', 'sdp', 'createdAt'])",
-            "from": {
-              ".validate": "newData.isString() && newData.val().matches(/^[A-Za-z0-9-]{8,80}$/)"
-            },
-            "sdp": {
-              ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 300000"
-            },
-            "connectionVersion": {
-              ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 999999"
-            },
-            "createdAt": {
-              ".validate": "newData.isNumber()"
-            },
-            "$other": {
-              ".validate": false
-            }
+            ".validate": false
           }
         },
         "gameActions": {
@@ -161,6 +148,9 @@
         },
         "gameState": {
           ".validate": "newData.val() === null || newData.hasChildren(['gameId', 'mode', 'roundId', 'state', 'updatedBy', 'updatedAt'])"
+        },
+        "currentRound": {
+          ".validate": "newData.val() === null || newData.hasChildren(['gameId', 'mode', 'roundId', 'players', 'spectators', 'startedAt'])"
         },
         "$other": {
           ".validate": false

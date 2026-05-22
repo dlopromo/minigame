@@ -28,7 +28,7 @@
   }
 
   function isRoomReconnecting() {
-    return isRoomMode() && !isSpectator() && opts.mode !== 'single' && !App.WebRTC.isConnected() && !canUseFirebaseActionFallback();
+    return false;
   }
 
   function getPlayerIndex() {
@@ -109,10 +109,7 @@
     if (isRoomMode() && opts.isHost) {
       return;
     }
-    var sent = App.WebRTC.send({ type: 'game_msg', payload: msg });
-    if (!sent && canUseFirebaseActionFallback()) {
-      App.Lobby.sendRoomGameAction(msg);
-    }
+    if (canUseFirebaseActionFallback()) App.Lobby.sendRoomGameAction(msg);
   }
 
   function makeGuessRecord(colors, result, extra) {

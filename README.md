@@ -19,12 +19,11 @@ Current games:
 Current modes:
 
 - Local play
-- Manual two-player WebRTC connection
-- Firebase short-code room with players and spectators
+- Firebase Party Room with queue, chat, spectators, and AI fill
 
 鋤大DEE and 鬥地主 support local single-player and short-code room starts. In
-rooms, real users are seated first, extra users become spectators/queue, and
-empty legal seats are filled by AI.
+rooms, queued users are seated first, extra users stay as spectators/queue, and
+empty legal seats are filled by AI when the game supports it.
 
 ## Firebase Setup
 
@@ -64,15 +63,15 @@ validated before writes.
 Short-code rooms generate a random 4-digit numeric room code.
 
 - Username is required, capped at 12 characters, and may only use Chinese characters, English letters, or digits.
-- Host chooses the game and multiplayer mode.
+- Host chooses the game and multiplayer mode from the persistent Party Room.
+- Room chat and queue stay alive across game switches.
+- Users must join the queue to play; unqueued users are spectators.
 - Room state in Firebase starts each round.
 - Firebase room/signaling state works over WAN.
 - Room play is Firebase-first: client actions go through `gameActions`, and `gameState` is the source of truth for turn and board updates.
-- WebRTC DataChannel remains available for manual two-player mode and future optional acceleration, but room mode must not depend on it.
 - Host clears Firebase `gameActions` after processing, so the fallback queue does not keep growing.
 - Guess Color, 鋤大DEE, and 鬥地主 store Firebase `gameState` snapshots so refresh can restore active room state.
-- Room lobby includes a compact Room Info panel for status, transport, host, round, peers, and fallback queue size.
-- Extra users become spectators.
+- Room lobby includes a compact Room Info panel for status, Firebase transport, host, round, queue, and fallback action count.
 
 See the detailed room contract in:
 
@@ -102,12 +101,11 @@ Useful checks:
 node --check minigame/js/firebaseConfig.js
 node --check minigame/js/signaling.js
 node --check minigame/js/lobby.js
-node --check minigame/js/webrtc.js
 node --check minigame/games/guessColor/guessColor.js
 ```
 
 ## Roadmap
 
-- Improve card-game spectator god view and add richer seat management before the next round.
+- Add host controls for manually promoting/removing queued members.
 - Add arcade-style leaderboards.
-- Improve multiplayer reconnection and host recovery.
+- Improve host recovery when the host stays offline for too long.

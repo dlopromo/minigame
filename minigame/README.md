@@ -10,10 +10,9 @@ This folder contains the static mini-game app served by GitHub Pages.
 - `js/common.js`: shared utilities.
 - `js/roomSession.js`: `localStorage` room resume ticket helper.
 - `js/firebaseConfig.js`: Firebase web config.
-- `js/signaling.js`: Firebase Realtime Database room signaling.
-- `js/webrtc.js`: manual two-player WebRTC and host-mesh DataChannel support.
+- `js/signaling.js`: Firebase Realtime Database party room, queue, chat, actions, and snapshots.
 - `js/gameManager.js`: game registration and lifecycle.
-- `js/lobby.js`: local play, manual multiplayer, short-code room flow.
+- `js/lobby.js`: local play and Firebase Party Room flow.
 - `games/<gameId>/<gameId>.js`: game logic and rendering.
 - `games/<gameId>/<gameId>.css`: game-specific styles.
 
@@ -34,7 +33,6 @@ App.GameManager.register({
   description: 'Hit & Blow',
   supportsSingle: true,
   supportsMultiplayer: true,
-  supportsManualMultiplayer: true,
   minPlayers: 1,
   maxPlayers: 2,
   allowSpectators: true,
@@ -68,28 +66,28 @@ App.GameManager.register({
 }
 ```
 
-## Multiplayer Layers
+## Multiplayer Layer
 
-There are two multiplayer paths:
+There is one multiplayer path:
 
-- Manual WebRTC: old two-player offer/answer flow.
-- Short-code room: Firebase RTDB room state plus host-mesh WebRTC.
+- Firebase Party Room: RTDB stores members, queue, chat, round start, actions,
+  and game snapshots.
 
-Short-code rooms use Firebase as the round-start authority.
-Firebase works over WAN for room/signaling state. WebRTC uses public STUN servers for WAN/NAT traversal; very restrictive networks may still need TURN, which is not part of this MVP.
+Party Rooms use Firebase as the room and round authority. Firebase works over
+WAN, so friends do not need to be on the same LAN.
 Guess Color, 鋤大DEE, and 鬥地主 room play are Firebase-first: non-host clients write actions to `gameActions`, the host applies them, and `gameState` becomes the source of truth for board/turn/result updates.
 The host removes each `gameActions/{actionId}` after processing or discarding it, so old fallback actions do not replay forever.
-Manual two-player mode still uses WebRTC directly. Room mode should not require WebRTC to stay playable.
-Refresh resume is Level 2 for active room games: the same browser returns to the same room/seat, WebRTC is rebuilt automatically when available, and the game restores its mutable state from Firebase `gameState`.
+Refresh resume is Firebase-only: the same browser returns to the same room and
+restores active game state from `gameStart` and `gameState`.
 
 Room lobby has a compact debug panel:
 
 - `狀態`: Firebase room lifecycle.
-- `傳輸`: current transport summary.
+- `傳輸`: always Firebase.
 - `房主`: current host display name.
 - `回合`: active round id suffix.
-- `Peers`: open WebRTC peers / known peer records.
-- `Queue`: pending Firebase fallback actions.
+- `隊列`: queued users.
+- `Queue`: pending Firebase action count.
 
 ## Big Dee MVP
 
@@ -97,8 +95,8 @@ Room lobby has a compact debug panel:
 
 - `supportsSingle: true`
 - `supportsMultiplayer: true`
-- `supportsManualMultiplayer: false`
 - `maxPlayers: 4`
+- `minRoomPlayers: 2`
 - `aiFill: true`
 - Four seats: real players first, then AI fill.
 - Extra room members become spectators/queue.
@@ -117,8 +115,8 @@ Room lobby has a compact debug panel:
 
 - `supportsSingle: true`
 - `supportsMultiplayer: true`
-- `supportsManualMultiplayer: false`
 - `minPlayers: 1`
+- `minRoomPlayers: 2`
 - `maxPlayers: 3`
 - `allowSpectators: true`
 - `aiFill: true`
@@ -144,10 +142,10 @@ Room games should treat spectators as read-only full-state viewers. When a game
 uses AI fill, AI should make the best available decision from known state rather
 than random legal moves.
 
-Game-specific messages must be wrapped as:
+Game-specific multiplayer actions must be sent through:
 
 ```js
-App.WebRTC.send({ type: 'game_msg', payload: msg });
+App.Lobby.sendRoomGameAction(msg);
 ```
 
 ## Adding A New Game
@@ -162,22 +160,22 @@ App.WebRTC.send({ type: 'game_msg', payload: msg });
    - `role: "player"`
    - `role: "spectator"`
    - `initialState`
-8. Add tests for local mode, manual multiplayer, and short-code room mode.
+8. Add tests for local mode and Party Room mode.
 
 ## Room Seat Rules
 
 For room games, lobby seating is shared:
 
 ```text
-online real users ordered by joinedAt
+online queued users ordered by queuedAt
         |
         v
 first maxPlayers users -> player seats
-remaining users        -> spectators / queue
+remaining members      -> spectators / queue
 empty seats + aiFill   -> AI player records in gameStart only
 ```
 
-AI seats are not written into `rooms/{code}/players`; they only exist inside
+AI seats are not written into `rooms/{code}/members`; they only exist inside
 `gameStart.players` and the game snapshot. Card games use the host as referee:
 the host accepts actions, runs AI, writes `gameState`, and other clients render
 that snapshot.
@@ -199,7 +197,6 @@ Static checks:
 node --check minigame/js/firebaseConfig.js
 node --check minigame/js/signaling.js
 node --check minigame/js/lobby.js
-node --check minigame/js/webrtc.js
 node --check minigame/games/guessColor/guessColor.js
 node --check minigame/games/bigDee/bigDee.js
 node --check minigame/games/douDizhu/douDizhu.js
@@ -213,10 +210,11 @@ Manual checks:
 - Local 鬥地主 starts, bidding resolves, bottom cards reveal, and AI turns progress.
 - Empty username is rejected for multiplayer.
 - Special-character username is rejected for multiplayer.
-- Host creates a 4-digit room.
-- Joiner enters room lobby.
-- Host starts Guess Color and joiner enters the game without waiting forever.
-- Third user becomes spectator.
+- Host creates a 4-digit Party Room.
+- Joiner enters room lobby and can chat.
+- Queue toggle updates the queue list.
+- Host starts Guess Color with queued users and joiner enters the game without waiting forever.
+- Extra or unqueued users remain spectators.
 
 ## Agent Notes
 

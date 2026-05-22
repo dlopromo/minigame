@@ -10,58 +10,38 @@ Related room lifecycle specs:
 ## Architecture
 
 - `index.html` owns the static screens and loads scripts in this order:
-  Firebase compat CDN, `common.js`, `roomSession.js`, `firebaseConfig.js`, `signaling.js`, `webrtc.js`, `gameManager.js`, game modules, then `lobby.js`.
+  Firebase compat CDN, `common.js`, `roomSession.js`, `firebaseConfig.js`, `signaling.js`, `gameManager.js`, game modules, then `lobby.js`.
 - `App.Common` owns shared UI utilities:
-  toast display, clipboard copy, SDP encode/decode, and screen switching.
-- `App.WebRTC` owns peer connection setup and the data channel.
-  It supports the original single peer connection and the newer host-mesh peer map.
-  It uses public STUN servers so Firebase-signaled peers can connect across WAN
-  when NAT traversal succeeds. TURN is not configured.
-- `App.Signaling` owns Firebase Realtime Database room signaling for 4-digit numeric room codes.
-  It uses Anonymous Auth and stores temporary room/lobby/round-start/SDP data.
+  toast display, clipboard copy, and screen switching.
+- `App.Signaling` owns Firebase Realtime Database Party Rooms for 4-digit numeric room codes.
+  It uses Anonymous Auth and stores room members, queue, chat, round-start data,
+  Firebase actions, and snapshots.
   Firebase `auth.uid` is stored as metadata, but room seats use a stable browser client id so refresh can resume the same seat.
   It also exposes Firebase `gameActions` as room-mode action delivery. Host
   deletes processed actions so the queue does not become history.
 - `App.RoomSession` owns the `localStorage` resume ticket used by short-code rooms.
 - `App.GameManager` registers games and starts the active game module in `#game-container`.
 - `App.Lobby` owns app-level flow:
-  local play, multiplayer connection, game selection, multiplayer mode selection, and launching games.
-- Each game module owns its own rules, rendering, and `game_msg` message handling.
+  local play, Party Room, queue, chat, game selection, multiplayer mode selection, and launching games.
+- Each game module owns its own rules, rendering, and Firebase action handling.
 
 ## Lobby Flow
 
-The home screen has three entry points:
+The home screen has two entry points:
 
 - `本機遊玩`
   - Sets lobby context to `single`.
   - Shows game selection.
   - Starts selected game with `mode: "single"`.
-- `短碼房間`
+- `Party Room`
   - Uses Firebase RTDB when `js/firebaseConfig.js` is filled.
   - Host creates a 4-digit numeric room code.
   - Joiners enter the room code and a required username.
-  - Lobby stores users under `players` or `spectators`.
-  - Host creates a WebRTC data channel to each online non-host user.
+  - Lobby stores users under `members`.
+  - Users press `加入隊列` to be seated in the next round.
+  - Unqueued and overflow users remain spectators.
+  - Room chat persists across games.
   - Host chooses game and mode, writes `gameStart` to Firebase, then launches the game.
-- `手動雙人`
-  - Shows the manual WebRTC offer/answer flow.
-  - Host creates an offer.
-  - Joiner pastes the offer and creates an answer.
-  - Host accepts the answer.
-  - After the data channel opens, host chooses game and mode.
-
-After multiplayer connection opens:
-
-- Both peers exchange `{ type: "player_info", name }`.
-- Host sees multiplayer game selection.
-- Joiner sees waiting screen.
-- Host selects a game.
-- Lobby sends `{ type: "game_select", gameId }`.
-- If the game has more than one multiplayer mode, host chooses mode.
-- Lobby sends:
-  - `{ type: "mode_select", mode }`
-  - `{ type: "game_start", gameId, mode }`
-- Both peers then call `App.GameManager.startGame(gameId, opts)`.
 
 Current Guess Color multiplayer modes:
 
@@ -81,7 +61,7 @@ Current Dou Dizhu / 鬥地主 mode:
   seats filled by AI, extras as spectators/queue. Four-player 鬥地主 is out of
   scope. Host applies bids/plays/passes and writes `gameState`.
 
-## WebRTC Message Layers
+## Firebase Room Layers
 
 Short-code room state:
 
@@ -92,10 +72,10 @@ Short-code room state:
   - `mode`
   - `roundId`
   - `maxPlayers`
-  - `players/{clientId}`
-  - `spectators/{clientId}`
-  - `offers/{clientId}`
-  - `answers/{clientId}`
+  - `members/{clientId}`
+  - `queue/{clientId}`
+  - `chat/{messageId}`
+  - `currentRound`
 - `gameStart`
 - `gameState`
   - `gameActions/{actionId}`
@@ -111,9 +91,7 @@ Short-code room state:
 - `rolesByClientId`
 - `initialState`
 
-Games should use `initialState` to enter the first game screen in short-code rooms.
-They must not wait for WebRTC `round_start` before rendering the round.
-They must also ignore WebRTC `game_start` while in short-code room context.
+Games should use `initialState` to enter the first game screen in Party Rooms.
 Firebase `gameStart` is the only room-start authority so each client builds a
 payload with its own `selfId`, role, and player name.
 
@@ -126,54 +104,34 @@ Room roles:
   - Cannot submit game actions.
   - Joins as spectator when the game is full or already started.
 
-During an active short-code room game, lobby watchers forward Firebase room
+During an active Party Room game, lobby watchers forward Firebase room
 membership changes into the active game as a local `room_update` message. Games
 should refresh room info UI from `players` and `spectators` without treating it
 as an in-game action.
 The same `room_update` payload includes `gameState`, so games can restore or
 refresh their Firebase snapshot.
 
-Top-level lobby messages:
-
-- `player_info`
-  - Payload: `{ name }`
-  - Updates opponent display name.
-- `game_select`
-  - Payload: `{ gameId }`
-  - Lets joiner know the host selected a game.
-- `mode_select`
-  - Payload: `{ mode }`
-  - Informational mode selection message.
-- `game_start`
-  - Payload: `{ gameId, mode, room? }`
-  - Starts the selected game on the receiving peer.
-- `game_msg`
-  - Payload: arbitrary game-owned message.
-  - Routed to `App.GameManager.handleMessage`.
-
-Game modules should only send game-specific messages through:
+Game modules should send non-host player actions through:
 
 ```js
-App.WebRTC.send({ type: 'game_msg', payload: msg });
+App.Lobby.sendRoomGameAction(msg);
 ```
 
-In short-code rooms, correctness is Firebase-first. Guess Color non-host clients
-send game actions through `App.Lobby.sendRoomGameAction()`, which writes
+In Party Rooms, correctness is Firebase-first. Non-host clients send game
+actions through `App.Lobby.sendRoomGameAction()`, which writes
 `rooms/{code}/gameActions`. Host watches those actions, applies them locally,
 and writes `gameState`. Processed and stale actions are removed by the host after
-handling. WebRTC can still exist in the room, but the game must not depend on it
-for turn progression.
+handling.
 
 Short-code room lobby has a Room Info panel:
 
 ```text
 狀態 / 傳輸 / 房主
-回合 / Peers / Queue
+回合 / 隊列 / Queue
 ```
 
-Use this first when debugging stuck rooms. A rising `Queue` means fallback
-actions are arriving but not being cleared; `Firebase` transport means the room
-is relying on RTDB fallback rather than an open WebRTC data channel.
+Use this first when debugging stuck rooms. A rising action `Queue` means actions
+are arriving but not being cleared by the host.
 
 ## Guess Color Shared Rules
 
@@ -329,8 +287,7 @@ Single mode behavior:
 Coop mode behavior:
 
 - Host generates one computer code.
-- Manual two-player mode sends it to joiner using `round_start`.
-- Short-code room mode stores it in `gameStart.initialState.computerCode`.
+- Party Room mode stores it in `gameStart.initialState.computerCode`.
 - Host starts first.
 - Players alternate turns.
 - There is no 12-guess failure limit.
@@ -339,26 +296,22 @@ Coop mode behavior:
 - Both players see the same computer answer.
 - Result screen shows the merged turn history.
 
-Coop game messages:
+Coop Firebase actions:
 
-- `round_start`
-  - Payload: `{ code }`
-  - Sent by host when a multiplayer round starts.
 - `coop_guess`
   - Payload: `{ colors, hits, blows, code? }`
   - Sent after a coop guess.
   - `code` is included when the guess ends the game.
 - `game_over`
   - Payload: `{ winner: "team", code }`
-  - Ends the coop round for the peer.
+  - Ends the coop round for other clients through `gameState`.
 
 ## Guess Color Race Mode
 
 Race mode behavior:
 
 - Host generates one computer code.
-- Manual two-player mode sends it to joiner using `round_start`.
-- Short-code room mode stores it in `gameStart.initialState.computerCode`.
+- Party Room mode stores it in `gameStart.initialState.computerCode`.
 - Both players can guess at the same time.
 - There is no turn lock.
 - First player to guess 4 hits wins.
@@ -374,11 +327,8 @@ Race mode behavior:
   - Computer answer.
   - Local guess history and opponent guess history.
 
-Race game messages:
+Race Firebase actions:
 
-- `round_start`
-  - Payload: `{ code }`
-  - Sent by host when a race starts.
 - `race_progress`
   - Payload: `{ attempts, elapsed, finished }`
   - Sent after every local guess.
@@ -386,7 +336,7 @@ Race game messages:
 - `race_finish`
   - Payload: `{ attempts, elapsed, guesses, code }`
   - Sent when a player finishes.
-  - Ends the race for the opponent and supplies final history.
+  - Ends the race for other clients through `gameState` and supplies final history.
 
 ## Guess Color Spectator Mode
 
@@ -405,11 +355,8 @@ Guess Color accepts `opts.role`.
 - Single rematch:
   - Generates a new local code.
   - Starts a fresh single round.
-- Multiplayer rematch:
-  - Non-host sends `rematch` and waits.
-  - Host receives `rematch`, generates a new code, sends `round_start`, and starts the new round.
-  - Host can also press rematch directly and start a new round.
-- Short-code room rematch currently returns to room/lobby flow rather than using direct in-game rematch.
+- Party Room rematch currently returns to room/lobby flow; host starts the next
+  round from the room.
 
 ## Username Rules
 
@@ -438,11 +385,10 @@ The current design direction is Office Calm:
 
 - Short room codes require Firebase config in `js/firebaseConfig.js`.
   Without it, the short-code UI stays visible but shows a setup warning.
-- Host-generated answer is shared with the peer.
+- Host-generated answer is stored in `gameStart.initialState`.
   This is acceptable for friendly play but is not cheat-resistant.
-- Short-code multiplayer uses host mesh and has no host migration.
-- Short-code rooms support refresh resume: same room, same seat, automatic WebRTC rebuild.
-- Guess Color supports Level 2 snapshot restore through Firebase `gameState`.
-- Firebase is signaling/lobby only; it is not an authoritative game server.
-- Full multi-tab Firebase/WebRTC behavior should be manually tested with a real Firebase project before release.
+- Party Rooms have no host migration.
+- Party Rooms support refresh resume: same room, same member id, queue survives, and active game state restores from Firebase.
+- Firebase is the room/action/snapshot transport, but it is still not a cheat-proof authoritative game server.
+- Full multi-tab Firebase behavior should be manually tested with a real Firebase project before release.
 - `.DS_Store` may appear locally and should not be committed unless intentionally ignored or removed.

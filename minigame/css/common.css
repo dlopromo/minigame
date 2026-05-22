@@ -14,6 +14,7 @@ body{
 }
 .screen{display:none;width:100%;max-width:600px;padding:20px}
 .screen.active{display:block}
+#screen-room-lobby.screen{max-width:900px}
 #screen-game.screen{
   max-width:1120px;height:100dvh;padding:10px;
 }

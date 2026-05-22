@@ -4,14 +4,11 @@ App.Lobby = (function() {
   var playContext = null;
   var selectedGameId = null;
   var playerName = '';
-  var opponentName = '';
   var isHost = false;
   var gameActive = false;
   var roomState = null;
   var selfId = '';
-  var roomRole = 'player';
-  var peerOffers = {};
-  var peerAnswers = {};
+  var roomRole = 'member';
   var roomActionIds = {};
   var launchedRoomGameKey = '';
 
@@ -105,13 +102,7 @@ App.Lobby = (function() {
       return;
     }
 
-    playContext = 'multiplayer';
-    showScreen('connect');
-    var titleEl = document.getElementById('connect-title');
-    var descEl = document.getElementById('connect-desc');
-    if (titleEl) titleEl.textContent = '手動雙人連線';
-    if (descEl) descEl.textContent = '先完成連線，連線後由房主選擇遊戲和玩法。';
-    setTitle('手動雙人連線');
+    showRoomConnect();
   }
 
   function showRoomConnect() {
@@ -135,12 +126,42 @@ App.Lobby = (function() {
     });
   }
 
+  function getRoomMembers() {
+    return getPeople(roomState && roomState.members);
+  }
+
+  function getRoomQueue() {
+    var queue = roomState && roomState.queue ? roomState.queue : {};
+    var members = roomState && roomState.members ? roomState.members : {};
+    return Object.keys(queue).map(function(id) {
+      var item = queue[id] || {};
+      var member = members[id] || {};
+      return {
+        id: id,
+        name: item.name || member.name || '玩家',
+        queuedAt: item.queuedAt || 0,
+        online: member.online !== false,
+        role: member.role || 'member',
+        presence: member.presence || 'lobby',
+        queueStatus: 'queued'
+      };
+    }).filter(function(person) {
+      return person.online !== false;
+    }).sort(function(a, b) {
+      return (a.queuedAt || 0) - (b.queuedAt || 0);
+    });
+  }
+
   function getRoomPlayers() {
-    return getPeople(roomState && roomState.players);
+    if (roomState && roomState.gameStart && roomState.gameStart.players) return roomState.gameStart.players;
+    return [];
   }
 
   function getRoomSpectators() {
-    return getPeople(roomState && roomState.spectators);
+    if (roomState && roomState.gameStart && roomState.gameStart.spectators) return roomState.gameStart.spectators;
+    return getRoomMembers().filter(function(person) {
+      return !(roomState && roomState.queue && roomState.queue[person.id]);
+    });
   }
 
   function getGameMaxPlayers(gameId) {
@@ -154,22 +175,22 @@ App.Lobby = (function() {
   }
 
   function getSelfRole() {
-    if (!roomState || !selfId) return 'player';
-    if (roomState.players && roomState.players[selfId]) return 'player';
+    if (!roomState || !selfId) return 'member';
+    if (roomState.gameStart && roomState.gameStart.rolesByClientId && roomState.gameStart.rolesByClientId[selfId]) {
+      return roomState.gameStart.rolesByClientId[selfId];
+    }
+    if (roomState.members && roomState.members[selfId]) return roomState.members[selfId].role || 'member';
     return 'spectator';
   }
 
   function getSelfName() {
     if (!roomState || !selfId) return playerName;
-    var record = (roomState.players && roomState.players[selfId]) || (roomState.spectators && roomState.spectators[selfId]);
+    var record = roomState.members && roomState.members[selfId];
     return (record && record.name) || playerName;
   }
 
-  function getPeerTransport(personId) {
-    if (!App.WebRTC || personId === selfId) return '';
-    if (App.WebRTC.isPeerConnected && App.WebRTC.isPeerConnected(personId)) return 'WebRTC';
-    if (!isHost && roomState && personId === roomState.hostId && App.WebRTC.isConnected && App.WebRTC.isConnected()) return 'WebRTC';
-    return 'Firebase';
+  function isSelfQueued() {
+    return !!(roomState && roomState.queue && roomState.queue[selfId]);
   }
 
   function renderRoomDebug() {
@@ -177,32 +198,25 @@ App.Lobby = (function() {
     var status = document.getElementById('room-status-pill');
     var transport = document.getElementById('room-transport-pill');
     var round = document.getElementById('room-round-label');
-    var peers = document.getElementById('room-peers-label');
+    var queueLabel = document.getElementById('room-queue-label');
     var actions = document.getElementById('room-actions-label');
     var host = document.getElementById('room-host-label');
-    var statusMap = { lobby: 'Lobby', starting: 'Starting', playing: 'Playing' };
-    var peerIds = App.WebRTC && App.WebRTC.getPeerIds ? App.WebRTC.getPeerIds() : [];
-    var connectedPeers = peerIds.filter(function(peerId) {
-      return App.WebRTC.isPeerConnected && App.WebRTC.isPeerConnected(peerId);
-    });
+    var statusMap = { lobby: 'Party', starting: 'Starting', playing: 'Playing', result: 'Result' };
     var actionCount = Object.keys(roomState.gameActions || {}).length;
 
-    if (status) status.textContent = statusMap[roomState.status] || (roomState.status || 'Lobby');
-    if (transport) {
-      transport.textContent = connectedPeers.length > 0 || (App.WebRTC && App.WebRTC.isConnected && App.WebRTC.isConnected())
-        ? 'WebRTC + Firebase'
-        : 'Firebase';
-    }
+    if (status) status.textContent = statusMap[roomState.status] || (roomState.status || 'Party');
+    if (transport) transport.textContent = 'Firebase';
     if (round) round.textContent = roomState.roundId ? roomState.roundId.slice(-8) : '未開始';
-    if (peers) peers.textContent = connectedPeers.length + '/' + peerIds.length;
+    if (queueLabel) queueLabel.textContent = getRoomQueue().length + ' 人';
     if (actions) actions.textContent = String(actionCount);
     if (host) {
-      var hostRecord = (roomState.players && roomState.players[roomState.hostId]) || (roomState.spectators && roomState.spectators[roomState.hostId]);
+      var hostRecord = roomState.members && roomState.members[roomState.hostId];
       host.textContent = hostRecord && hostRecord.name ? hostRecord.name : '未知';
     }
   }
 
-  function renderPeople(targetId, people) {
+  function renderPeople(targetId, people, options) {
+    options = options || {};
     var target = document.getElementById(targetId);
     if (!target) return;
     target.innerHTML = '';
@@ -215,13 +229,14 @@ App.Lobby = (function() {
       row.className = 'room-person' + (person.online === false ? ' offline' : '');
       var info = el('div');
       info.appendChild(el('div', 'room-person-name', person.name || '玩家'));
-      info.appendChild(el('div', 'room-person-meta', person.online === false ? '離線' : '在線'));
+      var meta = person.online === false ? '離線' : (options.queue || person.queueStatus === 'queued' ? '隊列中' : person.presence === 'playing' ? '遊戲中' : '觀戰 / 房間中');
+      info.appendChild(el('div', 'room-person-meta', meta));
       var badges = el('div');
       badges.className = 'room-person-badges';
       if (roomState && person.id === roomState.hostId) badges.appendChild(el('span', 'room-badge host', '房主'));
       if (person.id === selfId) badges.appendChild(el('span', 'room-badge self', '你'));
-      var transport = getPeerTransport(person.id);
-      if (transport) badges.appendChild(el('span', 'room-badge transport', transport));
+      if (options.queue || person.queueStatus === 'queued') badges.appendChild(el('span', 'room-badge queue', '排隊'));
+      if (person.isAI) badges.appendChild(el('span', 'room-badge ai', 'AI'));
       row.appendChild(info);
       row.appendChild(badges);
       target.appendChild(row);
@@ -236,19 +251,43 @@ App.Lobby = (function() {
     var roleLabel = document.getElementById('room-role-label');
     if (roleLabel) {
       var roleText = roomRole === 'player' ? '玩家' : '觀戰';
+      if (roomRole === 'host') roleText = '房主';
+      if (roomRole === 'member') roleText = isSelfQueued() ? '隊列中' : '觀戰';
       var statusText = roomState.status === 'playing'
         ? '遊戲進行中'
         : roomState.status === 'starting'
           ? '遊戲準備中'
-          : '等待房主選擇遊戲';
+          : 'Party Room';
       roleLabel.textContent = '你目前是：' + roleText + '　' + statusText;
     }
-    renderPeople('room-player-list', getRoomPlayers());
-    renderPeople('room-spectator-list', getRoomSpectators());
+    renderPeople('room-player-list', getRoomMembers());
+    renderPeople('room-spectator-list', getRoomQueue(), { queue: true });
+    renderRoomChat();
     renderRoomDebug();
     var actions = document.getElementById('room-host-actions');
     if (actions) actions.style.display = isHost ? 'block' : 'none';
+    var queueBtn = document.getElementById('room-queue-toggle');
+    if (queueBtn) {
+      queueBtn.textContent = isSelfQueued() ? '離開隊列' : '加入隊列';
+      queueBtn.className = isSelfQueued() ? 'btn btn-secondary' : 'btn btn-primary';
+    }
     showScreen('room-lobby');
+  }
+
+  function renderRoomChat() {
+    var target = document.getElementById('room-chat-list');
+    if (!target || !roomState) return;
+    var messages = getPeople(roomState.chat).sort(function(a, b) {
+      return (a.createdAt || 0) - (b.createdAt || 0);
+    }).slice(-60);
+    target.innerHTML = messages.length ? '' : '<p class="room-list-empty">未有訊息</p>';
+    messages.forEach(function(msg) {
+      var row = el('div', 'room-chat-message');
+      row.appendChild(el('strong', '', msg.name || '玩家'));
+      row.appendChild(el('span', '', msg.text || ''));
+      target.appendChild(row);
+    });
+    target.scrollTop = target.scrollHeight;
   }
 
   function notifyRoomUpdateToGame() {
@@ -283,19 +322,13 @@ App.Lobby = (function() {
         return;
       }
       roomState = state;
+      if (gameActive && state.status !== 'playing') {
+        App.GameManager.endGame();
+        return;
+      }
       notifyRoomUpdateToGame();
       maybeLaunchRoomGameFromState();
       if (!gameActive) renderRoomLobby();
-      ensureHostOffers();
-    });
-    App.Signaling.watchAnswers(function(peerId, answer) {
-      var version = answer && (answer.connectionVersion || answer.createdAt || 0);
-      if (!answer || !answer.sdp || peerAnswers[peerId] === version) return;
-      peerAnswers[peerId] = version;
-      App.WebRTC.acceptPeerAnswer(peerId, answer.sdp).catch(function(e) {
-        App.Common.showToast('連線回應失敗：' + e.message, 'error');
-        peerAnswers[peerId] = null;
-      });
     });
     App.Signaling.watchGameActions(function(actionId, action) {
       if (roomActionIds[actionId] || !action || !action.payload) return;
@@ -305,7 +338,6 @@ App.Lobby = (function() {
       }
       roomActionIds[actionId] = true;
       App.GameManager.handleMessage(action.payload);
-      App.WebRTC.broadcast({ type: 'game_msg', payload: action.payload }, action.from);
       if (App.Signaling.clearGameAction) App.Signaling.clearGameAction(actionId).catch(function(e) {
         App.Common.showToast('清理同步佇列失敗：' + e.message, 'error');
       });
@@ -320,37 +352,13 @@ App.Lobby = (function() {
         return;
       }
       roomState = state;
+      if (gameActive && state.status !== 'playing') {
+        App.GameManager.endGame();
+        return;
+      }
       notifyRoomUpdateToGame();
       maybeLaunchRoomGameFromState();
       if (!gameActive) renderRoomLobby();
-    });
-    App.Signaling.watchOffers(function(offer) {
-      var version = offer && (offer.connectionVersion || offer.createdAt || 0);
-      if (!offer || !offer.sdp || peerAnswers[selfId] === version) return;
-      peerAnswers[selfId] = version;
-      App.WebRTC.createPeerAnswer(roomState.hostId || 'host', offer.sdp).then(function(answer) {
-        return App.Signaling.setAnswer(answer, version);
-      }).catch(function(e) {
-        App.Common.showToast('房間連線失敗：' + e.message, 'error');
-        peerAnswers[selfId] = null;
-      });
-    });
-  }
-
-  function ensureHostOffers() {
-    if (!isHost || !roomState) return;
-    var people = getRoomPlayers().concat(getRoomSpectators());
-    people.forEach(function(person) {
-      var version = person.connectionVersion || 0;
-      if (person.id === selfId || person.online === false) return;
-      if (peerOffers[person.id] === version) return;
-      peerOffers[person.id] = version;
-      App.WebRTC.createPeerOffer(person.id).then(function(offer) {
-        return App.Signaling.setOffer(person.id, offer, version);
-      }).catch(function(e) {
-        App.Common.showToast('建立玩家連線失敗：' + e.message, 'error');
-        peerOffers[person.id] = null;
-      });
     });
   }
 
@@ -367,8 +375,6 @@ App.Lobby = (function() {
       playContext = 'room';
       isHost = true;
       selfId = room.selfId;
-      peerOffers = {};
-      peerAnswers = {};
       roomActionIds = {};
       saveRoomSession(room);
       watchRoomAsHost();
@@ -400,7 +406,6 @@ App.Lobby = (function() {
       isHost = false;
       selfId = room.selfId;
       roomRole = room.role;
-      peerAnswers = {};
       roomActionIds = {};
       saveRoomSession(room);
       watchRoomAsGuest();
@@ -415,11 +420,7 @@ App.Lobby = (function() {
     var grid = document.getElementById('game-grid');
     grid.innerHTML = '';
     App.GameManager.getGames().forEach(function(game) {
-      var supported = playContext === 'single'
-        ? game.supportsSingle
-        : playContext === 'multiplayer'
-          ? game.supportsMultiplayer && game.supportsManualMultiplayer !== false
-          : game.supportsMultiplayer;
+      var supported = playContext === 'single' ? game.supportsSingle : game.supportsMultiplayer;
       if (!supported) return;
 
       var card = document.createElement('div');
@@ -446,11 +447,10 @@ App.Lobby = (function() {
       return;
     }
 
-    var hostAllowed = playContext === 'room' ? isHost : App.WebRTC.getIsHost();
+    var hostAllowed = playContext === 'room' ? isHost : false;
     if (!hostAllowed) return;
     var game = App.GameManager.getGame(gameId);
     var modes = game && game.multiplayerModes ? game.multiplayerModes : ['coop'];
-    if (playContext === 'multiplayer') App.WebRTC.send({ type: 'game_select', gameId: gameId });
     if (modes.length === 1) {
       selectMultiplayerMode(modes[0]);
     } else {
@@ -483,11 +483,12 @@ App.Lobby = (function() {
     if (!roomState) return Promise.resolve();
     var maxPlayers = getGameMaxPlayers(gameId);
     var game = App.GameManager.getGame(gameId);
-    var ordered = getRoomPlayers().concat(getRoomSpectators()).filter(function(person) {
-      return person.online !== false;
-    });
-    var seatedRealPlayers = ordered.slice(0, maxPlayers);
-    var queuedSpectators = ordered.slice(maxPlayers);
+    var members = getRoomMembers().filter(function(person) { return person.online !== false; });
+    var queue = getRoomQueue();
+    var seatedRealPlayers = queue.slice(0, maxPlayers);
+    var seatedIds = {};
+    seatedRealPlayers.forEach(function(person) { seatedIds[person.id] = true; });
+    var spectators = members.filter(function(person) { return !seatedIds[person.id]; });
     var gamePlayers = seatedRealPlayers.map(function(person) {
       return {
         id: person.id,
@@ -516,27 +517,15 @@ App.Lobby = (function() {
         });
       }
     }
-    var updates = {};
-    ordered.forEach(function(person, index) {
-      var target = index < maxPlayers ? 'players' : 'spectators';
-      var other = target === 'players' ? 'spectators' : 'players';
-      var record = {
-        name: person.name || '玩家',
-        role: target === 'players' ? 'player' : 'spectator',
-        online: person.online !== false,
-        authUid: person.authUid || '',
-        joinedAt: person.joinedAt || Date.now(),
-        lastSeenAt: person.lastSeenAt || Date.now(),
-        connectionVersion: person.connectionVersion || 0
-      };
-      updates[other + '/' + person.id] = null;
-      updates[target + '/' + person.id] = record;
+    var updates = { players: null, spectators: null };
+    members.forEach(function(person) {
+      updates['members/' + person.id + '/presence'] = seatedIds[person.id] ? 'playing' : 'spectating';
     });
     updates.maxPlayers = maxPlayers;
     return App.Signaling.updateRoom(updates).then(function() {
       return {
         players: gamePlayers,
-        spectators: queuedSpectators.map(function(person) {
+        spectators: spectators.map(function(person) {
           return {
             id: person.id,
             name: person.name,
@@ -588,11 +577,11 @@ App.Lobby = (function() {
     if (!selectedGameId) return;
     if (playContext === 'room') {
       if (!isHost) return;
-      var realPlayerCount = getRoomPlayers().filter(function(person) { return person.online !== false; }).length;
+      var realPlayerCount = getRoomQueue().length;
       var game = App.GameManager.getGame(selectedGameId);
       var minRoomPlayers = getGameMinRoomPlayers(selectedGameId);
-      if (realPlayerCount < minRoomPlayers && !(game && game.aiFill)) {
-        App.Common.showToast('這個玩法需要至少 ' + minRoomPlayers + ' 位真人玩家', 'error');
+      if (realPlayerCount < minRoomPlayers) {
+        App.Common.showToast('這個玩法需要至少 ' + minRoomPlayers + ' 位玩家加入隊列', 'error');
         return;
       }
       var roomStart = null;
@@ -604,8 +593,18 @@ App.Lobby = (function() {
           status: 'playing',
           gameId: selectedGameId,
           mode: mode,
+          activeGameId: selectedGameId,
+          activeMode: mode,
           roundId: roomStart.roundId,
           gameStart: roomStart,
+          currentRound: {
+            gameId: selectedGameId,
+            mode: mode,
+            roundId: roomStart.roundId,
+            players: seating.players,
+            spectators: seating.spectators,
+            startedAt: Date.now()
+          },
           gameState: null,
           gameActions: null
         });
@@ -618,11 +617,6 @@ App.Lobby = (function() {
       });
       return;
     }
-
-    if (!App.WebRTC.getIsHost()) return;
-    App.WebRTC.send({ type: 'mode_select', mode: mode });
-    App.WebRTC.send({ type: 'game_start', gameId: selectedGameId, mode: mode });
-    launchMultiplayerGame(selectedGameId, mode);
   }
 
   function makeGameStartPayload(roomStart) {
@@ -647,10 +641,10 @@ App.Lobby = (function() {
   function makeGameOpts(mode, extra) {
     var players = extra && extra.players ? extra.players : [];
     var spectators = extra && extra.spectators ? extra.spectators : [];
-    var peerName = opponentName || '對方';
+    var otherName = '對方';
     if (players.length > 1) {
       var other = players.filter(function(p) { return p.id !== selfId; })[0];
-      if (other) peerName = other.name || peerName;
+      if (other) otherName = other.name || otherName;
     }
     return {
       mode: mode,
@@ -661,7 +655,7 @@ App.Lobby = (function() {
       players: players,
       spectators: spectators,
       playerName: getSelfName(),
-      opponentName: peerName,
+      opponentName: otherName,
       initialState: extra && extra.initialState ? extra.initialState : {},
       gameState: extra && extra.gameState ? extra.gameState : null,
       initialCode: extra && extra.initialCode ? extra.initialCode : null,
@@ -688,27 +682,6 @@ App.Lobby = (function() {
     });
   }
 
-  function launchMultiplayerGame(gameId, mode) {
-    showScreen('game');
-    setTitle('載入中...');
-    var container = document.getElementById('game-container');
-    gameActive = true;
-    App.GameManager.startGame(gameId, container, {
-      mode: mode,
-      isHost: isHost,
-      role: 'player',
-      playerName: playerName || '玩家',
-      opponentName: opponentName || '對方',
-      players: [],
-      spectators: []
-    }, function() {
-      gameActive = false;
-      if (App.WebRTC.isConnected() && isHost) showGameSelect('multiplayer');
-      else if (App.WebRTC.isConnected()) showWaiting();
-      else goHome();
-    });
-  }
-
   function launchRoomGame(gameId, mode, roomPayload) {
     var payload = roomPayload || makeGameStartPayload(roomState && roomState.gameStart);
     roomRole = payload.role || getSelfRole();
@@ -721,7 +694,22 @@ App.Lobby = (function() {
       gameActive = false;
       if (playContext === 'room') {
         if (isHost) {
-          App.Signaling.updateRoom({ status: 'lobby', gameId: '', mode: '', roundId: '', gameStart: null, gameState: null });
+          var updates = {
+            status: 'lobby',
+            gameId: '',
+            mode: '',
+            activeGameId: '',
+            activeMode: '',
+            roundId: '',
+            gameStart: null,
+            gameState: null,
+            currentRound: null,
+            gameActions: null
+          };
+          getRoomMembers().forEach(function(person) {
+            updates['members/' + person.id + '/presence'] = 'lobby';
+          });
+          App.Signaling.updateRoom(updates);
         }
         renderRoomLobby();
       } else {
@@ -738,167 +726,9 @@ App.Lobby = (function() {
     launchRoomGame(roomState.gameStart.gameId, roomState.gameStart.mode, makeGameStartPayload(roomState.gameStart));
   }
 
-  async function startHost() {
-    playerName = requireUsername(document.getElementById('player-name-input').value);
-    if (!playerName) return;
-    isHost = true;
-    showScreen('host');
-    document.getElementById('offer-code').value = '產生中...';
-    document.getElementById('answer-input').value = '';
-    document.getElementById('host-retry-card').style.display = 'none';
-    document.getElementById('btn-connect-host').disabled = false;
-
-    try {
-      var offerCode = await App.WebRTC.createOffer();
-      document.getElementById('offer-code').value = offerCode;
-    } catch (e) {
-      App.Common.showToast('創建失敗：' + e.message, 'error');
-    }
-  }
-
-  async function connectHost() {
-    var raw = document.getElementById('answer-input').value.trim();
-    if (!raw) { App.Common.showToast('請貼上對方的回應碼', 'error'); return; }
-    document.getElementById('btn-connect-host').disabled = true;
-    try {
-      await App.WebRTC.acceptAnswer(raw);
-    } catch (e) {
-      App.Common.showToast('回應碼錯誤：' + e.message, 'error');
-      document.getElementById('btn-connect-host').disabled = false;
-    }
-  }
-
-  async function retryHost() {
-    document.getElementById('host-retry-card').style.display = 'none';
-    App.WebRTC.cleanDisconnect();
-    isHost = true;
-    document.getElementById('offer-code').value = '產生中...';
-    document.getElementById('answer-input').value = '';
-    document.getElementById('btn-connect-host').disabled = false;
-    try {
-      var offerCode = await App.WebRTC.createOffer();
-      document.getElementById('offer-code').value = offerCode;
-    } catch (e) {
-      App.Common.showToast('重試失敗：' + e.message, 'error');
-    }
-  }
-
-  async function startJoin() {
-    playerName = requireUsername(document.getElementById('player-name-input').value);
-    if (!playerName) return;
-    isHost = false;
-    showScreen('join');
-    document.getElementById('offer-input').value = '';
-    document.getElementById('answer-code').value = '';
-    document.getElementById('join-answer-card').style.display = 'none';
-    document.getElementById('btn-gen-answer').disabled = false;
-    document.getElementById('join-retry-card').style.display = 'none';
-  }
-
-  async function generateAnswer() {
-    var raw = document.getElementById('offer-input').value.trim();
-    if (!raw) { App.Common.showToast('請貼上對方的邀請碼', 'error'); return; }
-    document.getElementById('btn-gen-answer').disabled = true;
-    try {
-      var answerCode = await App.WebRTC.createAnswer(raw);
-      document.getElementById('answer-code').value = answerCode;
-      document.getElementById('join-answer-card').style.display = 'block';
-    } catch (e) {
-      App.Common.showToast('邀請碼錯誤：' + e.message, 'error');
-      document.getElementById('btn-gen-answer').disabled = false;
-    }
-  }
-
-  function retryJoin() {
-    App.WebRTC.cleanDisconnect();
-    isHost = false;
-    document.getElementById('join-retry-card').style.display = 'none';
-    document.getElementById('offer-input').value = '';
-    document.getElementById('answer-code').value = '';
-    document.getElementById('join-answer-card').style.display = 'none';
-    document.getElementById('btn-gen-answer').disabled = false;
-  }
-
-  function showWaiting() {
-    showScreen('waiting');
-    setTitle('等待房主選擇遊戲...');
-  }
-
-  function onConnectionOpen() {
-    if (playContext === 'room') {
-      notifyRoomUpdateToGame();
-      if (!gameActive) renderRoomLobby();
-      return;
-    }
-    playContext = 'multiplayer';
-    App.WebRTC.send({ type: 'player_info', name: playerName });
-    if (App.WebRTC.getIsHost()) {
-      showGameSelect('multiplayer');
-    } else {
-      showWaiting();
-    }
-  }
-
-  function onConnectionClose() {
-    if (playContext === 'room') {
-      notifyRoomUpdateToGame();
-      if (!gameActive) renderRoomLobby();
-      return;
-    }
-    var wasHost = isHost;
-    if (gameActive) {
-      App.GameManager.endGame();
-      gameActive = false;
-    }
-    App.Common.showToast('連線已中斷，可按重試重新連線', 'error');
-    if (wasHost) {
-      isHost = true;
-      showScreen('host');
-      document.getElementById('host-retry-card').style.display = 'block';
-    } else {
-      isHost = false;
-      showScreen('join');
-      document.getElementById('join-retry-card').style.display = 'block';
-    }
-  }
-
-  function handleMessage(msg) {
-    if (playContext === 'room' && isHost && msg._from && msg.type === 'game_msg') {
-      App.WebRTC.broadcast(stripInternalFields(msg), msg._from);
-    }
-    switch (msg.type) {
-      case 'player_info':
-        opponentName = msg.name || '對方';
-        break;
-      case 'game_select':
-        selectedGameId = msg.gameId;
-        showWaiting();
-        break;
-      case 'mode_select':
-        break;
-      case 'game_start':
-        if (playContext === 'room') return;
-        selectedGameId = msg.gameId;
-        launchMultiplayerGame(msg.gameId, msg.mode);
-        break;
-      case 'game_msg':
-        App.GameManager.handleMessage(msg.payload);
-        break;
-    }
-  }
-
-  function stripInternalFields(msg) {
-    var copy = {};
-    Object.keys(msg).forEach(function(key) {
-      if (key.charAt(0) !== '_') copy[key] = msg[key];
-    });
-    return copy;
-  }
-
   function goHome() {
     if (playContext === 'room') clearRoomSession();
     if (playContext === 'room') App.Signaling.leave();
-    App.WebRTC.cleanDisconnect();
     if (gameActive) {
       App.GameManager.endGame();
       gameActive = false;
@@ -906,41 +736,35 @@ App.Lobby = (function() {
     playContext = null;
     selectedGameId = null;
     playerName = '';
-    opponentName = '';
     isHost = false;
     roomState = null;
     selfId = '';
-    roomRole = 'player';
-    peerOffers = {};
-    peerAnswers = {};
+    roomRole = 'member';
     roomActionIds = {};
     launchedRoomGameKey = '';
     setTitle('');
     showScreen('home');
-    var hostRetry = document.getElementById('host-retry-card');
-    if (hostRetry) hostRetry.style.display = 'none';
-    var joinRetry = document.getElementById('join-retry-card');
-    if (joinRetry) joinRetry.style.display = 'none';
   }
 
   function init() {
-    App.WebRTC.on('open', onConnectionOpen);
-    App.WebRTC.on('close', onConnectionClose);
-    App.WebRTC.on('message', handleMessage);
-
     var roomCodeInput = document.getElementById('room-code-input');
     if (roomCodeInput) {
       roomCodeInput.addEventListener('input', function() {
         roomCodeInput.value = normalizeRoomCode(roomCodeInput.value);
       });
     }
+    var chatInput = document.getElementById('room-chat-input');
+    if (chatInput) {
+      chatInput.addEventListener('keydown', function(e) {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          sendRoomChat();
+        }
+      });
+    }
 
     window.addEventListener('beforeunload', function(e) {
       if (playContext === 'room') App.Signaling.leave();
-      if (playContext !== 'room' && App.WebRTC.isConnected() && gameActive) {
-        e.preventDefault();
-        e.returnValue = '';
-      }
     });
 
     attemptRoomResume();
@@ -960,6 +784,32 @@ App.Lobby = (function() {
     return true;
   }
 
+  function toggleQueue() {
+    if (playContext !== 'room' || !roomState || !App.Signaling || !App.Signaling.setQueueStatus) return;
+    App.Signaling.setQueueStatus(!isSelfQueued()).catch(function(e) {
+      App.Common.showToast('更新隊列失敗：' + e.message, 'error');
+    });
+  }
+
+  function sendRoomChat() {
+    var input = document.getElementById('room-chat-input');
+    var text = input ? input.value : '';
+    if (!String(text || '').trim()) return;
+    App.Signaling.sendChat(text).then(function() {
+      if (input) input.value = '';
+    }).catch(function(e) {
+      App.Common.showToast('送出訊息失敗：' + e.message, 'error');
+    });
+  }
+
+  function backFromGameSelect() {
+    if (playContext === 'room' && roomState) {
+      renderRoomLobby();
+    } else {
+      goHome();
+    }
+  }
+
   function attemptRoomResume() {
     if (!App.RoomSession || !App.Signaling || !App.Signaling.isConfigured()) return;
     var ticket = App.RoomSession.get();
@@ -971,8 +821,6 @@ App.Lobby = (function() {
       selfId = room.selfId;
       playerName = ticket.username;
       roomRole = room.role;
-      peerOffers = {};
-      peerAnswers = {};
       roomActionIds = {};
       launchedRoomGameKey = '';
       saveRoomSession(room);
@@ -993,17 +841,14 @@ App.Lobby = (function() {
     showGameSelect: showGameSelect,
     showModeSelect: showModeSelect,
     selectMultiplayerMode: selectMultiplayerMode,
-    startHost: startHost,
-    connectHost: connectHost,
-    retryHost: retryHost,
-    startJoin: startJoin,
-    generateAnswer: generateAnswer,
-    retryJoin: retryJoin,
     createShortRoom: createShortRoom,
     joinShortRoom: joinShortRoom,
     copyRoomCode: copyRoomCode,
+    toggleQueue: toggleQueue,
+    sendRoomChat: sendRoomChat,
+    backFromGameSelect: backFromGameSelect,
+    renderRoomLobby: renderRoomLobby,
     goHome: goHome,
-    launchMultiplayerGame: launchMultiplayerGame,
     sendRoomGameAction: sendRoomGameAction,
     setTitle: setTitle
   };
