@@ -263,24 +263,20 @@ Future Big Dee example:
 - WebRTC uses public STUN servers for WAN/NAT traversal. Firebase lets peers
   exchange signaling over WAN, but it does not relay DataChannel traffic.
 - Some restrictive networks still require TURN; TURN is not part of this MVP.
+- For room games, Firebase state must be sufficient for correctness. WebRTC is
+  optional acceleration only.
 
-## Firebase Game Action Fallback
+## Firebase Game Actions
 
-Short-code room games prefer WebRTC DataChannel for `game_msg`, but non-host
-clients can fall back to Firebase when the DataChannel is not open.
+Short-code room games use Firebase-first action delivery. This avoids the
+half-open WebRTC case where `send()` appears to succeed but another browser does
+not update.
 
 ```text
 Player action
    |
    v
-Try WebRTC game_msg
-   |
-   +-- sent ------------------------------> host receives via DataChannel
-   |
-   +-- not sent
-          |
-          v
-   Push rooms/{code}/gameActions/{actionId}
+Push rooms/{code}/gameActions/{actionId}
           |
           v
    Host watches gameActions
@@ -297,11 +293,12 @@ Try WebRTC game_msg
 
 Rules:
 
-- `gameActions` are transport fallback messages, not authoritative history.
+- `gameActions` are delivery queue messages, not authoritative history.
 - Host ignores actions from old `roundId`.
 - Host deletes processed and stale `gameActions` to keep the queue small.
 - Game modules should make action handling idempotent where practical.
 - `gameState` remains the restore source after refresh.
+- Manual two-player mode may still use direct WebRTC `game_msg`.
 
 Detailed host flow:
 

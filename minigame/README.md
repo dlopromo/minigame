@@ -71,10 +71,11 @@ There are two multiplayer paths:
 - Manual WebRTC: old two-player offer/answer flow.
 - Short-code room: Firebase RTDB room state plus host-mesh WebRTC.
 
-Short-code rooms use Firebase as the round-start authority. DataChannel messages are still used for low-latency in-game updates.
+Short-code rooms use Firebase as the round-start authority.
 Firebase works over WAN for room/signaling state. WebRTC uses public STUN servers for WAN/NAT traversal; very restrictive networks may still need TURN, which is not part of this MVP.
-If WebRTC is not open, Guess Color can fall back to Firebase `gameActions` so accepted actions still reach the host.
+Guess Color room play is Firebase-first: non-host clients write actions to `gameActions`, the host applies them, and `gameState` becomes the source of truth for board/turn/result updates.
 The host removes each `gameActions/{actionId}` after processing or discarding it, so old fallback actions do not replay forever.
+Manual two-player mode still uses WebRTC directly. Room mode should not require WebRTC to stay playable.
 Refresh resume is Level 2 for Guess Color: the same browser returns to the same room/seat, WebRTC is rebuilt automatically, and Guess Color restores guesses, turn, race progress, and result state from Firebase `gameState`.
 
 Room lobby has a compact debug panel:

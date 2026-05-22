@@ -95,6 +95,13 @@
 
   function send(msg) {
     if (isSpectator()) return;
+    if (isRoomMode() && !opts.isHost && canUseFirebaseActionFallback()) {
+      App.Lobby.sendRoomGameAction(msg);
+      return;
+    }
+    if (isRoomMode() && opts.isHost) {
+      return;
+    }
     var sent = App.WebRTC.send({ type: 'game_msg', payload: msg });
     if (!sent && canUseFirebaseActionFallback()) {
       App.Lobby.sendRoomGameAction(msg);
@@ -181,6 +188,8 @@
       mode: opts.mode,
       roundId: opts.roundId || '',
       state: state
+    }).catch(function(e) {
+      App.Common.showToast('同步房間狀態失敗：' + e.message, 'error');
     });
   }
 
@@ -540,6 +549,9 @@
   function renderGuessInput() {
     var c = document.getElementById('gc-guess-display');
     if (!c) return;
+    var canInteract = !isSpectator() && !isRoomReconnecting() && myTurn && !gameOver;
+    var inputArea = document.getElementById('gc-input-area');
+    if (inputArea) inputArea.classList.toggle('is-disabled', !canInteract);
     c.innerHTML = '';
     for (var i = 0; i < SLOTS; i++) {
       var pin = el('div', 'selection-pin' + (guessSelection[i] ? ' filled' : '') + (i === guessActiveSlot ? ' active-slot' : ''));
@@ -547,7 +559,7 @@
       else pin.textContent = i + 1;
       (function(idx) {
         pin.onclick = function() {
-          if (!isSpectator() && !isRoomReconnecting() && myTurn && !gameOver) {
+          if (canInteract) {
             if (guessSelection[idx]) {
               guessSelection[idx] = null;
               guessActiveSlot = idx;
@@ -567,7 +579,7 @@
       var btn = el('div', 'color-btn');
       btn.dataset.color = color;
       btn.onclick = function() {
-        if (!isSpectator() && !isRoomReconnecting() && myTurn && !gameOver) {
+        if (canInteract) {
           guessSelection[guessActiveSlot] = color;
           guessActiveSlot = (guessActiveSlot + 1) % SLOTS;
           renderGuessInput();
@@ -577,7 +589,7 @@
     });
     var submitBtn = document.getElementById('gc-btn-submit');
     if (submitBtn) {
-      submitBtn.disabled = isSpectator() || isRoomReconnecting() || !guessSelection.every(function(s) { return s !== null; }) || !myTurn || gameOver;
+      submitBtn.disabled = !canInteract || !guessSelection.every(function(s) { return s !== null; });
     }
   }
 
@@ -590,24 +602,26 @@
     if (gameOver) {
       indicator.className = 'gc-title waiting';
       indicator.textContent = '遊戲結束';
-      inputArea.style.display = 'none';
+      inputArea.style.display = 'block';
+      renderGuessInput();
       return;
     }
 
     if (isSpectator()) {
       indicator.className = 'gc-title waiting';
       indicator.textContent = '觀戰中';
-      inputArea.style.display = 'none';
+      inputArea.style.display = 'block';
       if (attemptLabel) attemptLabel.textContent = '觀戰';
       setTitle('觀戰中');
       renderSpectatorAnswer();
+      renderGuessInput();
       return;
     }
 
     if (isRoomReconnecting()) {
       indicator.className = 'gc-title waiting';
       indicator.textContent = '重新連線中...';
-      inputArea.style.display = 'none';
+      inputArea.style.display = 'block';
       setTitle('重新連線中');
       renderGuessInput();
       return;
@@ -632,7 +646,7 @@
         indicator.className = 'gc-title their-turn';
         var waitName = opts.opponentName || '隊友';
         indicator.textContent = waitName + ' 思考中...';
-        inputArea.style.display = 'none';
+        inputArea.style.display = 'block';
         setTitle('⏳ 等待 ' + waitName);
       }
     } else if (mode === 'race') {
@@ -653,7 +667,7 @@
         indicator.className = 'gc-title their-turn';
         var waitName2 = opts.opponentName || '對方';
         indicator.textContent = waitName2 + ' 思考中...';
-        inputArea.style.display = 'none';
+        inputArea.style.display = 'block';
         setTitle('⏳ 等待 ' + waitName2);
       }
     }

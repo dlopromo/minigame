@@ -66,6 +66,13 @@
 .gc-input-panel{
   flex-shrink:0;padding:8px;
 }
+.gc-input-panel.is-disabled{
+  opacity:.58;
+}
+.gc-input-panel.is-disabled .selection-pin,
+.gc-input-panel.is-disabled .color-btn{
+  cursor:not-allowed;filter:saturate(.35) grayscale(.25);
+}
 
 /* Color palette & pins */
 .color-palette{

@@ -63,8 +63,9 @@ Short-code rooms generate a random 4-digit numeric room code.
 - Username is required, capped at 12 characters, and may only use Chinese characters, English letters, or digits.
 - Host chooses the game and multiplayer mode.
 - Room state in Firebase starts each round.
-- Firebase room/signaling state works over WAN; WebRTC DataChannel is used for in-game sync with STUN-assisted NAT traversal.
-- Guess Color falls back to Firebase `gameActions` when WebRTC is not open.
+- Firebase room/signaling state works over WAN.
+- Guess Color room play is Firebase-first: client actions go through `gameActions`, and `gameState` is the source of truth for turn and board updates.
+- WebRTC DataChannel remains available for manual two-player mode and future optional acceleration, but room mode must not depend on it.
 - Host clears Firebase `gameActions` after processing, so the fallback queue does not keep growing.
 - Guess Color stores Firebase `gameState` snapshots so refresh can restore guesses, turn, race progress, and result state.
 - Room lobby includes a compact Room Info panel for status, transport, host, round, peers, and fallback queue size.
