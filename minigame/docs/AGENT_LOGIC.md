@@ -15,6 +15,8 @@ Related room lifecycle specs:
   toast display, clipboard copy, SDP encode/decode, and screen switching.
 - `App.WebRTC` owns peer connection setup and the data channel.
   It supports the original single peer connection and the newer host-mesh peer map.
+  It uses public STUN servers so Firebase-signaled peers can connect across WAN
+  when NAT traversal succeeds. TURN is not configured.
 - `App.Signaling` owns Firebase Realtime Database room signaling for 4-digit numeric room codes.
   It uses Anonymous Auth and stores temporary room/lobby/round-start/SDP data.
   Firebase `auth.uid` is stored as metadata, but room seats use a stable browser client id so refresh can resume the same seat.
@@ -79,7 +81,8 @@ Short-code room state:
   - `spectators/{clientId}`
   - `offers/{clientId}`
   - `answers/{clientId}`
-  - `gameStart`
+- `gameStart`
+- `gameState`
 
 `gameStart` is the authoritative start payload in short-code rooms:
 
@@ -111,6 +114,8 @@ During an active short-code room game, lobby watchers forward Firebase room
 membership changes into the active game as a local `room_update` message. Games
 should refresh room info UI from `players` and `spectators` without treating it
 as an in-game action.
+The same `room_update` payload includes `gameState`, so games can restore or
+refresh their Firebase snapshot.
 
 Top-level lobby messages:
 
@@ -285,8 +290,8 @@ The current design direction is Office Calm:
 - Host-generated answer is shared with the peer.
   This is acceptable for friendly play but is not cheat-resistant.
 - Short-code multiplayer uses host mesh and has no host migration.
-- Short-code rooms support Level 1 refresh resume: same room, same seat, automatic WebRTC rebuild.
-  They do not yet restore full game action history after refresh.
+- Short-code rooms support refresh resume: same room, same seat, automatic WebRTC rebuild.
+- Guess Color supports Level 2 snapshot restore through Firebase `gameState`.
 - Firebase is signaling/lobby only; it is not an authoritative game server.
 - Full multi-tab Firebase/WebRTC behavior should be manually tested with a real Firebase project before release.
 - `.DS_Store` may appear locally and should not be committed unless intentionally ignored or removed.

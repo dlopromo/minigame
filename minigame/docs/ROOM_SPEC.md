@@ -47,7 +47,9 @@ rooms/{roomCode}: {
       role: 'player',
       online: boolean,
       authUid: string,
-      joinedAt: serverTimestamp
+      joinedAt: serverTimestamp,
+      lastSeenAt: serverTimestamp,
+      connectionVersion: number
     }
   },
   spectators: {
@@ -56,16 +58,19 @@ rooms/{roomCode}: {
       role: 'spectator',
       online: boolean,
       authUid: string,
-      joinedAt: serverTimestamp
+      joinedAt: serverTimestamp,
+      lastSeenAt: serverTimestamp,
+      connectionVersion: number
     }
   },
   offers: {
-    [clientId]: { from: string, sdp: string, createdAt: serverTimestamp }
+    [clientId]: { from: string, sdp: string, connectionVersion: number, createdAt: serverTimestamp }
   },
   answers: {
-    [clientId]: { from: string, sdp: string, createdAt: serverTimestamp }
+    [clientId]: { from: string, sdp: string, connectionVersion: number, createdAt: serverTimestamp }
   },
-  gameStart: null | GameStart
+  gameStart: null | GameStart,
+  gameState: null | GameStateSnapshot
 }
 ```
 
@@ -99,6 +104,49 @@ Rules:
   from accidentally launching with the host's client-specific payload.
 - Firebase room membership changes are forwarded locally to the active game as
   `room_update` so in-game Room Info can show current players and spectators.
+
+## GameState Snapshot Contract
+
+`gameState` is optional game-owned restore data for active rounds.
+
+```js
+{
+  gameId: string,
+  mode: string,
+  roundId: string,
+  updatedBy: clientId,
+  updatedAt: serverTimestamp,
+  state: object
+}
+```
+
+Rules:
+
+- `gameStart.initialState` still owns hidden opening state.
+- `gameState.state` owns mutable in-game restore state.
+- Games must ignore snapshots for another `roundId`.
+- The host should write snapshots after every accepted action to avoid peers
+  overwriting each other's snapshot data.
+- Room return-to-lobby clears `gameState`.
+
+Guess Color currently stores:
+
+```js
+{
+  computerCode: string[],
+  guesses: [
+    { playerId, playerName, colors, hits, blows, elapsed, finished, createdAt }
+  ],
+  gameOver: boolean,
+  winner: string,
+  winnerPlayerId: string,
+  turnClientId: string,
+  raceProgressByPlayerId: {
+    [clientId]: { attempts, elapsed, finished }
+  },
+  savedAt: number
+}
+```
 
 ## Status Lifecycle
 
@@ -173,13 +221,17 @@ Future Big Dee example:
 - Non-host clients send messages to host.
 - Firebase is not an authoritative game server; it is room state and round-start state.
 - If WebRTC is delayed, the game can still render initial state from Firebase.
+- WebRTC uses public STUN servers for WAN/NAT traversal. Firebase lets peers
+  exchange signaling over WAN, but it does not relay DataChannel traffic.
+- Some restrictive networks still require TURN; TURN is not part of this MVP.
 
 ## Refresh And Resume
 
 Browser refresh cannot preserve the old WebRTC DataChannel, but the app can
 preserve the room identity and automatically rebuild WebRTC.
-The current implementation supports Level 1 resume: room/seat restore plus
-automatic WebRTC rebuild. Full game action history restore is not implemented.
+The current implementation supports Level 2 resume for Guess Color: room/seat
+restore, automatic WebRTC rebuild, and Firebase snapshot restore for guesses,
+turn, race progress, and result state.
 
 Read the detailed resume contract here:
 

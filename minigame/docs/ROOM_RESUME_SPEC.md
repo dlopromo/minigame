@@ -320,7 +320,7 @@ Auto rebuild WebRTC
 Render current game from gameStart.initialState
 ```
 
-Limit:
+Previous Level 1 limit:
 
 - Guess Color answer survives because it is in `gameStart.initialState`.
 - Guess history and current turn may not fully restore unless they are stored elsewhere.
@@ -338,24 +338,35 @@ rooms/{roomCode}/gameState: {
 }
 ```
 
-For Guess Color this could include:
+Guess Color now stores:
 
 ```js
 {
+  computerCode: ['red', 'blue', 'green', 'yellow'],
   guesses: [
-    { playerId: '...', colors: ['red','blue','green','yellow'], hits: 1, blows: 2 }
+    { playerId: '...', playerName: 'David', colors: ['red','blue','green','yellow'], hits: 1, blows: 2, elapsed: 12000, finished: false, createdAt: 1710000000000 }
   ],
+  gameOver: false,
+  winner: '',
+  winnerPlayerId: '',
   turnClientId: '...',
-  finished: false,
-  winner: null
+  raceProgressByPlayerId: {
+    [clientId]: { attempts: 3, elapsed: 42000, finished: false }
+  },
+  savedAt: 1710000000000
 }
 ```
 
-Use this only after Level 1 is stable.
+Level 2 implementation status:
+
+- Guess Color coop restores merged guess history and current turn.
+- Guess Color race restores own/opponent guesses, attempts, elapsed time, and result state.
+- Spectators restore the same room snapshot and continue to see the full answer.
+- Future games should define their own `state` object under the same wrapper.
 
 ## Recommended MVP Implementation Tasks
 
-Implemented Level 1:
+Implemented:
 
 1. `App.RoomSession` helper around `localStorage`.
 2. `App.Signaling` reuses a stored `clientId`.
@@ -367,12 +378,13 @@ Implemented Level 1:
 8. Host recreates offers when member connection version changes.
 9. Joiner recreates answer after refresh.
 10. Guess Color shows a reconnecting state while room WebRTC is not open.
+11. Guess Color writes Firebase `gameState` snapshots.
+12. Guess Color restores guesses, turn, race progress, and result state from `gameState`.
 
-Still future Level 2:
+Still future:
 
-- Store full game action history in Firebase.
-- Restore Guess Color guesses and current turn after refresh.
-- Add game-owned snapshot contracts for future games.
+- Add game-owned snapshot contracts for future games such as Big Dee.
+- Add TURN support for networks where STUN/WebRTC cannot connect directly.
 
 ## Safety Notes
 

@@ -29,7 +29,12 @@ App.WebRTC = (function() {
   }
 
   function createPC(peerId) {
-    var conn = new RTCPeerConnection({ iceServers: [] });
+    var conn = new RTCPeerConnection({
+      iceServers: [
+        { urls: 'stun:stun.l.google.com:19302' },
+        { urls: 'stun:stun1.l.google.com:19302' }
+      ]
+    });
 
     conn.oniceconnectionstatechange = function() {
       if (conn.iceConnectionState === 'disconnected' && connected) {

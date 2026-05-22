@@ -113,6 +113,7 @@ App.Signaling = (function() {
     data.offers = data.offers || {};
     data.answers = data.answers || {};
     data.gameStart = data.gameStart || null;
+    data.gameState = data.gameState || null;
     return data;
   }
 
@@ -133,6 +134,7 @@ App.Signaling = (function() {
               mode: '',
               roundId: '',
               gameStart: null,
+              gameState: null,
               maxPlayers: 2,
               createdAt: firebase.database.ServerValue.TIMESTAMP,
               updatedAt: firebase.database.ServerValue.TIMESTAMP,
@@ -301,6 +303,13 @@ App.Signaling = (function() {
     return ref('rooms/' + roomCode).update(values);
   }
 
+  function setGameState(snapshot) {
+    if (!roomCode || !snapshot) return Promise.resolve();
+    snapshot.updatedBy = selfId;
+    snapshot.updatedAt = firebase.database.ServerValue.TIMESTAMP;
+    return ref('rooms/' + roomCode + '/gameState').set(snapshot);
+  }
+
   function leave() {
     var code = roomCode;
     var uid = selfId;
@@ -330,6 +339,7 @@ App.Signaling = (function() {
     setOffer: setOffer,
     setAnswer: setAnswer,
     updateRoom: updateRoom,
+    setGameState: setGameState,
     leave: leave,
     normalizeRoomCode: normalizeRoomCode,
     requireRoomCode: requireRoomCode,

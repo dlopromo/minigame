@@ -212,7 +212,8 @@ App.Lobby = (function() {
       selfId: selfId,
       role: getSelfRole(),
       players: getRoomPlayers(),
-      spectators: getRoomSpectators()
+      spectators: getRoomSpectators(),
+      gameState: roomState ? roomState.gameState : null
     });
   }
 
@@ -510,7 +511,8 @@ App.Lobby = (function() {
           gameId: selectedGameId,
           mode: mode,
           roundId: roomStart.roundId,
-          gameStart: roomStart
+          gameStart: roomStart,
+          gameState: null
         });
       }).then(function() {
         var payload = makeGameStartPayload(roomStart);
@@ -542,6 +544,7 @@ App.Lobby = (function() {
       mode: start.mode || (roomState ? roomState.mode : ''),
       roundId: start.roundId || (roomState ? roomState.roundId : ''),
       initialState: start.initialState || {},
+      gameState: roomState && roomState.gameState && roomState.gameState.roundId === start.roundId ? roomState.gameState : null,
       initialCode: start.initialState && start.initialState.computerCode ? start.initialState.computerCode : null
     };
   }
@@ -565,6 +568,7 @@ App.Lobby = (function() {
       playerName: getSelfName(),
       opponentName: peerName,
       initialState: extra && extra.initialState ? extra.initialState : {},
+      gameState: extra && extra.gameState ? extra.gameState : null,
       initialCode: extra && extra.initialCode ? extra.initialCode : null,
       roundId: extra && extra.roundId ? extra.roundId : ''
     };
@@ -622,7 +626,7 @@ App.Lobby = (function() {
       gameActive = false;
       if (playContext === 'room') {
         if (isHost) {
-          App.Signaling.updateRoom({ status: 'lobby', gameId: '', mode: '', roundId: '', gameStart: null });
+          App.Signaling.updateRoom({ status: 'lobby', gameId: '', mode: '', roundId: '', gameStart: null, gameState: null });
         }
         renderRoomLobby();
       } else {

@@ -67,7 +67,8 @@ There are two multiplayer paths:
 - Short-code room: Firebase RTDB room state plus host-mesh WebRTC.
 
 Short-code rooms use Firebase as the round-start authority. DataChannel messages are still used for low-latency in-game updates.
-Refresh resume is Level 1: the same browser returns to the same room/seat and WebRTC is rebuilt automatically. Full in-game action history restore is still a future game-state snapshot feature.
+Firebase works over WAN for room/signaling state. WebRTC uses public STUN servers for WAN/NAT traversal; very restrictive networks may still need TURN, which is not part of this MVP.
+Refresh resume is Level 2 for Guess Color: the same browser returns to the same room/seat, WebRTC is rebuilt automatically, and Guess Color restores guesses, turn, race progress, and result state from Firebase `gameState`.
 
 Game-specific messages must be wrapped as:
 
