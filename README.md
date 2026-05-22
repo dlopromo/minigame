@@ -19,7 +19,7 @@ Current games:
 Current modes:
 
 - Local play
-- Firebase Party Room with queue, chat, spectators, and AI fill
+- Firebase Party Room with queue, chat history, spectators, AI fill, AI takeover, host migration, room history, and room-scoped leaderboard
 
 鋤大DEE and 鬥地主 support local single-player and short-code room starts. In
 rooms, queued users are seated first, extra users stay as spectators/queue, and
@@ -60,7 +60,9 @@ validated before writes.
 
 ## Room Flow
 
-Short-code rooms generate a random 4-digit numeric room code.
+Party Rooms use a 4-digit numeric room code. Entering an existing code joins
+that room; entering a new code creates it. A random-create helper is also
+available.
 
 - Username is required, capped at 12 characters, and may only use Chinese characters, English letters, or digits.
 - Host chooses the game and multiplayer mode from the persistent Party Room.
@@ -72,6 +74,9 @@ Short-code rooms generate a random 4-digit numeric room code.
 - Host clears Firebase `gameActions` after processing, so the fallback queue does not keep growing.
 - Guess Color, 鋤大DEE, and 鬥地主 store Firebase `gameState` snapshots so refresh can restore active room state.
 - Room lobby includes a compact Room Info panel for status, Firebase transport, host, round, queue, and fallback action count.
+- If a player disconnects mid-round, their seat is temporarily AI-controlled; the same browser can re-enter the room code and resume that seat.
+- If the host disconnects, the earliest joined online member can claim host authority through a Firebase transaction.
+- `minigame/admin.html` provides a lightweight room monitor for rooms, players, AI takeover, history, and leaderboard data.
 
 See the detailed room contract in:
 
@@ -107,5 +112,5 @@ node --check minigame/games/guessColor/guessColor.js
 ## Roadmap
 
 - Add host controls for manually promoting/removing queued members.
-- Add arcade-style leaderboards.
-- Improve host recovery when the host stays offline for too long.
+- Add hardened Admin Auth / private rules if the room monitor becomes public-facing.
+- Add Cloud Functions if fully automatic all-offline interruption archival is required.

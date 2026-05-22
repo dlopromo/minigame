@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>MiniGame Admin</title>
+<link rel="stylesheet" href="css/common.css">
+<link rel="stylesheet" href="css/lobby.css">
+</head>
+<body>
+<div class="toast-container" id="toast-container"></div>
+<main class="screen active admin-screen">
+  <div class="card room-card">
+    <div class="room-code-line">
+      <div>
+        <span class="room-eyebrow">Admin</span>
+        <strong>Party Rooms</strong>
+      </div>
+      <a class="btn-small btn-copy" href="index.html">返回遊戲</a>
+    </div>
+    <p class="room-role-label">監控 Firebase rooms、在線玩家、AI 接管、歷史紀錄與排行榜。</p>
+  </div>
+  <div class="admin-layout">
+    <section class="card room-party-card">
+      <h2>房間列表</h2>
+      <div class="room-list" id="admin-room-list"></div>
+    </section>
+    <section class="card room-party-card">
+      <h2 id="admin-room-title">房間詳情</h2>
+      <div id="admin-room-detail" class="admin-detail-empty">選擇一個房間</div>
+    </section>
+  </div>
+</main>
+<script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-database-compat.js"></script>
+<script src="js/common.js"></script>
+<script src="js/firebaseConfig.js"></script>
+<script src="js/admin.js"></script>
+</body>
+</html>

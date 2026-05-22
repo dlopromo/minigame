@@ -11,6 +11,7 @@ App.Signaling = (function() {
   var selfRole = '';
   var isHost = false;
   var unsubscribers = [];
+  var heartbeatTimer = null;
   var ROOM_TTL_MS = 6 * 60 * 60 * 1000;
   var CODE_DIGITS = '0123456789';
 
@@ -45,10 +46,19 @@ App.Signaling = (function() {
     var ticket = App.RoomSession && App.RoomSession.get ? App.RoomSession.get() : null;
     if (ticket && /^[A-Za-z0-9-]{8,80}$/.test(ticket.clientId)) {
       clientId = ticket.clientId;
+      try { window.localStorage.setItem('minigame.clientId', clientId); } catch(e) {}
       return clientId;
     }
+    try {
+      var stored = window.localStorage.getItem('minigame.clientId');
+      if (stored && /^[A-Za-z0-9-]{8,80}$/.test(stored)) {
+        clientId = stored;
+        return clientId;
+      }
+    } catch(e) {}
     var randomPart = Math.random().toString(36).slice(2, 8).toUpperCase();
     clientId = uid.slice(0, 8) + '-' + randomPart;
+    try { window.localStorage.setItem('minigame.clientId', clientId); } catch(e) {}
     return clientId;
   }
 
@@ -71,6 +81,29 @@ App.Signaling = (function() {
   function offAll() {
     unsubscribers.forEach(function(fn) { try { fn(); } catch(e) {} });
     unsubscribers = [];
+  }
+
+  function stopHeartbeat() {
+    if (heartbeatTimer) clearInterval(heartbeatTimer);
+    heartbeatTimer = null;
+  }
+
+  function registerPresenceDisconnect(path) {
+    ref(path).onDisconnect().update({
+      online: false,
+      lastSeenAt: firebase.database.ServerValue.TIMESTAMP
+    });
+  }
+
+  function startHeartbeat(path) {
+    stopHeartbeat();
+    heartbeatTimer = setInterval(function() {
+      if (!roomCode || !selfId) return;
+      ref(path).update({
+        online: true,
+        lastSeenAt: firebase.database.ServerValue.TIMESTAMP
+      }).catch(function() {});
+    }, 15000);
   }
 
   function makeCode() {
@@ -118,6 +151,9 @@ App.Signaling = (function() {
     data.gameStart = data.gameStart || null;
     data.gameState = data.gameState || null;
     data.currentRound = data.currentRound || null;
+    data.history = data.history || {};
+    data.leaderboard = data.leaderboard || {};
+    data.hostEpoch = Number(data.hostEpoch || 0);
     return data;
   }
 
@@ -136,6 +172,32 @@ App.Signaling = (function() {
     };
   }
 
+  function emptyRoom(uid) {
+    return {
+      hostId: uid,
+      hostEpoch: 1,
+      status: 'lobby',
+      gameId: '',
+      mode: '',
+      roundId: '',
+      gameStart: null,
+      gameState: null,
+      currentRound: null,
+      activeGameId: '',
+      activeMode: '',
+      maxPlayers: 2,
+      createdAt: firebase.database.ServerValue.TIMESTAMP,
+      updatedAt: firebase.database.ServerValue.TIMESTAMP,
+      members: {},
+      queue: {},
+      chat: {},
+      players: {},
+      spectators: {},
+      history: {},
+      leaderboard: {}
+    };
+  }
+
   function createRoom(username) {
     username = requireUsername(username);
     return initFirebase().then(function(uid) {
@@ -146,26 +208,7 @@ App.Signaling = (function() {
         var code = makeCode();
         return ref('rooms/' + code).transaction(function(current) {
           if (current === null) {
-            return {
-              hostId: uid,
-              status: 'lobby',
-              gameId: '',
-              mode: '',
-              roundId: '',
-              gameStart: null,
-              gameState: null,
-              currentRound: null,
-              activeGameId: '',
-              activeMode: '',
-              maxPlayers: 2,
-              createdAt: firebase.database.ServerValue.TIMESTAMP,
-              updatedAt: firebase.database.ServerValue.TIMESTAMP,
-              members: {},
-              queue: {},
-              chat: {},
-              players: {},
-              spectators: {}
-            };
+            return emptyRoom(uid);
           }
           return;
         }).then(function(result) {
@@ -174,7 +217,9 @@ App.Signaling = (function() {
           roomCode = code;
           selfRole = 'host';
           return ref('rooms/' + code + '/members/' + uid).set(memberRecord(username, 'host')).then(function() {
-            ref('rooms/' + code + '/members/' + uid + '/online').onDisconnect().set(false);
+            var path = 'rooms/' + code + '/members/' + uid;
+            registerPresenceDisconnect(path);
+            startHeartbeat(path);
             return { code: code, selfId: uid, role: 'host', isHost: true, connectionVersion: 1 };
           });
         });
@@ -183,26 +228,51 @@ App.Signaling = (function() {
     });
   }
 
-  function joinRoom(code, username) {
+  function enterRoom(code, username) {
     username = requireUsername(username);
     return initFirebase().then(function(uid) {
-      isHost = false;
       code = requireRoomCode(code);
-      return ref('rooms/' + code).once('value').then(function(snapshot) {
-        if (!snapshot.exists()) throw new Error('找不到房間');
+      var createdRoom = false;
+      return ref('rooms/' + code).transaction(function(current) {
+        if (current === null || (current && current.status === 'closed')) {
+          createdRoom = true;
+          return emptyRoom(uid);
+        }
+        createdRoom = false;
+        return current;
+      }).then(function() {
+        return ref('rooms/' + code).once('value');
+      }).then(function(snapshot) {
         var data = normalizeRoom(snapshot);
         var now = Date.now();
         if (data.createdAt && now - data.createdAt > ROOM_TTL_MS) throw new Error('房間已過期');
         roomCode = code;
-        var role = 'member';
+        isHost = data.hostId === uid;
+        var role = isHost ? 'host' : 'member';
+        if (createdRoom) {
+          isHost = true;
+          role = 'host';
+        }
         selfRole = role;
         var path = 'rooms/' + code + '/members/' + uid;
-        return ref(path).set(memberRecord(username, role)).then(function() {
-          ref(path + '/online').onDisconnect().set(false);
-          return { code: code, selfId: uid, role: role, isHost: false, connectionVersion: 1 };
+        var existing = data.members && data.members[uid] ? data.members[uid] : {};
+        var version = Number(existing.connectionVersion || 0) + 1;
+        return ref(path).set(memberRecord(username, role, {
+          joinedAt: existing.joinedAt,
+          presence: existing.presence || 'lobby',
+          queueStatus: existing.queueStatus || 'none',
+          connectionVersion: version
+        })).then(function() {
+          registerPresenceDisconnect(path);
+          startHeartbeat(path);
+          return { code: code, selfId: uid, role: role, isHost: isHost, connectionVersion: version, created: createdRoom };
         });
       });
     });
+  }
+
+  function joinRoom(code, username) {
+    return enterRoom(code, username);
   }
 
   function resumeRoom(ticket) {
@@ -222,7 +292,6 @@ App.Signaling = (function() {
       if (data.createdAt && now - data.createdAt > ROOM_TTL_MS) throw new Error('房間已過期');
       var memberRecord = data.members && data.members[selfId];
       if (!memberRecord) throw new Error('房間身份已失效，請重新加入');
-      if (ticket.isHost && data.hostId !== selfId) throw new Error('房主身份已失效，請重新建立房間');
       isHost = data.hostId === selfId;
       roomCode = code;
       var role = isHost ? 'host' : 'member';
@@ -238,7 +307,8 @@ App.Signaling = (function() {
         lastSeenAt: firebase.database.ServerValue.TIMESTAMP,
         connectionVersion: version
       }).then(function() {
-        ref(path + '/online').onDisconnect().set(false);
+        registerPresenceDisconnect(path);
+        startHeartbeat(path);
         return {
           code: code,
           selfId: selfId,
@@ -246,6 +316,46 @@ App.Signaling = (function() {
           isHost: isHost,
           connectionVersion: version
         };
+      });
+    });
+  }
+
+  function selectHostCandidate(members) {
+    var people = Object.keys(members || {}).map(function(id) {
+      var member = members[id] || {};
+      member.id = id;
+      return member;
+    }).filter(function(member) {
+      return member.online !== false;
+    }).sort(function(a, b) {
+      return (a.joinedAt || 0) - (b.joinedAt || 0);
+    });
+    return people.length ? people[0] : null;
+  }
+
+  function claimHost() {
+    if (!roomCode || !selfId) return Promise.resolve(false);
+    return ref('rooms/' + roomCode).transaction(function(current) {
+      if (!current || !current.members || !current.members[selfId] || current.members[selfId].online === false) return current;
+      var currentHost = current.members[current.hostId] || null;
+      if (currentHost && currentHost.online !== false) return current;
+      var candidate = selectHostCandidate(current.members);
+      if (!candidate || candidate.id !== selfId) return current;
+      current.hostId = selfId;
+      current.hostEpoch = Number(current.hostEpoch || 0) + 1;
+      current.updatedAt = firebase.database.ServerValue.TIMESTAMP;
+      Object.keys(current.members).forEach(function(id) {
+        current.members[id].role = id === selfId ? 'host' : 'member';
+      });
+      if (current.gameStart) current.gameStart.hostId = selfId;
+      return current;
+    }).then(function(result) {
+      if (!result.committed) return false;
+      return ref('rooms/' + roomCode).once('value').then(function(snapshot) {
+        var data = normalizeRoom(snapshot);
+        isHost = data.hostId === selfId;
+        selfRole = isHost ? 'host' : 'member';
+        return isHost;
       });
     });
   }
@@ -328,6 +438,36 @@ App.Signaling = (function() {
     return ref('rooms/' + roomCode + '/gameState').set(snapshot);
   }
 
+  function appendHistory(entry) {
+    if (!roomCode || !entry) return Promise.resolve();
+    entry.createdAt = firebase.database.ServerValue.TIMESTAMP;
+    entry.createdBy = selfId;
+    return ref('rooms/' + roomCode + '/history').push(entry);
+  }
+
+  function updateLeaderboard(updates) {
+    if (!roomCode || !updates) return Promise.resolve();
+    return ref('rooms/' + roomCode + '/leaderboard').update(updates);
+  }
+
+  function addLeaderboardResults(results) {
+    if (!roomCode || !results || !results.length) return Promise.resolve();
+    return ref('rooms/' + roomCode + '/leaderboard').transaction(function(current) {
+      current = current || {};
+      results.forEach(function(result) {
+        if (!result || !result.id || /^ai-/.test(result.id)) return;
+        var row = current[result.id] || { name: result.name || '玩家', score: 0, wins: 0, plays: 0 };
+        row.name = result.name || row.name || '玩家';
+        row.score = Number(row.score || 0) + Number(result.score || 0);
+        row.wins = Number(row.wins || 0) + (result.win ? 1 : 0);
+        row.plays = Number(row.plays || 0) + 1;
+        row.lastPlayedAt = firebase.database.ServerValue.TIMESTAMP;
+        current[result.id] = row;
+      });
+      return current;
+    });
+  }
+
   function sendGameAction(action) {
     if (!roomCode || !action) return Promise.resolve();
     action.from = selfId;
@@ -345,6 +485,7 @@ App.Signaling = (function() {
     var uid = selfId;
     var role = selfRole;
     offAll();
+    stopHeartbeat();
     roomCode = '';
     selfRole = '';
     if (!db || !code || !uid || !role) return Promise.resolve();
@@ -364,14 +505,19 @@ App.Signaling = (function() {
     isConfigured: isConfigured,
     initFirebase: initFirebase,
     createRoom: createRoom,
+    enterRoom: enterRoom,
     joinRoom: joinRoom,
     resumeRoom: resumeRoom,
     watchRoom: watchRoom,
     watchGameActions: watchGameActions,
+    claimHost: claimHost,
     updateRoom: updateRoom,
     setQueueStatus: setQueueStatus,
     sendChat: sendChat,
     setGameState: setGameState,
+    appendHistory: appendHistory,
+    updateLeaderboard: updateLeaderboard,
+    addLeaderboardResults: addLeaderboardResults,
     sendGameAction: sendGameAction,
     clearGameAction: clearGameAction,
     leave: leave,

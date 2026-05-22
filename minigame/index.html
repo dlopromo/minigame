@@ -38,12 +38,12 @@
   <div class="card">
     <h2>Party Room</h2>
     <p style="font-size:.85rem;color:var(--muted);margin-bottom:12px">
-      輸入名字後可建立房間，或用 4 位數字房間碼加入朋友的房間。
+      輸入名字和 4 位數字密碼即可進入 Party Room；房間已存在會直接加入，未存在會自動建立。
     </p>
     <input type="text" id="room-player-name-input" placeholder="中文/英文/數字，最多12字" maxlength="12" class="text-input" autocomplete="nickname">
-    <button class="btn btn-primary" onclick="App.Lobby.createShortRoom()">創建 Party Room</button>
     <input type="text" id="room-code-input" placeholder="輸入 4 位數字" maxlength="4" inputmode="numeric" pattern="[0-9]*" class="text-input room-code-input">
-    <button class="btn btn-secondary" onclick="App.Lobby.joinShortRoom()">加入房間</button>
+    <button class="btn btn-primary" onclick="App.Lobby.joinShortRoom()">進入 / 建立房間</button>
+    <button class="btn btn-secondary" onclick="App.Lobby.createShortRoom()">隨機建立房間</button>
     <p class="room-config-note" id="room-config-note"></p>
   </div>
   <button class="btn btn-secondary" onclick="App.Lobby.goHome()">← 返回</button>

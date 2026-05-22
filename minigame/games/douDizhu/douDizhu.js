@@ -221,6 +221,31 @@
     return -1;
   }
 
+  function syncPlayerPresence(roomPlayers) {
+    if (!isRoomMode() || !roomPlayers || !roomPlayers.length || !players.length) return;
+    var byId = {};
+    roomPlayers.forEach(function(person) { byId[person.id] = person; });
+    var changed = false;
+    players.forEach(function(player) {
+      var remote = byId[player.id];
+      var nativeAI = /^ai-/.test(player.id || '');
+      if (!remote || nativeAI) return;
+      var shouldAI = remote.online === false;
+      if (!!player.ai !== shouldAI) {
+        player.ai = shouldAI;
+        changed = true;
+        recordHistory('系統', player.name + (shouldAI ? ' 斷線，AI 接管' : ' 已重連，恢復真人操作'));
+      }
+      player.online = remote.online !== false;
+      player.name = remote.name || player.name;
+    });
+    if (changed) {
+      if (opts.isHost) publishState();
+      render();
+      scheduleAI();
+    }
+  }
+
   function canControlCurrent() {
     var index = selfPlayerIndex();
     return index >= 0 && index === currentPlayer && !gameOver && players[index] && !players[index].ai;
@@ -450,7 +475,48 @@
     aiTimer = clearTimer(aiTimer);
     publishState();
     var landlordWon = winnerIndex === landlordIndex;
+    appendRoomHistory(winnerIndex, landlordWon, false);
     renderResult(landlordWon, winnerIndex);
+  }
+
+  function appendRoomHistory(winnerIndex, landlordWon, interrupted) {
+    if (!isRoomMode() || !opts.isHost || !App.Signaling || !App.Signaling.appendHistory) return;
+    var multiplier = Math.pow(2, bombCount);
+    var score = currentBid * multiplier;
+    App.Signaling.appendHistory({
+      gameId: 'douDizhu',
+      gameName: '鬥地主',
+      mode: opts.mode || 'room',
+      roundId: opts.roundId || '',
+      status: interrupted ? 'interrupted' : 'completed',
+      winnerId: players[winnerIndex] && players[winnerIndex].id,
+      winnerName: players[winnerIndex] && players[winnerIndex].name,
+      landlordWon: !!landlordWon,
+      bid: currentBid,
+      bombCount: bombCount,
+      multiplier: multiplier,
+      players: players.map(function(player, index) {
+        return {
+          id: player.id,
+          name: player.name,
+          role: player.role,
+          ai: !!player.ai,
+          left: player.hand.length,
+          score: scoreDelta(index, landlordWon, score)
+        };
+      }),
+      history: history.slice()
+    }).catch(function() {});
+    if (App.Signaling.addLeaderboardResults) {
+      App.Signaling.addLeaderboardResults(players.map(function(player, index) {
+        return {
+          id: player.id,
+          name: player.name,
+          score: scoreDelta(index, landlordWon, score),
+          win: index === winnerIndex
+        };
+      })).catch(function() {});
+    }
   }
 
   function getSelectedCards() {
@@ -974,7 +1040,9 @@
         opts.players = msg.players || opts.players;
         opts.spectators = msg.spectators || opts.spectators;
         opts.role = msg.role || opts.role;
+        opts.isHost = !!msg.isHost;
         handleRoomSnapshot(msg.gameState);
+        syncPlayerPresence(opts.players);
         return;
       }
       handleRoomAction(msg);

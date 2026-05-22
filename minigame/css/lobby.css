@@ -89,9 +89,18 @@
 .room-chat-message span{min-width:0;color:#475467;overflow-wrap:anywhere}
 .room-chat-input-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:center}
 .room-chat-input-row .text-input{margin:0}
+.admin-screen{align-items:stretch;max-width:1180px}
+.admin-layout{display:grid;grid-template-columns:340px minmax(0,1fr);gap:16px;width:100%}
+.admin-room-row{width:100%;text-align:left;cursor:pointer;font:inherit;color:inherit}
+.admin-room-row.active{border-color:#7cc59d;background:#f1fbf5}
+.admin-detail-empty{font-size:.9rem;color:var(--muted)}
+.admin-debug-panel{grid-template-columns:repeat(3,1fr)}
+.admin-subtitle{font-size:.88rem;margin:14px 0 8px;color:var(--text)}
 @media(max-width:480px){
   .mode-buttons{display:block}
   #room-code-label{font-size:1.5rem}
   .room-debug-panel{grid-template-columns:repeat(2,1fr)}
   .room-chat-list{min-height:96px;max-height:130px}
+  .admin-layout{grid-template-columns:1fr}
+  .admin-debug-panel{grid-template-columns:repeat(2,1fr)}
 }

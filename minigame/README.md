@@ -5,12 +5,15 @@ This folder contains the static mini-game app served by GitHub Pages.
 ## Architecture
 
 - `index.html`: SPA shell and screen containers.
+- `admin.html`: lightweight Firebase room monitor for room status, AI takeover,
+  history, and room leaderboard.
 - `css/common.css`: shared layout, buttons, cards, toast, input styles.
 - `css/lobby.css`: lobby, room, game selection, and mode selection UI.
 - `js/common.js`: shared utilities.
 - `js/roomSession.js`: `localStorage` room resume ticket helper.
 - `js/firebaseConfig.js`: Firebase web config.
 - `js/signaling.js`: Firebase Realtime Database party room, queue, chat, actions, and snapshots.
+- `js/admin.js`: Admin monitor page logic.
 - `js/gameManager.js`: game registration and lifecycle.
 - `js/lobby.js`: local play and Firebase Party Room flow.
 - `games/<gameId>/<gameId>.js`: game logic and rendering.
@@ -79,6 +82,9 @@ Guess Color, 鋤大DEE, and 鬥地主 room play are Firebase-first: non-host cli
 The host removes each `gameActions/{actionId}` after processing or discarding it, so old fallback actions do not replay forever.
 Refresh resume is Firebase-only: the same browser returns to the same room and
 restores active game state from `gameStart` and `gameState`.
+The same stable browser `clientId` is also used for room-code re-entry, so a
+disconnected player can enter the same 4-digit code and resume their member
+record.
 
 Room lobby has a compact debug panel:
 
@@ -141,6 +147,16 @@ All new games should declare:
 Room games should treat spectators as read-only full-state viewers. When a game
 uses AI fill, AI should make the best available decision from known state rather
 than random legal moves.
+
+During room play, every game must also support these disconnect semantics:
+
+- `room_update.players` may mark a real player as `online: false`.
+- If an offline real player owns a seat, the active host should treat that seat
+  as AI-controlled until the player returns.
+- If `room_update.isHost` changes to true, the game instance is now the room
+  authority and must process actions, schedule AI, and publish snapshots.
+- When the disconnected player returns, the same seat should become human
+  controlled again.
 
 Game-specific multiplayer actions must be sent through:
 
@@ -215,6 +231,12 @@ Manual checks:
 - Queue toggle updates the queue list.
 - Host starts Guess Color with queued users and joiner enters the game without waiting forever.
 - Extra or unqueued users remain spectators.
+- If a non-host player refreshes/leaves mid-card-game, host sees AI takeover and
+  the game continues.
+- If the host refreshes/leaves while another browser is online, host authority
+  migrates and the game continues.
+- `minigame/admin.html` shows rooms, online members, AI takeover state, history,
+  and leaderboard rows.
 
 ## Agent Notes
 

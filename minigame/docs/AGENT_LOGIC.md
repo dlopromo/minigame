@@ -369,6 +369,48 @@ Guess Color accepts `opts.role`.
 - Render usernames using `textContent` or escaping helpers.
 - UI should show the full 12-character value when possible and use ellipsis only when space is constrained.
 
+## Disconnect / Host Migration Rules
+
+Party Room authority is recoverable:
+
+- `rooms/{code}/hostId` is the current room authority.
+- `hostEpoch` increments when authority moves to another browser.
+- Each browser has a stable `clientId` stored in `localStorage`, so re-entering
+  the same 4-digit code from the same browser can resume the original member.
+- When the current host is offline, online clients elect the earliest joined
+  online member. Only that candidate attempts `App.Signaling.claimHost()`, and
+  the claim uses a Firebase transaction.
+- The old host returns as a normal member/player if they reconnect after host
+  migration. They do not automatically regain host controls.
+
+Game disconnect behavior:
+
+- Lobby forwards enriched `room_update.players` into the active game.
+- A real player with `online: false` should be treated as AI-controlled by the
+  active host.
+- When that player returns and `online` becomes true, the same seat should become
+  human-controlled again.
+- 鋤大DEE and 鬥地主 already convert disconnected real seats to AI and continue
+  scheduling turns on the current host.
+- Guess Color coop and race use a simple non-cheating random AI takeover for
+  offline seats. The AI does not peek at the answer when choosing guesses.
+
+Frontend-only limitation:
+
+- If every browser is gone simultaneously, no client remains to archive the
+  round immediately. Fully automatic all-offline archival requires Firebase
+  Cloud Functions or another trusted worker.
+
+## History / Leaderboard / Admin
+
+- Room history lives at `rooms/{code}/history`.
+- Room leaderboard lives at `rooms/{code}/leaderboard`.
+- Guess Color records completion and simple win points.
+- 鋤大DEE and 鬥地主 record room score deltas.
+- `minigame/admin.html` is a lightweight monitor page for room state, AI takeover,
+  online players, history, and leaderboard data. It is not a hardened private
+  admin backoffice.
+
 ## UI Principles
 
 The current design direction is Office Calm:
@@ -387,7 +429,7 @@ The current design direction is Office Calm:
   Without it, the short-code UI stays visible but shows a setup warning.
 - Host-generated answer is stored in `gameStart.initialState`.
   This is acceptable for friendly play but is not cheat-resistant.
-- Party Rooms have no host migration.
+- Party Rooms support host migration while at least one real browser remains online.
 - Party Rooms support refresh resume: same room, same member id, queue survives, and active game state restores from Firebase.
 - Firebase is the room/action/snapshot transport, but it is still not a cheat-proof authoritative game server.
 - Full multi-tab Firebase behavior should be manually tested with a real Firebase project before release.

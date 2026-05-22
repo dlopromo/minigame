@@ -14,6 +14,8 @@
   var opponentProgress = { attempts: 0, elapsed: 0, finished: false };
   var guessSelection = [null,null,null,null], guessActiveSlot = 0;
   var applyingRoomSnapshot = false;
+  var aiTimer = null;
+  var roomHistorySaved = false;
 
   function isSpectator() {
     return opts && opts.role === 'spectator';
@@ -90,6 +92,13 @@
     opponentProgress = { attempts: 0, elapsed: 0, finished: false };
     guessSelection = [null,null,null,null]; guessActiveSlot = 0;
     applyingRoomSnapshot = false;
+    aiTimer = clearTimer(aiTimer);
+    roomHistorySaved = false;
+  }
+
+  function clearTimer(timer) {
+    if (timer) clearTimeout(timer);
+    return null;
   }
 
   function generateComputerCode() {
@@ -169,11 +178,13 @@
     var guesses = stateOverride && stateOverride.guesses ? stateOverride.guesses : getRoomGuessRows();
     var raceProgress = stateOverride && stateOverride.raceProgressByPlayerId ? stateOverride.raceProgressByPlayerId : {};
     if (opts.mode === 'race') {
-      raceProgress[opts.selfId] = raceProgress[opts.selfId] || {
-        attempts: myGuesses.length,
-        elapsed: finishedAt || elapsedMs(),
-        finished: !!finishedAt
-      };
+      if (getPlayerById(opts.selfId)) {
+        raceProgress[opts.selfId] = raceProgress[opts.selfId] || {
+          attempts: myGuesses.length,
+          elapsed: finishedAt || elapsedMs(),
+          finished: !!finishedAt
+        };
+      }
       var opponent = getOpponentPlayer();
       if (opponent && !raceProgress[opponent.id]) raceProgress[opponent.id] = opponentProgress;
     }
@@ -195,6 +206,149 @@
     }).catch(function(e) {
       App.Common.showToast('同步房間狀態失敗：' + e.message, 'error');
     });
+  }
+
+  function randomGuess() {
+    var colors = [];
+    for (var i = 0; i < SLOTS; i++) {
+      colors.push(COLORS[Math.floor(Math.random() * COLORS.length)]);
+    }
+    return colors;
+  }
+
+  function scheduleRoomAiTakeover() {
+    aiTimer = clearTimer(aiTimer);
+    if (!isRoomMode() || !opts.isHost || gameOver) return;
+    if (opts.mode === 'race') {
+      var offlineRacer = (opts.players || []).filter(function(player) {
+        return player.online === false && !playerFinished(player.id);
+      })[0];
+      if (!offlineRacer) return;
+      aiTimer = setTimeout(function() {
+        aiTimer = null;
+        if (!opts || !opts.isHost || gameOver || !getPlayerById(offlineRacer.id) || getPlayerById(offlineRacer.id).online !== false) return;
+        submitAiRaceGuess(offlineRacer);
+      }, 1200);
+      return;
+    }
+    if (opts.mode !== 'coop') return;
+    var turnId = currentTurnClientIdFromGuesses(getRoomGuessRows());
+    var player = getPlayerById(turnId);
+    if (!player || player.online !== false) return;
+    aiTimer = setTimeout(function() {
+      aiTimer = null;
+      if (!opts || !opts.isHost || gameOver) return;
+      var latestTurnId = currentTurnClientIdFromGuesses(getRoomGuessRows());
+      var latestPlayer = getPlayerById(latestTurnId);
+      if (!latestPlayer || latestPlayer.online !== false) return;
+      submitAiCoopGuess(latestPlayer);
+    }, 900);
+  }
+
+  function playerFinished(playerId) {
+    return getRoomGuessRows().some(function(row) {
+      return row.playerId === playerId && row.hits === SLOTS;
+    });
+  }
+
+  function submitAiCoopGuess(player) {
+    var colors = randomGuess();
+    var result = calculateHitBlow(colors, computerCode);
+    var guessRecord = {
+      playerId: player.id,
+      playerName: (player.name || '玩家') + ' AI',
+      colors: colors,
+      hits: result.hits,
+      blows: result.blows,
+      elapsed: 0,
+      finished: result.hits === SLOTS,
+      createdAt: Date.now()
+    };
+    opponentGuesses.push(guessRecord);
+    if (result.hits === SLOTS) {
+      gameOver = true;
+      saveRoomSnapshot({ gameOver: true, winner: 'team', winnerPlayerId: player.id, turnClientId: '' });
+      saveRoomHistory('completed', 'team', player.id);
+      renderGameBoard();
+      updateTurnIndicator();
+      showResult(true);
+      return;
+    }
+    saveRoomSnapshot();
+    renderGameBoard();
+    updateTurnIndicator();
+    scheduleRoomAiTakeover();
+  }
+
+  function submitAiRaceGuess(player) {
+    var colors = randomGuess();
+    var result = calculateHitBlow(colors, computerCode);
+    var elapsed = elapsedMs();
+    var existing = getRoomGuessRows().filter(function(row) { return row.playerId === player.id; });
+    var guessRecord = {
+      playerId: player.id,
+      playerName: (player.name || '玩家') + ' AI',
+      colors: colors,
+      hits: result.hits,
+      blows: result.blows,
+      elapsed: elapsed,
+      finished: result.hits === SLOTS,
+      createdAt: Date.now()
+    };
+    opponentGuesses.push(guessRecord);
+    var raceProgress = {};
+    raceProgress[player.id] = {
+      attempts: existing.length + 1,
+      elapsed: elapsed,
+      finished: result.hits === SLOTS
+    };
+    if (result.hits === SLOTS) {
+      gameOver = true;
+      saveRoomSnapshot({ gameOver: true, winner: 'ai_takeover', winnerPlayerId: player.id, raceProgressByPlayerId: raceProgress });
+      saveRoomHistory('completed', 'ai_takeover', player.id);
+      renderGameBoard();
+      updateTurnIndicator();
+      showResult(player.id === opts.selfId);
+      return;
+    }
+    saveRoomSnapshot({ raceProgressByPlayerId: raceProgress });
+    renderGameBoard();
+    updateTurnIndicator();
+    scheduleRoomAiTakeover();
+  }
+
+  function saveRoomHistory(status, winner, winnerPlayerId) {
+    if (!isRoomMode() || !opts.isHost || roomHistorySaved || !App.Signaling || !App.Signaling.appendHistory) return;
+    roomHistorySaved = true;
+    App.Signaling.appendHistory({
+      gameId: 'guessColor',
+      gameName: '猜顏色',
+      mode: opts.mode || '',
+      roundId: opts.roundId || '',
+      status: status || 'completed',
+      winner: winner || '',
+      winnerPlayerId: winnerPlayerId || '',
+      answer: computerCode.slice(),
+      guesses: getRoomGuessRows(),
+      players: (opts.players || []).map(function(player) {
+        return {
+          id: player.id,
+          name: player.name,
+          online: player.online !== false
+        };
+      })
+    }).catch(function() {});
+    if (App.Signaling.addLeaderboardResults) {
+      App.Signaling.addLeaderboardResults((opts.players || []).map(function(player) {
+        var won = winner === 'team' || player.id === winnerPlayerId;
+        return {
+          id: player.id,
+          name: player.name,
+          score: won ? 1 : 0,
+          win: won
+        };
+      })).catch(function() {});
+    }
   }
 
   function setTitle(text) {
@@ -757,6 +911,7 @@
       send({ type: 'coop_guess', playerId: opts.selfId, playerName: opts.playerName, colors: colors, hits: result.hits, blows: result.blows, code: computerCode, createdAt: guessRecord.createdAt });
       send({ type: 'game_over', winner: 'team', code: computerCode });
       saveRoomSnapshot({ gameOver: true, winner: 'team', winnerPlayerId: opts.selfId, turnClientId: '' });
+      saveRoomHistory('completed', 'team', opts.selfId);
       renderGameBoard();
       updateTurnIndicator();
       showResult(true);
@@ -766,6 +921,7 @@
       saveRoomSnapshot();
       renderGameBoard();
       updateTurnIndicator();
+      scheduleRoomAiTakeover();
     }
   }
 
@@ -804,6 +960,7 @@
         code: computerCode
       });
       saveRoomSnapshot({ gameOver: true, winner: 'me', winnerPlayerId: opts.selfId, raceProgressByPlayerId: raceProgress });
+      saveRoomHistory('completed', 'me', opts.selfId);
       renderGameBoard();
       updateTurnIndicator();
       showResult(!opponentProgress.finished || finishedAt <= opponentProgress.elapsed);
@@ -859,9 +1016,11 @@
     opts.spectators = msg.spectators || opts.spectators || [];
     opts.role = msg.role || opts.role;
     opts.selfId = msg.selfId || opts.selfId;
+    opts.isHost = !!msg.isHost;
     applyRoomSnapshot(msg.gameState);
     renderRoomInfo();
     updateTurnIndicator();
+    scheduleRoomAiTakeover();
   }
 
   function applyRoomSnapshot(gameState) {
@@ -937,12 +1096,14 @@
       gameOver = true;
       computerCode = msg.code || computerCode;
       saveRoomSnapshot({ gameOver: true, winner: 'team', winnerPlayerId: msg.playerId || '', turnClientId: '' });
+      saveRoomHistory('completed', 'team', msg.playerId || '');
       updateTurnIndicator();
       showResult(true);
     } else {
       myTurn = true;
       saveRoomSnapshot();
       updateTurnIndicator();
+      scheduleRoomAiTakeover();
     }
   }
 
@@ -995,10 +1156,12 @@
     if (!gameOver) {
       gameOver = true;
       saveRoomSnapshot({ gameOver: true, winner: 'opponent', winnerPlayerId: msg.playerId || '', raceProgressByPlayerId: raceProgress });
+      saveRoomHistory('completed', 'opponent', msg.playerId || '');
       updateTurnIndicator();
       showResult(false);
     } else {
       saveRoomSnapshot({ gameOver: true, winner: 'me', winnerPlayerId: opts.selfId, raceProgressByPlayerId: raceProgress });
+      saveRoomHistory('completed', 'me', opts.selfId);
       renderResultHistory();
       var summary = document.getElementById('gc-race-result-summary');
       if (summary) {
@@ -1145,6 +1308,7 @@
   }
 
   function destroy() {
+    aiTimer = clearTimer(aiTimer);
     container = null;
     opts = null;
     resetGameState();

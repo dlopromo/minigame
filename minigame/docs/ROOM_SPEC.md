@@ -14,7 +14,11 @@ part of the active app flow.
 
 ## Room Code And Username
 
-- Room codes are random 4-digit numeric strings.
+- Room codes are 4-digit numeric strings.
+- Entering an existing code joins that Party Room.
+- Entering a new code creates that Party Room.
+- The lobby still offers a random-create helper, but the canonical flow is
+  "enter code -> join or create".
 - Username is required.
 - Username is trimmed, capped at 12 characters, and must use only Chinese
   characters, English letters, or digits.
@@ -25,6 +29,7 @@ part of the active app flow.
 ```js
 rooms/{roomCode}: {
   hostId: string,
+  hostEpoch: number,
   status: 'lobby' | 'starting' | 'playing' | 'closed',
   gameId: string,
   mode: string,
@@ -84,6 +89,20 @@ rooms/{roomCode}: {
       mode: string,
       payload: object,
       createdAt: serverTimestamp
+    }
+  },
+
+  history: {
+    [entryId]: RoundHistory
+  },
+
+  leaderboard: {
+    [clientId]: {
+      name: string,
+      score: number,
+      wins: number,
+      plays: number,
+      lastPlayedAt: serverTimestamp
     }
   }
 }
@@ -169,6 +188,58 @@ Important:
 
 Host creates `gameStart`; every client launches the same `roundId` from Firebase.
 
+## Presence, Host Migration, And AI Takeover
+
+Room identity uses a stable browser `clientId`, stored in `localStorage`. This
+lets the same browser re-enter the same 4-digit room code and reclaim its member
+record without re-pairing.
+
+```text
+member online=false
+        |
+        v
+active game receives room_update
+        |
+        v
+if the member owns a player seat:
+  seat is treated as AI controlled
+        |
+        v
+if the member returns:
+  same seat becomes human controlled again
+```
+
+Host migration is separate from player seats:
+
+```text
+current host offline
+        |
+        v
+online clients inspect members by joinedAt
+        |
+        v
+earliest online member tries Firebase transaction
+        |
+        v
+transaction updates hostId, hostEpoch, member roles
+        |
+        v
+new host applies gameActions, runs AI, writes gameState
+```
+
+The old host does not automatically regain host permissions. If they reconnect
+while the round is active, they return as their normal player/spectator seat.
+
+Important frontend-only limitation:
+
+- A connected browser can migrate host and record AI takeover immediately after
+  Firebase marks a member offline.
+- If every browser disappears at exactly the same time, no client remains to run
+  cleanup logic. A fully immediate "all users offline -> archive interrupted
+  round" requires a small Cloud Function or another trusted worker. The current
+  static MVP keeps recoverable room data in Firebase and can close/recover when
+  a browser reconnects.
+
 ## GameState And Actions
 
 Room games are Firebase-first:
@@ -210,7 +281,20 @@ Card-game actions:
 - Chat is room-level, not game-level.
 - Switching games does not clear chat.
 - Messages are trimmed to 120 characters.
-- UI renders recent messages only.
+- UI renders the room chat history stored under the room code.
+
+## History, Leaderboard, And Admin
+
+- Completed room rounds append one record under `rooms/{code}/history`.
+- Leaderboard rows are scoped to the same 4-digit room code and live under
+  `rooms/{code}/leaderboard`.
+- Current score support:
+  - Guess Color: win count and +1 score for winning/team completion.
+  - 鋤大DEE: room score deltas from remaining cards and top-card penalties.
+  - 鬥地主: room score deltas from bid and bomb/rocket multiplier.
+- `minigame/admin.html` is a friends-only Firebase monitor page. It lists rooms,
+  online/offline humans, active AI takeover state, leaderboard rows, and history.
+  It uses Anonymous Auth and RTDB reads; it is not a hardened private backoffice.
 
 ## Result And Return
 
