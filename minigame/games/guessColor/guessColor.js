@@ -68,6 +68,13 @@
     return null;
   }
 
+  function getCoopTurnPlayerName() {
+    var turnId = currentTurnClientIdFromGuesses(getRoomGuessRows());
+    var player = getPlayerById(turnId);
+    if (turnId === opts.selfId) return opts.playerName || '你';
+    return (player && player.name) || opts.opponentName || '隊友';
+  }
+
   function hasGuessRecord(list, msg) {
     if (!msg || !msg.createdAt) return false;
     return list.some(function(g) {
@@ -644,8 +651,8 @@
         setTitle('🔔 輪到你了');
       } else {
         indicator.className = 'gc-title their-turn';
-        var waitName = opts.opponentName || '隊友';
-        indicator.textContent = waitName + ' 思考中...';
+        var waitName = getCoopTurnPlayerName();
+        indicator.textContent = waitName === (opts.playerName || '你') ? '同步回合中...' : waitName + ' 思考中...';
         inputArea.style.display = 'block';
         setTitle('⏳ 等待 ' + waitName);
       }
@@ -1154,6 +1161,7 @@
     supportsSingle: true,
     supportsMultiplayer: true,
     minPlayers: 1,
+    minRoomPlayers: 2,
     maxPlayers: 2,
     allowSpectators: true,
     aiFill: false,

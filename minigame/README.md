@@ -34,6 +34,7 @@ App.GameManager.register({
   description: 'Hit & Blow',
   supportsSingle: true,
   supportsMultiplayer: true,
+  supportsManualMultiplayer: true,
   minPlayers: 1,
   maxPlayers: 2,
   allowSpectators: true,
@@ -76,10 +77,10 @@ There are two multiplayer paths:
 
 Short-code rooms use Firebase as the round-start authority.
 Firebase works over WAN for room/signaling state. WebRTC uses public STUN servers for WAN/NAT traversal; very restrictive networks may still need TURN, which is not part of this MVP.
-Guess Color room play is Firebase-first: non-host clients write actions to `gameActions`, the host applies them, and `gameState` becomes the source of truth for board/turn/result updates.
+Guess Color, 鋤大DEE, and 鬥地主 room play are Firebase-first: non-host clients write actions to `gameActions`, the host applies them, and `gameState` becomes the source of truth for board/turn/result updates.
 The host removes each `gameActions/{actionId}` after processing or discarding it, so old fallback actions do not replay forever.
 Manual two-player mode still uses WebRTC directly. Room mode should not require WebRTC to stay playable.
-Refresh resume is Level 2 for Guess Color: the same browser returns to the same room/seat, WebRTC is rebuilt automatically, and Guess Color restores guesses, turn, race progress, and result state from Firebase `gameState`.
+Refresh resume is Level 2 for active room games: the same browser returns to the same room/seat, WebRTC is rebuilt automatically when available, and the game restores its mutable state from Firebase `gameState`.
 
 Room lobby has a compact debug panel:
 
@@ -92,11 +93,15 @@ Room lobby has a compact debug panel:
 
 ## Big Dee MVP
 
-`bigDee` is currently local single-player only.
+`bigDee` supports local single-player and short-code room play.
 
 - `supportsSingle: true`
-- `supportsMultiplayer: false`
-- Four seats: human + 3 basic AI players.
+- `supportsMultiplayer: true`
+- `supportsManualMultiplayer: false`
+- `maxPlayers: 4`
+- `aiFill: true`
+- Four seats: real players first, then AI fill.
+- Extra room members become spectators/queue.
 - 52 cards, 13 cards per player.
 - Holder of `3♦` starts, and the first play must include `3♦`.
 - Supported hands: single, pair, triple, and five-card hands.
@@ -107,15 +112,18 @@ Room lobby has a compact debug panel:
 
 ## Dou Dizhu MVP
 
-`douDizhu` is currently local single-player only.
+`douDizhu` supports local single-player and short-code room play. Four-player
+鬥地主 is intentionally out of scope.
 
 - `supportsSingle: true`
-- `supportsMultiplayer: false`
+- `supportsMultiplayer: true`
+- `supportsManualMultiplayer: false`
 - `minPlayers: 1`
 - `maxPlayers: 3`
 - `allowSpectators: true`
 - `aiFill: true`
-- Three seats: human + 2 AI players.
+- Three seats: real players first, then AI fill.
+- Extra room members become spectators/queue.
 - Uses 54 cards with small joker and big joker.
 - Bidding supports pass, 1, 2, and 3 points.
 - Highest bidder becomes landlord and receives the 3 bottom cards.
@@ -155,6 +163,24 @@ App.WebRTC.send({ type: 'game_msg', payload: msg });
    - `role: "spectator"`
    - `initialState`
 8. Add tests for local mode, manual multiplayer, and short-code room mode.
+
+## Room Seat Rules
+
+For room games, lobby seating is shared:
+
+```text
+online real users ordered by joinedAt
+        |
+        v
+first maxPlayers users -> player seats
+remaining users        -> spectators / queue
+empty seats + aiFill   -> AI player records in gameStart only
+```
+
+AI seats are not written into `rooms/{code}/players`; they only exist inside
+`gameStart.players` and the game snapshot. Card games use the host as referee:
+the host accepts actions, runs AI, writes `gameState`, and other clients render
+that snapshot.
 
 ## Username Rules
 

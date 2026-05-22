@@ -70,11 +70,16 @@ Current Guess Color multiplayer modes:
 
 Current Big Dee / 鋤大DEE mode:
 
-- `single`: local four-seat game, human player versus 3 basic AI players.
+- `single`: local four-seat game, human player versus AI fill.
+- `room`: short-code room play, real players seated first, empty seats filled by
+  AI, extras as spectators/queue. Host applies actions and writes `gameState`.
 
 Current Dou Dizhu / 鬥地主 mode:
 
-- `single`: local three-seat game, human player versus 2 AI players.
+- `single`: local three-seat game, human player versus AI fill.
+- `room`: short-code three-player room play, real players seated first, empty
+  seats filled by AI, extras as spectators/queue. Four-player 鬥地主 is out of
+  scope. Host applies bids/plays/passes and writes `gameState`.
 
 ## WebRTC Message Layers
 

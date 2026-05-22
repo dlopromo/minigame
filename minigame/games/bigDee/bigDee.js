@@ -44,6 +44,9 @@
   var firstPlayRequiresDiamondThree = true;
   var topDaRecords = [];
 
+  function isRoomMode() { return opts && opts.roomId; }
+  function isSpectator() { return opts && opts.role === 'spectator'; }
+  function isHostAuthority() { return !isRoomMode() || opts.isHost; }
   function rankValue(rank) { return RANKS.indexOf(rank); }
   function suitValue(suit) { return SUITS.indexOf(suit); }
   function cardValue(card) { return rankValue(card.rank) * 4 + suitValue(card.suit); }
@@ -64,14 +67,39 @@
     return deck;
   }
 
-  function setupGame() {
-    var deck = makeDeck();
-    players = [
-      { id: 'human', name: opts.playerName || '你', hand: [], ai: false, passed: false },
-      { id: 'ai-1', name: 'AI 1', hand: [], ai: true, passed: false },
-      { id: 'ai-2', name: 'AI 2', hand: [], ai: true, passed: false },
-      { id: 'ai-3', name: 'AI 3', hand: [], ai: true, passed: false }
+  function defaultSeats() {
+    return [
+      { id: 'human', name: opts.playerName || '你', isAI: false },
+      { id: 'ai-1', name: 'AI 1', isAI: true },
+      { id: 'ai-2', name: 'AI 2', isAI: true },
+      { id: 'ai-3', name: 'AI 3', isAI: true }
     ];
+  }
+
+  function makePlayersFromSeats(seats) {
+    return seats.slice(0, 4).map(function(seat, index) {
+      var isAI = !!seat.isAI || /^ai-/.test(seat.id || '');
+      return {
+        id: seat.id || (isAI ? 'ai-' + (index + 1) : 'human'),
+        name: seat.name || (isAI ? 'AI ' + (index + 1) : '玩家'),
+        hand: [],
+        ai: isAI,
+        passed: false
+      };
+    });
+  }
+
+  function setupGame() {
+    if (opts && opts.initialState && opts.initialState.state) {
+      applyState(opts.initialState.state);
+      return;
+    }
+    setupFreshGame(defaultSeats());
+  }
+
+  function setupFreshGame(seats) {
+    var deck = makeDeck();
+    players = makePlayersFromSeats(seats && seats.length ? seats : defaultSeats());
     deck.forEach(function(card, index) { players[index % 4].hand.push(card); });
     players.forEach(function(player) { player.hand.sort(byCard); });
     roundNumber++;
@@ -88,6 +116,103 @@
     history = [{ player: '系統', text: firstPlayRequiresDiamondThree ? players[currentPlayer].name + ' 持有 3♦ 先手' : '續局由上局勝出者 ' + players[currentPlayer].name + ' 先手' }];
     gameOver = false;
     placements = [];
+  }
+
+  function buildInitialState(seats) {
+    setupFreshGame(seats);
+    return serializeState();
+  }
+
+  function serializeState() {
+    return {
+      players: players.map(function(player) {
+        return {
+          id: player.id,
+          name: player.name,
+          ai: !!player.ai,
+          hand: cloneCards(player.hand),
+          passed: !!player.passed
+        };
+      }),
+      currentPlayer: currentPlayer,
+      lastPlay: lastPlay ? {
+        playerIndex: lastPlay.playerIndex,
+        playerName: lastPlay.playerName,
+        cards: cloneCards(lastPlay.cards),
+        combo: lastPlay.combo
+      } : null,
+      firstPlay: !!firstPlay,
+      history: history.slice(),
+      gameOver: !!gameOver,
+      placements: placements.slice(),
+      roundNumber: roundNumber,
+      previousWinnerIndex: previousWinnerIndex,
+      openingRule: openingRule,
+      firstPlayRequiresDiamondThree: !!firstPlayRequiresDiamondThree,
+      topDaRecords: topDaRecords.slice(),
+      savedAt: Date.now()
+    };
+  }
+
+  function applyState(state) {
+    if (!state) return;
+    players = (state.players || []).map(function(player) {
+      return {
+        id: player.id,
+        name: player.name,
+        ai: !!player.ai,
+        hand: cloneCards(player.hand || []).sort(byCard),
+        passed: !!player.passed
+      };
+    });
+    currentPlayer = state.currentPlayer || 0;
+    lastPlay = state.lastPlay ? {
+      playerIndex: state.lastPlay.playerIndex,
+      playerName: state.lastPlay.playerName,
+      cards: cloneCards(state.lastPlay.cards || []).sort(byCard),
+      combo: state.lastPlay.combo
+    } : null;
+    firstPlay = !!state.firstPlay;
+    history = (state.history || []).slice();
+    gameOver = !!state.gameOver;
+    placements = (state.placements || []).slice();
+    roundNumber = state.roundNumber || roundNumber || 1;
+    previousWinnerIndex = state.previousWinnerIndex === undefined ? null : state.previousWinnerIndex;
+    openingRule = state.openingRule || openingRule;
+    firstPlayRequiresDiamondThree = !!state.firstPlayRequiresDiamondThree;
+    topDaRecords = (state.topDaRecords || []).slice();
+  }
+
+  function publishState() {
+    if (!isRoomMode() || !opts.isHost || !App.Signaling || !App.Signaling.setGameState) return;
+    App.Signaling.setGameState({
+      gameId: 'bigDee',
+      mode: opts.mode,
+      roundId: opts.roundId || '',
+      state: serializeState()
+    }).catch(function(e) {
+      App.Common.showToast('同步牌局失敗：' + e.message, 'error');
+    });
+  }
+
+  function commitTable() {
+    publishState();
+    render();
+    scheduleAI();
+  }
+
+  function selfPlayerIndex() {
+    if (isSpectator()) return -1;
+    if (!isRoomMode()) return 0;
+    for (var i = 0; i < players.length; i++) {
+      if (players[i].id === opts.selfId) return i;
+    }
+    return -1;
+  }
+
+  function canControlCurrent() {
+    var index = selfPlayerIndex();
+    return index >= 0 && index === currentPlayer && !gameOver && players[index] && !players[index].ai;
   }
 
   function groupByRank(cards) {
@@ -256,8 +381,7 @@
       return true;
     }
     currentPlayer = nextPlayerIndex(index);
-    render();
-    scheduleAI();
+    commitTable();
     return true;
   }
 
@@ -277,8 +401,7 @@
     } else {
       currentPlayer = nextPlayerIndex(index);
     }
-    render();
-    scheduleAI();
+    commitTable();
   }
 
   function finishGame(winnerIndex) {
@@ -290,6 +413,7 @@
     }).sort(function(a, b) {
       return players[a].hand.length - players[b].hand.length;
     }));
+    publishState();
     renderResult();
   }
 
@@ -299,34 +423,55 @@
   }
 
   function getSelectedCards() {
-    return players[0].hand.filter(function(card) { return selectedIds[card.id]; });
+    var index = selfPlayerIndex();
+    if (index < 0 || !players[index]) return [];
+    return players[index].hand.filter(function(card) { return selectedIds[card.id]; });
   }
 
   function toggleCard(cardId) {
-    if (gameOver || currentPlayer !== 0) return;
+    if (!canControlCurrent()) return;
     if (selectedIds[cardId]) delete selectedIds[cardId];
     else selectedIds[cardId] = true;
     render();
   }
 
   function submitHumanPlay() {
-    if (currentPlayer !== 0 || gameOver) return;
-    playCards(0, getSelectedCards());
+    if (!canControlCurrent()) return;
+    var index = selfPlayerIndex();
+    var cards = getSelectedCards();
+    if (isRoomMode() && !opts.isHost) {
+      sendRoomAction({ type: 'bd_play', playerId: opts.selfId, cardIds: cards.map(function(card) { return card.id; }) });
+      selectedIds = {};
+      render();
+      return;
+    }
+    playCards(index, cards);
   }
 
   function humanPass() {
-    if (currentPlayer !== 0 || gameOver || !lastPlay) return;
+    if (!canControlCurrent() || !lastPlay) return;
+    var index = selfPlayerIndex();
     selectedIds = {};
-    passTurn(0);
+    if (isRoomMode() && !opts.isHost) {
+      sendRoomAction({ type: 'bd_pass', playerId: opts.selfId });
+      render();
+      return;
+    }
+    passTurn(index);
   }
 
   function scheduleAI() {
-    if (gameOver || currentPlayer === 0) return;
+    if (gameOver || !isHostAuthority() || !players[currentPlayer] || !players[currentPlayer].ai) return;
     aiTimer = clearTimer(aiTimer);
     aiTimer = setTimeout(function() {
       aiTimer = null;
       aiMove(currentPlayer);
     }, 520);
+  }
+
+  function sendRoomAction(action) {
+    if (!App.Lobby || typeof App.Lobby.sendRoomGameAction !== 'function') return false;
+    return App.Lobby.sendRoomGameAction(action);
   }
 
   function aiMove(index) {
@@ -445,7 +590,7 @@
     container.innerHTML =
       '<div class="bd-shell">' +
         '<div class="bd-topbar">' +
-          '<div class="bd-title' + (currentPlayer === 0 ? ' my-turn' : '') + '">' + escapeHtml(statusTitle()) + '</div>' +
+          '<div class="bd-title' + (canControlCurrent() ? ' my-turn' : '') + '">' + escapeHtml(statusTitle()) + '</div>' +
           '<div class="bd-actions"><button class="bd-icon-btn" onclick="App.GameManager.endGame()">×</button></div>' +
         '</div>' +
         '<div class="bd-board">' +
@@ -459,12 +604,18 @@
   }
 
   function statusTitle() {
-    if (currentPlayer === 0) return lastPlay ? '輪到你：出同張數牌或 Pass' : '輪到你開新一輪';
+    if (isSpectator()) return players[currentPlayer].name + ' 出牌中（觀戰）';
+    if (canControlCurrent()) return lastPlay ? '輪到你：出同張數牌或 Pass' : '輪到你開新一輪';
     return players[currentPlayer].name + ' 思考中...';
   }
 
   function renderOpponentSeats() {
-    return renderSeat(1, 'left') + renderSeat(2, 'top') + renderSeat(3, 'right');
+    var self = selfPlayerIndex();
+    var indexes = players.map(function(_, index) { return index; }).filter(function(index) { return index !== self; });
+    var positions = ['left', 'top', 'right'];
+    return indexes.map(function(index, slot) {
+      return renderSeat(index, positions[slot] || 'right');
+    }).join('');
   }
 
   function renderSeat(index, position) {
@@ -477,12 +628,14 @@
   }
 
   function renderTable() {
+    var self = selfPlayerIndex();
+    var selfHandCount = self >= 0 && players[self] ? players[self].hand.length : 0;
     var last = lastPlay
       ? lastPlay.cards.map(function(card, index) { return renderTableCard(card, index, lastPlay.playerName); }).join('') +
         '<div class="bd-pill">' + escapeHtml(lastPlay.playerName) + ' · ' + COMBO_NAMES[lastPlay.combo.type] + '</div>'
       : '<div class="bd-last-empty">新一輪，可以自由出牌</div>';
     return '<div class="bd-table">' +
-      '<div class="bd-status"><span>' + escapeHtml(openingRuleText()) + '</span><span class="bd-pill">' + players[0].hand.length + ' 張手牌</span></div>' +
+      '<div class="bd-status"><span>' + escapeHtml(openingRuleText()) + '</span><span class="bd-pill">' + (isSpectator() ? '觀戰' : selfHandCount + ' 張手牌') + '</span></div>' +
       '<div class="bd-last-play">' + last + '</div>' +
       '<div class="bd-history">' + history.slice().reverse().map(function(row) {
         return '<div class="bd-history-row"><span>' + escapeHtml(row.player) + '</span><span>' + escapeHtml(row.text) + '</span></div>';
@@ -491,17 +644,26 @@
   }
 
   function renderHandPanel(check) {
-    var hint = currentPlayer === 0 ? check.reason : '等待 AI 出牌';
-    var canSubmit = currentPlayer === 0 && check.ok;
-    var canPass = currentPlayer === 0 && !!lastPlay;
-    return '<div class="bd-hand-panel' + (currentPlayer === 0 ? ' active' : '') + '">' +
-      '<div class="bd-hand-scroll">' + players[0].hand.map(renderHandCard).join('') + '</div>' +
+    var self = selfPlayerIndex();
+    var hand = self >= 0 && players[self] ? players[self].hand : [];
+    var canControl = canControlCurrent();
+    var hint = isSpectator() ? '觀戰模式：不可操作' : canControl ? check.reason : '未輪到你，操作暫時鎖定';
+    var canSubmit = canControl && check.ok;
+    var canPass = canControl && !!lastPlay;
+    return '<div class="bd-hand-panel' + (canControl ? ' active' : '') + '">' +
+      '<div class="bd-hand-scroll">' + (isSpectator() ? renderSpectatorHands() : hand.map(renderHandCard).join('')) + '</div>' +
       '<div class="bd-controls">' +
         '<div class="bd-hint">' + escapeHtml(hint) + '</div>' +
         '<button class="bd-action-btn secondary" id="bd-pass-btn"' + (canPass ? '' : ' disabled') + '>Pass</button>' +
         '<button class="bd-action-btn" id="bd-play-btn"' + (canSubmit ? '' : ' disabled') + '>出牌</button>' +
       '</div>' +
     '</div>';
+  }
+
+  function renderSpectatorHands() {
+    return '<div class="bd-spectator-hands">' + players.map(function(player) {
+      return '<div><strong>' + escapeHtml(player.name) + '</strong><span>' + escapeHtml(cardsToText(player.hand)) + '</span></div>';
+    }).join('') + '</div>';
   }
 
   function renderHandCard(card) {
@@ -576,10 +738,11 @@
         '<div class="bd-history">' + history.slice().reverse().map(function(row) {
           return '<div class="bd-history-row"><span>' + escapeHtml(row.player) + '</span><span>' + escapeHtml(row.text) + '</span></div>';
         }).join('') + '</div>' +
-        '<button class="bd-action-btn" id="bd-new-game">再來一局</button>' +
+        (isRoomMode() ? '' : '<button class="bd-action-btn" id="bd-new-game">再來一局</button>') +
         '<button class="bd-action-btn secondary" id="bd-back-lobby">返回大廳</button>' +
       '</div></div>';
-    container.querySelector('#bd-new-game').addEventListener('click', function() {
+    var newGameBtn = container.querySelector('#bd-new-game');
+    if (newGameBtn) newGameBtn.addEventListener('click', function() {
       setupGame();
       render();
       scheduleAI();
@@ -646,26 +809,70 @@
     });
   }
 
+  function handleRoomSnapshot(gameState) {
+    if (!isRoomMode() || !gameState || gameState.roundId !== opts.roundId || !gameState.state) return;
+    applyState(gameState.state);
+    selectedIds = {};
+    if (gameOver) renderResult();
+    else {
+      render();
+      scheduleAI();
+    }
+  }
+
+  function handleRoomAction(msg) {
+    if (!isRoomMode() || !opts.isHost || !msg) return;
+    var index = players.findIndex(function(player) { return player.id === msg.playerId; });
+    if (index < 0 || index !== currentPlayer || players[index].ai) return;
+    if (msg.type === 'bd_pass') {
+      passTurn(index);
+      return;
+    }
+    if (msg.type === 'bd_play') {
+      var ids = {};
+      (msg.cardIds || []).forEach(function(id) { ids[id] = true; });
+      var cards = players[index].hand.filter(function(card) { return ids[card.id]; });
+      playCards(index, cards);
+    }
+  }
+
   App.GameManager.register({
     id: 'bigDee',
     name: '鋤大DEE',
     icon: '♠',
-    description: '單人四人局，玩家對 3 個 AI',
+    description: '四人局，可真人加 AI 補位',
     supportsSingle: true,
-    supportsMultiplayer: false,
+    supportsMultiplayer: true,
+    supportsManualMultiplayer: false,
     minPlayers: 1,
+    minRoomPlayers: 1,
     maxPlayers: 4,
     allowSpectators: true,
     aiFill: true,
-    multiplayerModes: [],
+    multiplayerModes: ['room'],
+    buildRoomStart: function(roomOpts) {
+      return { state: buildInitialState(roomOpts.players || []) };
+    },
     init: function(gameContainer, gameOpts) {
       container = gameContainer;
       opts = gameOpts || {};
       setupGame();
       render();
+      if (isRoomMode() && opts.isHost && !(opts.gameState && opts.gameState.roundId === opts.roundId)) publishState();
+      if (opts.gameState) handleRoomSnapshot(opts.gameState);
       scheduleAI();
     },
-    handleMessage: function() {},
+    handleMessage: function(msg) {
+      if (!msg) return;
+      if (msg.type === 'room_update') {
+        opts.players = msg.players || opts.players;
+        opts.spectators = msg.spectators || opts.spectators;
+        opts.role = msg.role || opts.role;
+        handleRoomSnapshot(msg.gameState);
+        return;
+      }
+      handleRoomAction(msg);
+    },
     destroy: function() {
       aiTimer = clearTimer(aiTimer);
       container = null;

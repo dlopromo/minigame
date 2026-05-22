@@ -6,8 +6,8 @@ This spec describes the Firebase short-code room flow used by multiplayer games.
 
 - Let friends join with a 4-digit room code.
 - Keep GitHub Pages as a static frontend.
-- Use Firebase RTDB as room and round-start state.
-- Use WebRTC DataChannel for in-game sync.
+- Use Firebase RTDB as room, round-start, action, and snapshot state.
+- Keep WebRTC DataChannel as optional acceleration/manual-mode transport, not as a room-mode requirement.
 - Support future games with different player counts and spectator views.
 
 ## Room Code
@@ -168,7 +168,7 @@ Rules:
   overwriting each other's snapshot data.
 - Room return-to-lobby clears `gameState`.
 
-Guess Color currently stores:
+Guess Color stores:
 
 ```js
 {
@@ -186,6 +186,25 @@ Guess Color currently stores:
   savedAt: number
 }
 ```
+
+鋤大DEE and 鬥地主 store full host-authored snapshots:
+
+```js
+{
+  players: [
+    { id, name, ai, hand, passed, role, lastBid }
+  ],
+  currentPlayer: number,
+  lastPlay: object | null,
+  history: object[],
+  gameOver: boolean,
+  savedAt: number
+}
+```
+
+Card games add game-specific fields such as `bottomCards`, `phase`, `bid`,
+`placements`, and scoring notes. Non-host clients render snapshots and do not
+mutate shared state directly.
 
 ## Status Lifecycle
 
@@ -205,9 +224,12 @@ lobby -> starting -> playing -> lobby
   - online users are ordered by `joinedAt`.
   - first `maxPlayers` users become players.
   - remaining users become spectators.
+  - if the game declares `aiFill: true`, empty seats are filled with AI records
+    inside `gameStart.players`.
 - Users who join after `status !== "lobby"` become spectators.
 - Spectators cannot submit actions.
-- Spectator visibility is game-defined; Guess Color currently shows the full answer.
+- Spectator visibility is game-defined. Guess Color shows the full answer; card
+  games show a compact god-view hand list while preserving iPhone layout.
 
 ## Game Definition Extensions
 
@@ -219,6 +241,7 @@ Multiplayer games should register:
   maxPlayers: 2,
   allowSpectators: true,
   aiFill: false,
+  supportsManualMultiplayer: true,
   multiplayerModes: ['coop', 'race'],
   buildRoomStart: function(opts) {
     return {};
@@ -247,6 +270,11 @@ Rules:
 - `allowSpectators` should default to true for this app's friends-room model.
 - `aiFill` means a game can add AI seats when humans are fewer than the legal
   player count.
+- `supportsManualMultiplayer: false` hides Firebase-first room games from the
+  legacy manual WebRTC selector.
+- `minRoomPlayers` can override `minPlayers` for room play. Guess Color uses
+  this to require 2 real humans in coop/race while still allowing single-player
+  locally.
 - AI must use available game state to choose beneficial legal actions rather than
   random actions.
 - Game screens should target iPhone 16 Pro portrait with no vertical page scroll.
@@ -257,13 +285,18 @@ Guess Color example:
 { computerCode: ['red', 'blue', 'green', 'orange'] }
 ```
 
-Future Big Dee example:
+Card-game room-start example:
 
 ```js
 {
-  deckSeed: '...',
-  handsByPlayerId: {},
-  publicState: {}
+  state: {
+    players: [
+      { id: 'client-1', name: 'David', ai: false, hand: [] },
+      { id: 'ai-2', name: 'AI 2', ai: true, hand: [] }
+    ],
+    currentPlayer: 0,
+    history: []
+  }
 }
 ```
 
@@ -313,6 +346,18 @@ Rules:
 - Game modules should make action handling idempotent where practical.
 - `gameState` remains the restore source after refresh.
 - Manual two-player mode may still use direct WebRTC `game_msg`.
+
+Card-game room actions are intentionally small:
+
+```js
+{ type: 'bd_play', playerId, cardIds }
+{ type: 'bd_pass', playerId }
+{ type: 'ddz_bid', playerId, bid }
+{ type: 'ddz_play', playerId, cardIds }
+{ type: 'ddz_pass', playerId }
+```
+
+Only the host should accept and apply these actions.
 
 Detailed host flow:
 

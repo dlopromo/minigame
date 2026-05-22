@@ -38,6 +38,9 @@
   var gameOver = false;
   var aiTimer = null;
 
+  function isRoomMode() { return opts && opts.roomId; }
+  function isSpectator() { return opts && opts.role === 'spectator'; }
+  function isHostAuthority() { return !isRoomMode() || opts.isHost; }
   function rankValue(rank) { return RANKS.indexOf(rank); }
   function cardValue(card) { return rankValue(card.rank); }
   function byCard(a, b) {
@@ -63,13 +66,40 @@
     return deck;
   }
 
-  function setupGame() {
-    var deck = makeDeck();
-    players = [
-      { id: 'human', name: opts.playerName || '你', ai: false, hand: [], role: 'farmer', passed: false, lastBid: null },
-      { id: 'ai-1', name: 'AI 1', ai: true, hand: [], role: 'farmer', passed: false, lastBid: null },
-      { id: 'ai-2', name: 'AI 2', ai: true, hand: [], role: 'farmer', passed: false, lastBid: null }
+  function defaultSeats() {
+    return [
+      { id: 'human', name: opts.playerName || '你', isAI: false },
+      { id: 'ai-1', name: 'AI 1', isAI: true },
+      { id: 'ai-2', name: 'AI 2', isAI: true }
     ];
+  }
+
+  function makePlayersFromSeats(seats) {
+    return seats.slice(0, 3).map(function(seat, index) {
+      var isAI = !!seat.isAI || /^ai-/.test(seat.id || '');
+      return {
+        id: seat.id || (isAI ? 'ai-' + (index + 1) : 'human'),
+        name: seat.name || (isAI ? 'AI ' + (index + 1) : '玩家'),
+        ai: isAI,
+        hand: [],
+        role: 'farmer',
+        passed: false,
+        lastBid: null
+      };
+    });
+  }
+
+  function setupGame() {
+    if (opts && opts.initialState && opts.initialState.state) {
+      applyState(opts.initialState.state);
+      return;
+    }
+    setupFreshGame(defaultSeats());
+  }
+
+  function setupFreshGame(seats) {
+    var deck = makeDeck();
+    players = makePlayersFromSeats(seats && seats.length ? seats : defaultSeats());
     bottomCards = deck.slice(51);
     deck.slice(0, 51).forEach(function(card, index) {
       players[index % 3].hand.push(card);
@@ -88,6 +118,112 @@
     bombCount = 0;
     gameOver = false;
     phase = 'bid';
+  }
+
+  function buildInitialState(seats) {
+    setupFreshGame(seats);
+    return serializeState();
+  }
+
+  function serializeState() {
+    return {
+      players: players.map(function(player) {
+        return {
+          id: player.id,
+          name: player.name,
+          ai: !!player.ai,
+          hand: cloneCards(player.hand),
+          role: player.role,
+          passed: !!player.passed,
+          lastBid: player.lastBid
+        };
+      }),
+      bottomCards: cloneCards(bottomCards),
+      landlordIndex: landlordIndex,
+      currentPlayer: currentPlayer,
+      phase: phase,
+      selectedIds: {},
+      currentBid: currentBid,
+      currentBidder: currentBidder,
+      bidStarter: bidStarter,
+      bidTurns: bidTurns,
+      passCount: passCount,
+      lastPlay: lastPlay ? {
+        playerIndex: lastPlay.playerIndex,
+        playerName: lastPlay.playerName,
+        cards: cloneCards(lastPlay.cards),
+        combo: lastPlay.combo
+      } : null,
+      history: history.slice(),
+      bombCount: bombCount,
+      gameOver: !!gameOver,
+      savedAt: Date.now()
+    };
+  }
+
+  function applyState(state) {
+    if (!state) return;
+    players = (state.players || []).map(function(player) {
+      return {
+        id: player.id,
+        name: player.name,
+        ai: !!player.ai,
+        hand: cloneCards(player.hand || []).sort(byCard),
+        role: player.role || 'farmer',
+        passed: !!player.passed,
+        lastBid: player.lastBid || null
+      };
+    });
+    bottomCards = cloneCards(state.bottomCards || []);
+    landlordIndex = state.landlordIndex === undefined ? -1 : state.landlordIndex;
+    currentPlayer = state.currentPlayer || 0;
+    phase = state.phase || 'bid';
+    currentBid = state.currentBid || 0;
+    currentBidder = state.currentBidder === undefined ? -1 : state.currentBidder;
+    bidStarter = state.bidStarter || 0;
+    bidTurns = state.bidTurns || 0;
+    passCount = state.passCount || 0;
+    lastPlay = state.lastPlay ? {
+      playerIndex: state.lastPlay.playerIndex,
+      playerName: state.lastPlay.playerName,
+      cards: cloneCards(state.lastPlay.cards || []).sort(byCard),
+      combo: state.lastPlay.combo
+    } : null;
+    history = (state.history || []).slice();
+    bombCount = state.bombCount || 0;
+    gameOver = !!state.gameOver;
+  }
+
+  function publishState() {
+    if (!isRoomMode() || !opts.isHost || !App.Signaling || !App.Signaling.setGameState) return;
+    App.Signaling.setGameState({
+      gameId: 'douDizhu',
+      mode: opts.mode,
+      roundId: opts.roundId || '',
+      state: serializeState()
+    }).catch(function(e) {
+      App.Common.showToast('同步牌局失敗：' + e.message, 'error');
+    });
+  }
+
+  function commitTable() {
+    publishState();
+    render();
+    scheduleAI();
+  }
+
+  function selfPlayerIndex() {
+    if (isSpectator()) return -1;
+    if (!isRoomMode()) return 0;
+    for (var i = 0; i < players.length; i++) {
+      if (players[i].id === opts.selfId) return i;
+    }
+    return -1;
+  }
+
+  function canControlCurrent() {
+    var index = selfPlayerIndex();
+    return index >= 0 && index === currentPlayer && !gameOver && players[index] && !players[index].ai;
   }
 
   function sortHand(player) {
@@ -238,16 +374,14 @@
       return;
     }
     currentPlayer = (currentPlayer + 1) % 3;
-    render();
-    scheduleAI();
+    commitTable();
   }
 
   function finishBidding() {
     if (currentBidder === -1) {
       recordHistory('系統', '無人叫牌，重新發牌');
-      setupGame();
-      render();
-      scheduleAI();
+      setupFreshGame(opts && opts.players && opts.players.length ? opts.players : defaultSeats());
+      commitTable();
       return;
     }
     landlordIndex = currentBidder;
@@ -260,8 +394,7 @@
     selectedIds = {};
     phase = 'play';
     recordHistory('系統', players[landlordIndex].name + ' 成為地主，底分 ' + currentBid);
-    render();
-    scheduleAI();
+    commitTable();
   }
 
   function removeCards(player, cards) {
@@ -291,8 +424,7 @@
       return true;
     }
     currentPlayer = (index + 1) % 3;
-    render();
-    scheduleAI();
+    commitTable();
     return true;
   }
 
@@ -310,47 +442,77 @@
     } else {
       currentPlayer = (index + 1) % 3;
     }
-    render();
-    scheduleAI();
+    commitTable();
   }
 
   function finishGame(winnerIndex) {
     gameOver = true;
     aiTimer = clearTimer(aiTimer);
+    publishState();
     var landlordWon = winnerIndex === landlordIndex;
     renderResult(landlordWon, winnerIndex);
   }
 
   function getSelectedCards() {
-    return players[0].hand.filter(function(card) { return selectedIds[card.id]; });
+    var index = selfPlayerIndex();
+    if (index < 0 || !players[index]) return [];
+    return players[index].hand.filter(function(card) { return selectedIds[card.id]; });
   }
 
   function toggleCard(id) {
-    if (gameOver || phase !== 'play' || currentPlayer !== 0) return;
+    if (phase !== 'play' || !canControlCurrent()) return;
     if (selectedIds[id]) delete selectedIds[id];
     else selectedIds[id] = true;
     render();
   }
 
   function humanPlay() {
-    if (phase !== 'play' || currentPlayer !== 0 || gameOver) return;
-    playCards(0, getSelectedCards());
+    if (phase !== 'play' || !canControlCurrent()) return;
+    var index = selfPlayerIndex();
+    var cards = getSelectedCards();
+    if (isRoomMode() && !opts.isHost) {
+      sendRoomAction({ type: 'ddz_play', playerId: opts.selfId, cardIds: cards.map(function(card) { return card.id; }) });
+      selectedIds = {};
+      render();
+      return;
+    }
+    playCards(index, cards);
   }
 
   function humanPass() {
-    if (phase !== 'play' || currentPlayer !== 0 || gameOver || !lastPlay) return;
+    if (phase !== 'play' || !canControlCurrent() || !lastPlay) return;
+    var index = selfPlayerIndex();
     selectedIds = {};
-    passTurn(0);
+    if (isRoomMode() && !opts.isHost) {
+      sendRoomAction({ type: 'ddz_pass', playerId: opts.selfId });
+      render();
+      return;
+    }
+    passTurn(index);
   }
 
   function scheduleAI() {
-    if (gameOver || currentPlayer === 0) return;
+    if (gameOver || !isHostAuthority() || !players[currentPlayer] || !players[currentPlayer].ai) return;
     aiTimer = clearTimer(aiTimer);
     aiTimer = setTimeout(function() {
       aiTimer = null;
       if (phase === 'bid') placeBid(aiBidValue(players[currentPlayer]));
       else aiPlay(currentPlayer);
     }, 520);
+  }
+
+  function humanBid(value) {
+    if (phase !== 'bid' || !canControlCurrent()) return;
+    if (isRoomMode() && !opts.isHost) {
+      sendRoomAction({ type: 'ddz_bid', playerId: opts.selfId, bid: value });
+      return;
+    }
+    placeBid(value);
+  }
+
+  function sendRoomAction(action) {
+    if (!App.Lobby || typeof App.Lobby.sendRoomGameAction !== 'function') return false;
+    return App.Lobby.sendRoomGameAction(action);
   }
 
   function aiPlay(index) {
@@ -562,7 +724,7 @@
     container.innerHTML =
       '<div class="ddz-shell">' +
         '<div class="ddz-topbar">' +
-          '<div class="ddz-title' + (currentPlayer === 0 ? ' my-turn' : '') + '">' + escapeHtml(titleText()) + '</div>' +
+          '<div class="ddz-title' + (canControlCurrent() ? ' my-turn' : '') + '">' + escapeHtml(titleText()) + '</div>' +
           '<div class="ddz-actions"><button class="ddz-icon-btn" onclick="App.GameManager.endGame()">×</button></div>' +
         '</div>' +
         '<div class="ddz-board">' + renderSeats() + renderTable() + '</div>' +
@@ -572,12 +734,18 @@
   }
 
   function titleText() {
-    if (phase === 'bid') return currentPlayer === 0 ? '輪到你叫牌' : players[currentPlayer].name + ' 叫牌中...';
-    return currentPlayer === 0 ? (lastPlay ? '輪到你：出牌或 Pass' : '輪到你領出') : players[currentPlayer].name + ' 思考中...';
+    if (isSpectator()) return players[currentPlayer].name + (phase === 'bid' ? ' 叫牌中（觀戰）' : ' 出牌中（觀戰）');
+    if (phase === 'bid') return canControlCurrent() ? '輪到你叫牌' : players[currentPlayer].name + ' 叫牌中...';
+    return canControlCurrent() ? (lastPlay ? '輪到你：出牌或 Pass' : '輪到你領出') : players[currentPlayer].name + ' 思考中...';
   }
 
   function renderSeats() {
-    return renderSeat(1, 'left') + renderSeat(2, 'right') + renderTopStatus();
+    var self = selfPlayerIndex();
+    var indexes = players.map(function(_, index) { return index; }).filter(function(index) { return index !== self; });
+    var positions = ['left', 'right'];
+    return indexes.map(function(index, slot) {
+      return slot < 2 ? renderSeat(index, positions[slot]) : '';
+    }).join('') + renderTopStatus();
   }
 
   function renderTopStatus() {
@@ -623,12 +791,14 @@
   }
 
   function renderHandPanel(check) {
-    var isHumanTurn = currentPlayer === 0;
-    var canBid = phase === 'bid' && isHumanTurn;
-    var canPlayNow = phase === 'play' && isHumanTurn && check.ok;
-    var canPass = phase === 'play' && isHumanTurn && !!lastPlay;
-    return '<div class="ddz-hand-panel' + (isHumanTurn ? ' active' : '') + '">' +
-      '<div class="ddz-hand">' + players[0].hand.map(renderHandCard).join('') + '</div>' +
+    var self = selfPlayerIndex();
+    var hand = self >= 0 && players[self] ? players[self].hand : [];
+    var canControl = canControlCurrent();
+    var canBid = phase === 'bid' && canControl;
+    var canPlayNow = phase === 'play' && canControl && check.ok;
+    var canPass = phase === 'play' && canControl && !!lastPlay;
+    return '<div class="ddz-hand-panel' + (canControl ? ' active' : '') + '">' +
+      '<div class="ddz-hand">' + (isSpectator() ? renderSpectatorHands() : hand.map(renderHandCard).join('')) + '</div>' +
       (phase === 'bid'
         ? '<div class="ddz-bid-panel"><div class="ddz-hint">目前最高 ' + currentBid + ' 分</div>' +
           [0,1,2,3].map(function(value) {
@@ -640,6 +810,12 @@
           '<button class="ddz-btn secondary" id="ddz-pass-btn"' + (canPass ? '' : ' disabled') + '>Pass</button>' +
           '<button class="ddz-btn" id="ddz-play-btn"' + (canPlayNow ? '' : ' disabled') + '>出牌</button></div>') +
     '</div>';
+  }
+
+  function renderSpectatorHands() {
+    return '<div class="ddz-spectator-hands">' + players.map(function(player) {
+      return '<div><strong>' + escapeHtml(player.name) + '</strong><span>' + escapeHtml(cardsToText(player.hand)) + '</span></div>';
+    }).join('') + '</div>';
   }
 
   function renderHandCard(card) {
@@ -684,7 +860,7 @@
       button.addEventListener('click', function() { toggleCard(button.getAttribute('data-card-id')); });
     });
     Array.prototype.forEach.call(container.querySelectorAll('[data-bid]'), function(button) {
-      button.addEventListener('click', function() { placeBid(Number(button.getAttribute('data-bid'))); });
+      button.addEventListener('click', function() { humanBid(Number(button.getAttribute('data-bid'))); });
     });
     var playBtn = container.querySelector('#ddz-play-btn');
     var passBtn = container.querySelector('#ddz-pass-btn');
@@ -707,10 +883,11 @@
           '</div>';
         }).join('') + '</div>' +
         '<p class="ddz-result-score">底分 ' + currentBid + ' · 炸彈/火箭 ' + bombCount + ' 次 · 倍數 x' + multiplier + ' · 勝出：' + escapeHtml(players[winnerIndex].name) + '</p>' +
-        '<button class="ddz-btn" id="ddz-new-game">再來一局</button>' +
+        (isRoomMode() ? '' : '<button class="ddz-btn" id="ddz-new-game">再來一局</button>') +
         '<button class="ddz-btn secondary" id="ddz-back">返回大廳</button>' +
       '</div></div>';
-    container.querySelector('#ddz-new-game').addEventListener('click', function() {
+    var newGameBtn = container.querySelector('#ddz-new-game');
+    if (newGameBtn) newGameBtn.addEventListener('click', function() {
       setupGame();
       render();
       scheduleAI();
@@ -730,26 +907,79 @@
     });
   }
 
+  function handleRoomSnapshot(gameState) {
+    if (!isRoomMode() || !gameState || gameState.roundId !== opts.roundId || !gameState.state) return;
+    applyState(gameState.state);
+    selectedIds = {};
+    if (gameOver) {
+      var landlordWon = players.some(function(player, index) {
+        return player.hand.length === 0 && index === landlordIndex;
+      });
+      var winnerIndex = players.findIndex(function(player) { return player.hand.length === 0; });
+      renderResult(landlordWon, winnerIndex < 0 ? 0 : winnerIndex);
+    } else {
+      render();
+      scheduleAI();
+    }
+  }
+
+  function handleRoomAction(msg) {
+    if (!isRoomMode() || !opts.isHost || !msg) return;
+    var index = players.findIndex(function(player) { return player.id === msg.playerId; });
+    if (index < 0 || index !== currentPlayer || players[index].ai) return;
+    if (msg.type === 'ddz_bid') {
+      placeBid(Number(msg.bid) || 0);
+      return;
+    }
+    if (msg.type === 'ddz_pass') {
+      passTurn(index);
+      return;
+    }
+    if (msg.type === 'ddz_play') {
+      var ids = {};
+      (msg.cardIds || []).forEach(function(id) { ids[id] = true; });
+      var cards = players[index].hand.filter(function(card) { return ids[card.id]; });
+      playCards(index, cards);
+    }
+  }
+
   App.GameManager.register({
     id: 'douDizhu',
     name: '鬥地主',
     icon: '王',
-    description: '三人鬥地主，叫牌、底牌、炸彈倍數',
+    description: '三人鬥地主，可真人加 AI 補位',
     supportsSingle: true,
-    supportsMultiplayer: false,
+    supportsMultiplayer: true,
+    supportsManualMultiplayer: false,
     minPlayers: 1,
+    minRoomPlayers: 1,
     maxPlayers: 3,
     allowSpectators: true,
     aiFill: true,
-    multiplayerModes: [],
+    multiplayerModes: ['room'],
+    buildRoomStart: function(roomOpts) {
+      return { state: buildInitialState(roomOpts.players || []) };
+    },
     init: function(gameContainer, gameOpts) {
       container = gameContainer;
       opts = gameOpts || {};
       setupGame();
       render();
+      if (isRoomMode() && opts.isHost && !(opts.gameState && opts.gameState.roundId === opts.roundId)) publishState();
+      if (opts.gameState) handleRoomSnapshot(opts.gameState);
       scheduleAI();
     },
-    handleMessage: function() {},
+    handleMessage: function(msg) {
+      if (!msg) return;
+      if (msg.type === 'room_update') {
+        opts.players = msg.players || opts.players;
+        opts.spectators = msg.spectators || opts.spectators;
+        opts.role = msg.role || opts.role;
+        handleRoomSnapshot(msg.gameState);
+        return;
+      }
+      handleRoomAction(msg);
+    },
     destroy: function() {
       aiTimer = clearTimer(aiTimer);
       container = null;

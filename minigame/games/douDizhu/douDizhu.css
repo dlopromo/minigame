@@ -42,6 +42,10 @@
 .ddz-hand-panel{min-height:0;background:#fff;border:1px solid #dfe5ee;border-radius:14px;padding:7px;display:grid;grid-template-rows:auto auto;gap:6px}
 .ddz-hand-panel.active{border-color:#2fb36d;background:#f6fffa;box-shadow:0 0 0 3px rgba(47,179,109,.12)}
 .ddz-hand{min-width:0;display:flex;align-items:flex-end;gap:0;overflow:hidden;padding-top:8px}
+.ddz-spectator-hands{min-width:0;width:100%;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:4px}
+.ddz-spectator-hands div{min-width:0;border:1px solid #e2e8f0;border-radius:7px;background:#f8fafc;padding:4px 6px}
+.ddz-spectator-hands strong{display:block;font-size:.66rem;color:#344054;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ddz-spectator-hands span{display:block;font-size:.62rem;color:#667085;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .ddz-card{
   width:40px;height:58px;border:1px solid #cbd5e1;border-radius:7px;background:#fff;
   box-shadow:0 2px 8px rgba(31,41,51,.12);flex:0 0 auto;margin-right:-4px;
@@ -83,6 +87,10 @@
   .ddz-history{max-height:44px;font-size:.62rem}
   .ddz-hand-panel{padding:6px;gap:5px}
   .ddz-hand{padding-top:7px}
+  .ddz-spectator-hands{grid-template-columns:1fr;gap:3px}
+  .ddz-spectator-hands div{padding:3px 5px}
+  .ddz-spectator-hands strong{font-size:.6rem}
+  .ddz-spectator-hands span{font-size:.56rem}
   .ddz-card{width:31px;height:47px;border-radius:6px;padding:3px 2px;margin-right:-10px}
   .ddz-card.selected{transform:translateY(-7px)}
   .ddz-rank{font-size:.58rem}

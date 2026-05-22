@@ -13,8 +13,8 @@ https://dlopromo.github.io/minigame/
 Current games:
 
 - Guess Color: a Mastermind / Hit & Blow style color-code game.
-- 鋤大DEE: a single-player four-seat Big Two MVP against 3 basic AI players.
-- 鬥地主: a three-player Landlord MVP with bidding, bottom cards, rockets, bombs, and AI farmers.
+- 鋤大DEE: a four-seat Big Two MVP with real-player seats, AI fill, and spectators in rooms.
+- 鬥地主: a three-player Landlord MVP with bidding, bottom cards, rockets, bombs, AI fill, and spectators in rooms.
 
 Current modes:
 
@@ -22,8 +22,9 @@ Current modes:
 - Manual two-player WebRTC connection
 - Firebase short-code room with players and spectators
 
-鋤大DEE MVP currently supports local single-player only.
-鬥地主 MVP currently supports local single-player only, filling the other seats with AI.
+鋤大DEE and 鬥地主 support local single-player and short-code room starts. In
+rooms, real users are seated first, extra users become spectators/queue, and
+empty legal seats are filled by AI.
 
 ## Firebase Setup
 
@@ -66,10 +67,10 @@ Short-code rooms generate a random 4-digit numeric room code.
 - Host chooses the game and multiplayer mode.
 - Room state in Firebase starts each round.
 - Firebase room/signaling state works over WAN.
-- Guess Color room play is Firebase-first: client actions go through `gameActions`, and `gameState` is the source of truth for turn and board updates.
+- Room play is Firebase-first: client actions go through `gameActions`, and `gameState` is the source of truth for turn and board updates.
 - WebRTC DataChannel remains available for manual two-player mode and future optional acceleration, but room mode must not depend on it.
 - Host clears Firebase `gameActions` after processing, so the fallback queue does not keep growing.
-- Guess Color stores Firebase `gameState` snapshots so refresh can restore guesses, turn, race progress, and result state.
+- Guess Color, 鋤大DEE, and 鬥地主 store Firebase `gameState` snapshots so refresh can restore active room state.
 - Room lobby includes a compact Room Info panel for status, transport, host, round, peers, and fallback queue size.
 - Extra users become spectators.
 
@@ -107,6 +108,6 @@ node --check minigame/games/guessColor/guessColor.js
 
 ## Roadmap
 
-- Add future multiplayer seats for 鋤大DEE and 鬥地主 using the shared room/spectator/AI-fill contract.
+- Improve card-game spectator god view and add richer seat management before the next round.
 - Add arcade-style leaderboards.
 - Improve multiplayer reconnection and host recovery.

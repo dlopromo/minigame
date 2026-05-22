@@ -148,6 +148,11 @@ App.Lobby = (function() {
     return (game && game.maxPlayers) || 2;
   }
 
+  function getGameMinRoomPlayers(gameId) {
+    var game = App.GameManager.getGame(gameId);
+    return (game && (game.minRoomPlayers || game.minPlayers)) || 1;
+  }
+
   function getSelfRole() {
     if (!roomState || !selfId) return 'player';
     if (roomState.players && roomState.players[selfId]) return 'player';
@@ -248,13 +253,14 @@ App.Lobby = (function() {
 
   function notifyRoomUpdateToGame() {
     if (!gameActive || playContext !== 'room') return;
+    var start = roomState && roomState.gameStart ? roomState.gameStart : null;
     App.GameManager.handleMessage({
       type: 'room_update',
       roomId: roomState ? roomState.code : '',
       selfId: selfId,
       role: getSelfRole(),
-      players: getRoomPlayers(),
-      spectators: getRoomSpectators(),
+      players: start && start.players ? start.players : getRoomPlayers(),
+      spectators: start && start.spectators ? start.spectators : getRoomSpectators(),
       gameState: roomState ? roomState.gameState : null
     });
   }
@@ -409,7 +415,11 @@ App.Lobby = (function() {
     var grid = document.getElementById('game-grid');
     grid.innerHTML = '';
     App.GameManager.getGames().forEach(function(game) {
-      var supported = playContext === 'single' ? game.supportsSingle : game.supportsMultiplayer;
+      var supported = playContext === 'single'
+        ? game.supportsSingle
+        : playContext === 'multiplayer'
+          ? game.supportsMultiplayer && game.supportsManualMultiplayer !== false
+          : game.supportsMultiplayer;
       if (!supported) return;
 
       var card = document.createElement('div');
@@ -472,9 +482,40 @@ App.Lobby = (function() {
   function rebalanceRoomForGame(gameId) {
     if (!roomState) return Promise.resolve();
     var maxPlayers = getGameMaxPlayers(gameId);
+    var game = App.GameManager.getGame(gameId);
     var ordered = getRoomPlayers().concat(getRoomSpectators()).filter(function(person) {
       return person.online !== false;
     });
+    var seatedRealPlayers = ordered.slice(0, maxPlayers);
+    var queuedSpectators = ordered.slice(maxPlayers);
+    var gamePlayers = seatedRealPlayers.map(function(person) {
+      return {
+        id: person.id,
+        name: person.name,
+        role: 'player',
+        isAI: false,
+        online: person.online !== false,
+        authUid: person.authUid || '',
+        joinedAt: person.joinedAt || Date.now(),
+        lastSeenAt: person.lastSeenAt || Date.now(),
+        connectionVersion: person.connectionVersion || 0
+      };
+    });
+    if (game && game.aiFill) {
+      while (gamePlayers.length < maxPlayers) {
+        var aiNumber = gamePlayers.length + 1;
+        gamePlayers.push({
+          id: 'ai-' + aiNumber,
+          name: 'AI ' + aiNumber,
+          role: 'player',
+          isAI: true,
+          online: true,
+          joinedAt: Date.now(),
+          lastSeenAt: Date.now(),
+          connectionVersion: 0
+        });
+      }
+    }
     var updates = {};
     ordered.forEach(function(person, index) {
       var target = index < maxPlayers ? 'players' : 'spectators';
@@ -494,19 +535,8 @@ App.Lobby = (function() {
     updates.maxPlayers = maxPlayers;
     return App.Signaling.updateRoom(updates).then(function() {
       return {
-        players: ordered.slice(0, maxPlayers).map(function(person) {
-          return {
-            id: person.id,
-            name: person.name,
-            role: 'player',
-            online: person.online !== false,
-            authUid: person.authUid || '',
-            joinedAt: person.joinedAt || Date.now(),
-            lastSeenAt: person.lastSeenAt || Date.now(),
-            connectionVersion: person.connectionVersion || 0
-          };
-        }),
-        spectators: ordered.slice(maxPlayers).map(function(person) {
+        players: gamePlayers,
+        spectators: queuedSpectators.map(function(person) {
           return {
             id: person.id,
             name: person.name,
@@ -558,6 +588,13 @@ App.Lobby = (function() {
     if (!selectedGameId) return;
     if (playContext === 'room') {
       if (!isHost) return;
+      var realPlayerCount = getRoomPlayers().filter(function(person) { return person.online !== false; }).length;
+      var game = App.GameManager.getGame(selectedGameId);
+      var minRoomPlayers = getGameMinRoomPlayers(selectedGameId);
+      if (realPlayerCount < minRoomPlayers && !(game && game.aiFill)) {
+        App.Common.showToast('這個玩法需要至少 ' + minRoomPlayers + ' 位真人玩家', 'error');
+        return;
+      }
       var roomStart = null;
       App.Signaling.updateRoom({ status: 'starting' }).then(function() {
         return rebalanceRoomForGame(selectedGameId);
