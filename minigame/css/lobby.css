@@ -40,6 +40,19 @@
 .room-eyebrow{display:block;font-size:.72rem;color:var(--muted);margin-bottom:2px}
 #room-code-label{font-size:1.8rem;letter-spacing:.2em}
 .room-role-label{font-size:.86rem;color:var(--muted);text-align:center;margin-top:12px}
+.room-debug-panel{
+  display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:14px;
+}
+.room-debug-panel>div{
+  min-width:0;border:1px solid #e4e9f1;border-radius:8px;background:#fff;padding:8px 9px;
+}
+.room-debug-panel span{
+  display:block;font-size:.68rem;font-weight:700;color:var(--muted);margin-bottom:2px;
+}
+.room-debug-panel strong{
+  display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  font-size:.78rem;color:var(--text);
+}
 .room-list{display:grid;gap:8px}
 .room-list-empty{font-size:.85rem;color:var(--muted)}
 .room-person{
@@ -51,13 +64,16 @@
 }
 .room-person-meta{font-size:.75rem;color:var(--muted)}
 .room-person.offline{opacity:.52}
+.room-person-badges{display:flex;align-items:center;justify-content:flex-end;gap:5px;flex-wrap:wrap}
 .room-badge{
   display:inline-flex;align-items:center;border-radius:999px;
   padding:3px 8px;font-size:.72rem;font-weight:800;background:#eef2f7;color:#425466;
 }
 .room-badge.host{background:#ecfdf3;color:#027a48}
 .room-badge.self{background:#fff7ed;color:#c2410c}
+.room-badge.transport{background:#eef4ff;color:#175cd3}
 @media(max-width:480px){
   .mode-buttons{display:block}
   #room-code-label{font-size:1.5rem}
+  .room-debug-panel{grid-template-columns:repeat(2,1fr)}
 }

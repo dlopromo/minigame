@@ -84,6 +84,35 @@ rooms/{roomCode}: {
 }
 ```
 
+## Firebase Rules
+
+Rules live at the repo root:
+
+```text
+firebase.json
+database.rules.json
+```
+
+Deployment command:
+
+```bash
+firebase deploy --only database
+```
+
+Current MVP rules are designed for private friends-only rooms:
+
+- Default root read/write is denied.
+- `rooms/{roomCode}` is readable/writable only for authenticated Firebase users.
+- `roomCode` must be exactly 4 digits.
+- Username fields must be 1-12 Chinese/English/digit characters.
+- Player and spectator records must keep the expected `role`.
+- SDP blobs are allowed but capped in size.
+- `gameStart`, `gameState`, and `gameActions` must keep the expected top-level shape.
+
+These rules reduce accidental misuse, but they are not an anti-cheat server. Any
+anonymous authenticated user who knows a room code can still write validly-shaped
+room data. For public competitive play, move game validation to a real server.
+
 ## GameStart Contract
 
 `gameStart` is the authoritative start payload for short-code rooms.
@@ -261,14 +290,66 @@ Try WebRTC game_msg
           |
           v
    Host writes gameState snapshot
+          |
+          v
+   Host removes gameActions/{actionId}
 ```
 
 Rules:
 
 - `gameActions` are transport fallback messages, not authoritative history.
 - Host ignores actions from old `roundId`.
+- Host deletes processed and stale `gameActions` to keep the queue small.
 - Game modules should make action handling idempotent where practical.
 - `gameState` remains the restore source after refresh.
+
+Detailed host flow:
+
+```text
+rooms/{code}/gameActions child_added
+   |
+   +-- from self ---------------------- ignore
+   |
+   +-- missing payload ---------------- ignore
+   |
+   +-- old roundId -------------------- delete action
+   |
+   +-- duplicate actionId ------------- ignore
+   |
+   v
+mark actionId as seen
+   |
+   v
+App.GameManager.handleMessage(payload)
+   |
+   v
+App.WebRTC.broadcast(game_msg, except sender)
+   |
+   v
+delete rooms/{code}/gameActions/{actionId}
+```
+
+## Room Info Panel
+
+The room lobby intentionally exposes a small diagnostic panel so future agents
+and users can see why a room is stuck without reading Firebase manually.
+
+```text
++----------------+----------------+----------------+
+| 狀態           | 傳輸           | 房主           |
+| Lobby/Playing  | Firebase/WebRTC| username       |
++----------------+----------------+----------------+
+| 回合           | Peers          | Queue          |
+| round suffix   | open/known     | pending action |
++----------------+----------------+----------------+
+```
+
+Player rows also show:
+
+- `房主`
+- `你`
+- `WebRTC` when the direct data channel is open
+- `Firebase` when the room is relying on Firebase state/fallback
 
 ## Refresh And Resume
 

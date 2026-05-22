@@ -21,7 +21,8 @@ Related room lifecycle specs:
   It uses Anonymous Auth and stores temporary room/lobby/round-start/SDP data.
   Firebase `auth.uid` is stored as metadata, but room seats use a stable browser client id so refresh can resume the same seat.
   It also exposes Firebase `gameActions` as a fallback transport when WebRTC
-  DataChannel is not open.
+  DataChannel is not open. Host deletes processed fallback actions so the queue
+  does not become history.
 - `App.RoomSession` owns the `localStorage` resume ticket used by short-code rooms.
 - `App.GameManager` registers games and starts the active game module in `#game-container`.
 - `App.Lobby` owns app-level flow:
@@ -148,6 +149,18 @@ In short-code rooms, host rebroadcasts messages from one peer to all other peers
 When `App.WebRTC.send()` returns false in a short-code room, Guess Color sends
 the same game action through `App.Lobby.sendRoomGameAction()`, which writes
 `rooms/{code}/gameActions`. Host watches those actions and applies them locally.
+Processed and stale actions are removed by the host after handling.
+
+Short-code room lobby has a Room Info panel:
+
+```text
+狀態 / 傳輸 / 房主
+回合 / Peers / Queue
+```
+
+Use this first when debugging stuck rooms. A rising `Queue` means fallback
+actions are arriving but not being cleared; `Firebase` transport means the room
+is relying on RTDB fallback rather than an open WebRTC data channel.
 
 ## Guess Color Shared Rules
 

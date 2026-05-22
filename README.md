@@ -35,19 +35,23 @@ Required Firebase services:
 - Authentication: enable Anonymous sign-in.
 - Realtime Database: create a database and add `databaseURL` to the web config.
 
-Suggested MVP rules for friends-only testing:
+This repo includes an RTDB rules file:
 
-```json
-{
-  "rules": {
-    "rooms": {
-      ".read": "auth != null",
-      ".write": "auth != null",
-      ".indexOn": ["createdAt"]
-    }
-  }
-}
+```text
+database.rules.json
+firebase.json
 ```
+
+Deploy after checking it in Firebase's Rules Playground:
+
+```bash
+firebase deploy --only database
+```
+
+The rules are still friends-only MVP rules, not a public anti-cheat backend:
+Anonymous Auth is required, room codes must be 4 digits, usernames must match the
+app's 12-character Chinese/English/digit rule, and room/gameAction shapes are
+validated before writes.
 
 ## Room Flow
 
@@ -58,7 +62,9 @@ Short-code rooms generate a random 4-digit numeric room code.
 - Room state in Firebase starts each round.
 - Firebase room/signaling state works over WAN; WebRTC DataChannel is used for in-game sync with STUN-assisted NAT traversal.
 - Guess Color falls back to Firebase `gameActions` when WebRTC is not open.
+- Host clears Firebase `gameActions` after processing, so the fallback queue does not keep growing.
 - Guess Color stores Firebase `gameState` snapshots so refresh can restore guesses, turn, race progress, and result state.
+- Room lobby includes a compact Room Info panel for status, transport, host, round, peers, and fallback queue size.
 - Extra users become spectators.
 
 See the detailed room contract in:

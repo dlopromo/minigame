@@ -64,6 +64,32 @@
       <button class="btn-small btn-copy" onclick="App.Lobby.copyRoomCode()">複製</button>
     </div>
     <p class="room-role-label" id="room-role-label">等待同步...</p>
+    <div class="room-debug-panel" aria-label="Room info">
+      <div>
+        <span>狀態</span>
+        <strong id="room-status-pill">Lobby</strong>
+      </div>
+      <div>
+        <span>傳輸</span>
+        <strong id="room-transport-pill">Firebase</strong>
+      </div>
+      <div>
+        <span>房主</span>
+        <strong id="room-host-label">未知</strong>
+      </div>
+      <div>
+        <span>回合</span>
+        <strong id="room-round-label">未開始</strong>
+      </div>
+      <div>
+        <span>Peers</span>
+        <strong id="room-peers-label">0/0</strong>
+      </div>
+      <div>
+        <span>Queue</span>
+        <strong id="room-actions-label">0</strong>
+      </div>
+    </div>
   </div>
   <div class="card">
     <h2>玩家</h2>

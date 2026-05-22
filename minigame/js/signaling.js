@@ -8,6 +8,7 @@ App.Signaling = (function() {
   var selfId = '';
   var clientId = '';
   var authUid = '';
+  var selfRole = '';
   var isHost = false;
   var unsubscribers = [];
   var ROOM_TTL_MS = 6 * 60 * 60 * 1000;
@@ -112,6 +113,7 @@ App.Signaling = (function() {
     data.spectators = data.spectators || {};
     data.offers = data.offers || {};
     data.answers = data.answers || {};
+    data.gameActions = data.gameActions || {};
     data.gameStart = data.gameStart || null;
     data.gameState = data.gameState || null;
     return data;
@@ -147,6 +149,7 @@ App.Signaling = (function() {
           if (!result.committed && attempts < 8) return tryCreate();
           if (!result.committed) throw new Error('房間碼碰撞，請再試一次');
           roomCode = code;
+          selfRole = 'player';
           return ref('rooms/' + code + '/players/' + uid).set({
             name: username,
             role: 'player',
@@ -180,6 +183,7 @@ App.Signaling = (function() {
         var status = data.status || 'lobby';
         var maxPlayers = data.maxPlayers || 2;
         var role = status === 'lobby' && playerCount < maxPlayers ? 'player' : 'spectator';
+        selfRole = role;
         var path = 'rooms/' + code + '/' + (role === 'player' ? 'players' : 'spectators') + '/' + uid;
         return ref(path).set({
           name: username,
@@ -219,6 +223,7 @@ App.Signaling = (function() {
       if (ticket.isHost && data.hostId !== selfId) throw new Error('房主身份已失效，請重新建立房間');
       isHost = data.hostId === selfId;
       roomCode = code;
+      selfRole = role;
       var record = playerRecord || spectatorRecord || {};
       var path = 'rooms/' + code + '/' + (role === 'player' ? 'players' : 'spectators') + '/' + selfId;
       var version = Number(record.connectionVersion || 0) + 1;
@@ -326,16 +331,21 @@ App.Signaling = (function() {
     return ref('rooms/' + roomCode + '/gameActions').push(action);
   }
 
+  function clearGameAction(actionId) {
+    if (!roomCode || !actionId) return Promise.resolve();
+    return ref('rooms/' + roomCode + '/gameActions/' + actionId).remove();
+  }
+
   function leave() {
     var code = roomCode;
     var uid = selfId;
+    var role = selfRole;
     offAll();
     roomCode = '';
-    if (!db || !code || !uid) return Promise.resolve();
-    var updates = {};
-    updates['rooms/' + code + '/players/' + uid + '/online'] = false;
-    updates['rooms/' + code + '/spectators/' + uid + '/online'] = false;
-    return db.ref().update(updates);
+    selfRole = '';
+    if (!db || !code || !uid || !role) return Promise.resolve();
+    var collection = role === 'spectator' ? 'spectators' : 'players';
+    return ref('rooms/' + code + '/' + collection + '/' + uid + '/online').set(false);
   }
 
   function getRoomCode() { return roomCode; }
@@ -358,6 +368,7 @@ App.Signaling = (function() {
     updateRoom: updateRoom,
     setGameState: setGameState,
     sendGameAction: sendGameAction,
+    clearGameAction: clearGameAction,
     leave: leave,
     normalizeRoomCode: normalizeRoomCode,
     requireRoomCode: requireRoomCode,

@@ -160,6 +160,43 @@ App.Lobby = (function() {
     return (record && record.name) || playerName;
   }
 
+  function getPeerTransport(personId) {
+    if (!App.WebRTC || personId === selfId) return '';
+    if (App.WebRTC.isPeerConnected && App.WebRTC.isPeerConnected(personId)) return 'WebRTC';
+    if (!isHost && roomState && personId === roomState.hostId && App.WebRTC.isConnected && App.WebRTC.isConnected()) return 'WebRTC';
+    return 'Firebase';
+  }
+
+  function renderRoomDebug() {
+    if (!roomState) return;
+    var status = document.getElementById('room-status-pill');
+    var transport = document.getElementById('room-transport-pill');
+    var round = document.getElementById('room-round-label');
+    var peers = document.getElementById('room-peers-label');
+    var actions = document.getElementById('room-actions-label');
+    var host = document.getElementById('room-host-label');
+    var statusMap = { lobby: 'Lobby', starting: 'Starting', playing: 'Playing' };
+    var peerIds = App.WebRTC && App.WebRTC.getPeerIds ? App.WebRTC.getPeerIds() : [];
+    var connectedPeers = peerIds.filter(function(peerId) {
+      return App.WebRTC.isPeerConnected && App.WebRTC.isPeerConnected(peerId);
+    });
+    var actionCount = Object.keys(roomState.gameActions || {}).length;
+
+    if (status) status.textContent = statusMap[roomState.status] || (roomState.status || 'Lobby');
+    if (transport) {
+      transport.textContent = connectedPeers.length > 0 || (App.WebRTC && App.WebRTC.isConnected && App.WebRTC.isConnected())
+        ? 'WebRTC + Firebase'
+        : 'Firebase';
+    }
+    if (round) round.textContent = roomState.roundId ? roomState.roundId.slice(-8) : '未開始';
+    if (peers) peers.textContent = connectedPeers.length + '/' + peerIds.length;
+    if (actions) actions.textContent = String(actionCount);
+    if (host) {
+      var hostRecord = (roomState.players && roomState.players[roomState.hostId]) || (roomState.spectators && roomState.spectators[roomState.hostId]);
+      host.textContent = hostRecord && hostRecord.name ? hostRecord.name : '未知';
+    }
+  }
+
   function renderPeople(targetId, people) {
     var target = document.getElementById(targetId);
     if (!target) return;
@@ -175,8 +212,11 @@ App.Lobby = (function() {
       info.appendChild(el('div', 'room-person-name', person.name || '玩家'));
       info.appendChild(el('div', 'room-person-meta', person.online === false ? '離線' : '在線'));
       var badges = el('div');
+      badges.className = 'room-person-badges';
       if (roomState && person.id === roomState.hostId) badges.appendChild(el('span', 'room-badge host', '房主'));
       if (person.id === selfId) badges.appendChild(el('span', 'room-badge self', '你'));
+      var transport = getPeerTransport(person.id);
+      if (transport) badges.appendChild(el('span', 'room-badge transport', transport));
       row.appendChild(info);
       row.appendChild(badges);
       target.appendChild(row);
@@ -200,6 +240,7 @@ App.Lobby = (function() {
     }
     renderPeople('room-player-list', getRoomPlayers());
     renderPeople('room-spectator-list', getRoomSpectators());
+    renderRoomDebug();
     var actions = document.getElementById('room-host-actions');
     if (actions) actions.style.display = isHost ? 'block' : 'none';
     showScreen('room-lobby');
@@ -252,10 +293,16 @@ App.Lobby = (function() {
     });
     App.Signaling.watchGameActions(function(actionId, action) {
       if (roomActionIds[actionId] || !action || !action.payload) return;
-      if (roomState && action.roundId && action.roundId !== roomState.roundId) return;
+      if (roomState && action.roundId && action.roundId !== roomState.roundId) {
+        if (App.Signaling.clearGameAction) App.Signaling.clearGameAction(actionId).catch(function() {});
+        return;
+      }
       roomActionIds[actionId] = true;
       App.GameManager.handleMessage(action.payload);
       App.WebRTC.broadcast({ type: 'game_msg', payload: action.payload }, action.from);
+      if (App.Signaling.clearGameAction) App.Signaling.clearGameAction(actionId).catch(function(e) {
+        App.Common.showToast('清理同步佇列失敗：' + e.message, 'error');
+      });
     });
   }
 
@@ -743,6 +790,7 @@ App.Lobby = (function() {
   function onConnectionOpen() {
     if (playContext === 'room') {
       notifyRoomUpdateToGame();
+      if (!gameActive) renderRoomLobby();
       return;
     }
     playContext = 'multiplayer';
@@ -755,7 +803,11 @@ App.Lobby = (function() {
   }
 
   function onConnectionClose() {
-    if (playContext === 'room') return;
+    if (playContext === 'room') {
+      notifyRoomUpdateToGame();
+      if (!gameActive) renderRoomLobby();
+      return;
+    }
     var wasHost = isHost;
     if (gameActive) {
       App.GameManager.endGame();

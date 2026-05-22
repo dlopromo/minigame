@@ -17,6 +17,11 @@ This folder contains the static mini-game app served by GitHub Pages.
 - `games/<gameId>/<gameId>.js`: game logic and rendering.
 - `games/<gameId>/<gameId>.css`: game-specific styles.
 
+Related root Firebase files:
+
+- `../firebase.json`: points Firebase CLI at the RTDB rules file.
+- `../database.rules.json`: friends-only MVP validation for room codes, users, signaling, room start state, game state, and fallback game actions.
+
 ## Game Module Contract
 
 Each game registers itself through `App.GameManager.register()`.
@@ -69,7 +74,17 @@ There are two multiplayer paths:
 Short-code rooms use Firebase as the round-start authority. DataChannel messages are still used for low-latency in-game updates.
 Firebase works over WAN for room/signaling state. WebRTC uses public STUN servers for WAN/NAT traversal; very restrictive networks may still need TURN, which is not part of this MVP.
 If WebRTC is not open, Guess Color can fall back to Firebase `gameActions` so accepted actions still reach the host.
+The host removes each `gameActions/{actionId}` after processing or discarding it, so old fallback actions do not replay forever.
 Refresh resume is Level 2 for Guess Color: the same browser returns to the same room/seat, WebRTC is rebuilt automatically, and Guess Color restores guesses, turn, race progress, and result state from Firebase `gameState`.
+
+Room lobby has a compact debug panel:
+
+- `狀態`: Firebase room lifecycle.
+- `傳輸`: current transport summary.
+- `房主`: current host display name.
+- `回合`: active round id suffix.
+- `Peers`: open WebRTC peers / known peer records.
+- `Queue`: pending Firebase fallback actions.
 
 Game-specific messages must be wrapped as:
 
@@ -110,6 +125,7 @@ node --check minigame/js/signaling.js
 node --check minigame/js/lobby.js
 node --check minigame/js/webrtc.js
 node --check minigame/games/guessColor/guessColor.js
+node -e "JSON.parse(require('fs').readFileSync('firebase.json','utf8')); JSON.parse(require('fs').readFileSync('database.rules.json','utf8'));"
 ```
 
 Manual checks:

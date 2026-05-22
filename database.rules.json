@@ -1,0 +1,171 @@
+{
+  "rules": {
+    ".read": false,
+    ".write": false,
+    "rooms": {
+      ".indexOn": ["createdAt"],
+      "$roomCode": {
+        ".read": "auth != null && $roomCode.matches(/^[0-9]{4}$/)",
+        ".write": "auth != null && $roomCode.matches(/^[0-9]{4}$/)",
+        ".validate": "newData.hasChildren(['hostId', 'status', 'createdAt', 'updatedAt'])",
+        "hostId": {
+          ".validate": "newData.isString() && newData.val().matches(/^[A-Za-z0-9-]{8,80}$/)"
+        },
+        "status": {
+          ".validate": "newData.isString() && newData.val().matches(/^(lobby|starting|playing|closed)$/)"
+        },
+        "gameId": {
+          ".validate": "newData.isString() && newData.val().length <= 40"
+        },
+        "mode": {
+          ".validate": "newData.isString() && newData.val().length <= 20"
+        },
+        "roundId": {
+          ".validate": "newData.isString() && newData.val().length <= 80"
+        },
+        "maxPlayers": {
+          ".validate": "newData.isNumber() && newData.val() >= 1 && newData.val() <= 8"
+        },
+        "createdAt": {
+          ".validate": "newData.isNumber()"
+        },
+        "updatedAt": {
+          ".validate": "newData.isNumber()"
+        },
+        "players": {
+          "$clientId": {
+            ".validate": "$clientId.matches(/^[A-Za-z0-9-]{8,80}$/) && newData.hasChildren(['name', 'role', 'online', 'authUid'])",
+            "name": {
+              ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 12 && newData.val().matches(/^[A-Za-z0-9\\u4e00-\\u9fff]+$/)"
+            },
+            "role": {
+              ".validate": "newData.val() === 'player'"
+            },
+            "online": {
+              ".validate": "newData.isBoolean()"
+            },
+            "authUid": {
+              ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 128"
+            },
+            "joinedAt": {
+              ".validate": "newData.isNumber()"
+            },
+            "lastSeenAt": {
+              ".validate": "newData.isNumber()"
+            },
+            "connectionVersion": {
+              ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 999999"
+            },
+            "$other": {
+              ".validate": false
+            }
+          }
+        },
+        "spectators": {
+          "$clientId": {
+            ".validate": "$clientId.matches(/^[A-Za-z0-9-]{8,80}$/) && newData.hasChildren(['name', 'role', 'online', 'authUid'])",
+            "name": {
+              ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 12 && newData.val().matches(/^[A-Za-z0-9\\u4e00-\\u9fff]+$/)"
+            },
+            "role": {
+              ".validate": "newData.val() === 'spectator'"
+            },
+            "online": {
+              ".validate": "newData.isBoolean()"
+            },
+            "authUid": {
+              ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 128"
+            },
+            "joinedAt": {
+              ".validate": "newData.isNumber()"
+            },
+            "lastSeenAt": {
+              ".validate": "newData.isNumber()"
+            },
+            "connectionVersion": {
+              ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 999999"
+            },
+            "$other": {
+              ".validate": false
+            }
+          }
+        },
+        "offers": {
+          "$clientId": {
+            ".validate": "$clientId.matches(/^[A-Za-z0-9-]{8,80}$/) && newData.hasChildren(['from', 'sdp', 'createdAt'])",
+            "from": {
+              ".validate": "newData.isString() && newData.val().matches(/^[A-Za-z0-9-]{8,80}$/)"
+            },
+            "sdp": {
+              ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 300000"
+            },
+            "connectionVersion": {
+              ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 999999"
+            },
+            "createdAt": {
+              ".validate": "newData.isNumber()"
+            },
+            "$other": {
+              ".validate": false
+            }
+          }
+        },
+        "answers": {
+          "$clientId": {
+            ".validate": "$clientId.matches(/^[A-Za-z0-9-]{8,80}$/) && newData.hasChildren(['from', 'sdp', 'createdAt'])",
+            "from": {
+              ".validate": "newData.isString() && newData.val().matches(/^[A-Za-z0-9-]{8,80}$/)"
+            },
+            "sdp": {
+              ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 300000"
+            },
+            "connectionVersion": {
+              ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 999999"
+            },
+            "createdAt": {
+              ".validate": "newData.isNumber()"
+            },
+            "$other": {
+              ".validate": false
+            }
+          }
+        },
+        "gameActions": {
+          "$actionId": {
+            ".validate": "newData.hasChildren(['from', 'roundId', 'payload', 'createdAt'])",
+            "from": {
+              ".validate": "newData.isString() && newData.val().matches(/^[A-Za-z0-9-]{8,80}$/)"
+            },
+            "roundId": {
+              ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 80"
+            },
+            "gameId": {
+              ".validate": "newData.isString() && newData.val().length <= 40"
+            },
+            "mode": {
+              ".validate": "newData.isString() && newData.val().length <= 20"
+            },
+            "payload": {
+              ".validate": "newData.exists()"
+            },
+            "createdAt": {
+              ".validate": "newData.isNumber()"
+            },
+            "$other": {
+              ".validate": false
+            }
+          }
+        },
+        "gameStart": {
+          ".validate": "newData.val() === null || newData.hasChildren(['gameId', 'mode', 'roundId', 'hostId', 'players', 'spectators', 'rolesByClientId', 'initialState'])"
+        },
+        "gameState": {
+          ".validate": "newData.val() === null || newData.hasChildren(['gameId', 'mode', 'roundId', 'state', 'updatedBy', 'updatedAt'])"
+        },
+        "$other": {
+          ".validate": false
+        }
+      }
+    }
+  }
+}
