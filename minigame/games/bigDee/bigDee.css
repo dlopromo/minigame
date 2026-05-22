@@ -5,6 +5,7 @@
 }
 .bd-topbar{display:flex;align-items:center;justify-content:space-between;gap:10px;min-width:0}
 .bd-title{font-size:1.05rem;font-weight:850;color:#243447;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bd-title.my-turn{color:#17634a}
 .bd-actions{display:flex;align-items:center;gap:8px;flex-shrink:0}
 .bd-icon-btn{
   width:32px;height:32px;border-radius:50%;border:1px solid #d8dee8;background:#fff;
@@ -23,25 +24,28 @@
 .bd-seat.right{grid-column:3;grid-row:2}
 .bd-player-name{font-size:.76rem;font-weight:850;color:#344054;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .bd-seat-meta{font-size:.72rem;color:#667085}
-.bd-seat.active{border-color:#77b255;background:#f1faf5}
+.bd-seat.active{border-color:#2fb36d;background:#ecfdf3;box-shadow:0 0 0 3px rgba(47,179,109,.16),0 8px 18px rgba(47,179,109,.14)}
 .bd-seat.passed{opacity:.62}
 .bd-table{
-  min-width:0;min-height:0;grid-column:2;grid-row:2;background:#fff;border:1px solid #dfe5ee;
-  border-radius:12px;padding:10px;display:grid;grid-template-rows:auto minmax(0,1fr) auto;gap:8px;
+  min-width:0;min-height:0;grid-column:2;grid-row:2;
+  background:linear-gradient(145deg,#1a6b3c 0%,#157a3e 100%);
+  border:2px solid #0d4d2a;border-radius:12px;padding:10px;
+  display:grid;grid-template-rows:auto minmax(0,1fr) auto;gap:8px;
+  box-shadow:inset 0 8px 20px rgba(255,255,255,.08),inset 0 -12px 24px rgba(0,0,0,.22);
 }
 .bd-status{
   display:flex;align-items:center;justify-content:space-between;gap:8px;
-  font-size:.82rem;color:#344054;font-weight:750;
+  font-size:.82rem;color:rgba(255,255,255,.84);font-weight:750;
 }
-.bd-pill{border-radius:999px;background:#eef2f7;color:#425466;padding:4px 8px;font-size:.72rem;font-weight:850}
+.bd-pill{border-radius:999px;background:rgba(255,255,255,.18);color:#fff;padding:4px 8px;font-size:.72rem;font-weight:850}
 .bd-last-play{
-  min-height:0;border:1px dashed #cfd8e3;border-radius:12px;background:#f8fafc;
+  min-height:0;border:1px dashed rgba(255,255,255,.34);border-radius:12px;background:rgba(0,0,0,.08);
   display:flex;align-items:center;justify-content:center;gap:8px;flex-wrap:wrap;padding:10px;
 }
-.bd-last-empty{font-size:.9rem;color:#667085;font-weight:750;text-align:center}
+.bd-last-empty{font-size:.9rem;color:rgba(255,255,255,.62);font-weight:750;text-align:center}
 .bd-history{
-  min-height:34px;max-height:74px;overflow:hidden;border-top:1px solid #edf1f6;padding-top:6px;
-  display:grid;gap:3px;font-size:.72rem;color:#667085;
+  min-height:34px;max-height:74px;overflow:hidden;border-top:1px solid rgba(255,255,255,.18);padding-top:6px;
+  display:grid;gap:3px;font-size:.72rem;color:rgba(255,255,255,.7);
 }
 .bd-history-row{display:flex;align-items:center;justify-content:space-between;gap:8px;min-width:0}
 .bd-history-row span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -49,6 +53,7 @@
   min-height:0;background:#fff;border:1px solid #dfe5ee;border-radius:14px;padding:8px;
   display:grid;grid-template-rows:auto auto;gap:7px;
 }
+.bd-hand-panel.active{border-color:#2fb36d;background:#f6fffa;box-shadow:0 0 0 3px rgba(47,179,109,.12)}
 .bd-hand-scroll{
   min-width:0;display:flex;align-items:flex-end;gap:4px;overflow:hidden;padding-top:8px;
 }
@@ -64,6 +69,7 @@
 .bd-card-suit{place-self:center;font-size:1.25rem;line-height:1}
 .bd-card-mini{justify-self:end;font-size:.7rem;line-height:1}
 .bd-last-play .bd-card{width:42px;height:60px;cursor:default}
+.bd-table-card{transform:translate(var(--bd-x),var(--bd-y)) rotate(var(--bd-rot));transition:none}
 .bd-controls{display:grid;grid-template-columns:1fr auto auto;gap:8px;align-items:center}
 .bd-hint{min-width:0;font-size:.78rem;color:#667085;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .bd-action-btn{
@@ -82,6 +88,10 @@
 .bd-result-rank{font-size:.75rem;color:#667085;font-weight:850}
 .bd-result-name{font-size:.9rem;font-weight:850;color:#344054;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .bd-result-left{font-size:.78rem;color:#667085}
+.bd-score-note{
+  border:1px solid #e2e8f0;border-radius:10px;background:#f8fafc;padding:9px;
+  color:#667085;font-size:.78rem;line-height:1.45;text-align:center;
+}
 @media(max-width:760px){
   .bd-shell{padding:6px;gap:6px;border-radius:12px}
   .bd-topbar{gap:6px}

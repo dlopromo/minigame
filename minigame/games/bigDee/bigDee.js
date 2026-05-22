@@ -9,10 +9,23 @@
     triple: '三條',
     straight: '順子',
     flush: '同花',
-    fullhouse: '葫蘆',
+    fullhouse: '夫佬',
     fourkind: '四條',
     straightflush: '同花順'
   };
+  var STRAIGHT_ORDER = {
+    '3,4,5,6,7': 1,
+    '4,5,6,7,8': 2,
+    '5,6,7,8,9': 3,
+    '6,7,8,9,10': 4,
+    '7,8,9,10,J': 5,
+    '8,9,10,J,Q': 6,
+    '9,10,J,Q,K': 7,
+    '10,J,Q,K,A': 8,
+    '2,3,4,5,6': 9,
+    'A,2,3,4,5': 10
+  };
+  var BASE_STAKE = 1;
 
   var container = null;
   var opts = null;
@@ -25,6 +38,11 @@
   var gameOver = false;
   var placements = [];
   var aiTimer = null;
+  var roundNumber = 0;
+  var previousWinnerIndex = null;
+  var openingRule = 'winner';
+  var firstPlayRequiresDiamondThree = true;
+  var topDaRecords = [];
 
   function rankValue(rank) { return RANKS.indexOf(rank); }
   function suitValue(suit) { return SUITS.indexOf(suit); }
@@ -56,13 +74,18 @@
     ];
     deck.forEach(function(card, index) { players[index % 4].hand.push(card); });
     players.forEach(function(player) { player.hand.sort(byCard); });
-    currentPlayer = players.findIndex(function(player) {
-      return player.hand.some(function(card) { return card.id === '3D'; });
-    });
+    roundNumber++;
+    firstPlayRequiresDiamondThree = roundNumber === 1 || openingRule === 'diamond3' || previousWinnerIndex === null;
+    currentPlayer = firstPlayRequiresDiamondThree
+      ? players.findIndex(function(player) {
+          return player.hand.some(function(card) { return card.id === '3D'; });
+        })
+      : previousWinnerIndex;
     lastPlay = null;
     firstPlay = true;
     selectedIds = {};
-    history = [{ player: '系統', text: players[currentPlayer].name + ' 持有 3♦ 先手' }];
+    topDaRecords = [];
+    history = [{ player: '系統', text: firstPlayRequiresDiamondThree ? players[currentPlayer].name + ' 持有 3♦ 先手' : '續局由上局勝出者 ' + players[currentPlayer].name + ' 先手' }];
     gameOver = false;
     placements = [];
   }
@@ -80,13 +103,34 @@
   }
 
   function straightInfo(cards) {
-    var values = cards.map(function(card) { return rankValue(card.rank); }).sort(function(a, b) { return a - b; });
-    for (var i = 1; i < values.length; i++) {
-      if (values[i] === values[i - 1]) return null;
-      if (values[i] !== values[i - 1] + 1) return null;
+    var ranks = cards.map(function(card) { return card.rank; });
+    var uniqueRanks = ranks.filter(function(rank, index) { return ranks.indexOf(rank) === index; });
+    if (uniqueRanks.length !== 5) return null;
+    var hasRank = function(rank) { return uniqueRanks.indexOf(rank) !== -1; };
+    var key = '';
+    if (['A','2','3','4','5'].every(hasRank)) {
+      key = 'A,2,3,4,5';
+    } else if (['2','3','4','5','6'].every(hasRank)) {
+      key = '2,3,4,5,6';
+    } else {
+      var sortedRanks = uniqueRanks.slice().sort(function(a, b) {
+        return rankValue(a) - rankValue(b);
+      });
+      for (var i = 1; i < sortedRanks.length; i++) {
+        if (rankValue(sortedRanks[i]) !== rankValue(sortedRanks[i - 1]) + 1) return null;
+      }
+      if (hasRank('2')) return null;
+      key = sortedRanks.join(',');
     }
-    if (values[values.length - 1] >= rankValue('2')) return null;
-    return highCard(cards);
+    var order = STRAIGHT_ORDER[key];
+    if (!order) return null;
+    var highestRank = key === 'A,2,3,4,5'
+      ? '5'
+      : key === '2,3,4,5,6'
+        ? '6'
+        : key.split(',').pop();
+    var highestCards = cards.filter(function(card) { return card.rank === highestRank; });
+    return { order: order, highCard: highCard(highestCards), key: key };
   }
 
   function flushPrimary(cards) {
@@ -113,14 +157,14 @@
       return { valid: true, count: count, type: 'pair', primary: cardValue(highCard(cards)), cards: cards };
     }
     if (count === 3 && groupRanks.length === 1) {
-      return { valid: true, count: count, type: 'triple', primary: rankValue(cards[0].rank), cards: cards };
+      return { valid: true, count: count, type: 'triple', primary: cardValue(highCard(cards)), cards: cards };
     }
     if (count !== 5) return { valid: false, reason: '只支援單張、一對、三條或五張牌型' };
 
     var flush = cards.every(function(card) { return card.suit === cards[0].suit; });
-    var straightHigh = straightInfo(cards);
-    if (straightHigh && flush) {
-      return { valid: true, count: count, type: 'straightflush', primary: cardValue(straightHigh), cards: cards };
+    var straight = straightInfo(cards);
+    if (straight && flush) {
+      return { valid: true, count: count, type: 'straightflush', primary: straight.order * 4 + suitValue(straight.highCard.suit), cards: cards };
     }
 
     var sizes = groupRanks.map(function(rank) { return groups[rank].length; }).sort(function(a, b) { return b - a; });
@@ -135,10 +179,10 @@
     if (flush) {
       return { valid: true, count: count, type: 'flush', primary: flushPrimary(cards), cards: cards };
     }
-    if (straightHigh) {
-      return { valid: true, count: count, type: 'straight', primary: cardValue(straightHigh), cards: cards };
+    if (straight) {
+      return { valid: true, count: count, type: 'straight', primary: straight.order * 4 + suitValue(straight.highCard.suit), cards: cards };
     }
-    return { valid: false, reason: '五張牌必須是順子、同花、葫蘆、四條或同花順' };
+    return { valid: false, reason: '五張牌必須是蛇、同花、夫佬、四條或同花順' };
   }
 
   function compareCombos(a, b) {
@@ -157,7 +201,7 @@
   function canPlay(cards) {
     var combo = analyze(cards);
     if (!combo.valid) return { ok: false, combo: combo, reason: combo.reason };
-    if (firstPlay && !cards.some(function(card) { return card.id === '3D'; })) {
+    if (firstPlay && firstPlayRequiresDiamondThree && !cards.some(function(card) { return card.id === '3D'; })) {
       return { ok: false, combo: combo, reason: '第一手必須包含 3♦' };
     }
     if (lastPlay && compareCombos(combo, lastPlay.combo) <= 0) {
@@ -195,6 +239,7 @@
     var player = players[index];
     var check = canPlay(cards);
     if (!check.ok) return false;
+    recordTopDaIfNeeded(index, cards, check.combo, false);
     removeCards(player, cards);
     lastPlay = {
       playerIndex: index,
@@ -218,6 +263,7 @@
 
   function passTurn(index) {
     if (!lastPlay || index !== currentPlayer) return;
+    recordTopDaIfNeeded(index, [], null, true);
     players[index].passed = true;
     recordHistory(players[index].name, 'Pass');
     var activeOthers = players.filter(function(player, playerIndex) {
@@ -238,6 +284,7 @@
   function finishGame(winnerIndex) {
     gameOver = true;
     aiTimer = clearTimer(aiTimer);
+    previousWinnerIndex = winnerIndex;
     placements = [winnerIndex].concat(players.map(function(_, index) { return index; }).filter(function(index) {
       return index !== winnerIndex;
     }).sort(function(a, b) {
@@ -286,7 +333,7 @@
     if (gameOver || index !== currentPlayer) return;
     var candidates = legalCandidates(players[index].hand);
     if (candidates.length) {
-      playCards(index, candidates[0].cards);
+      playCards(index, shouldTopDa(index) ? strongestCandidate(candidates).cards : candidates[0].cards);
     } else {
       passTurn(index);
     }
@@ -313,6 +360,41 @@
     if (combo.count === 2) return 2;
     if (combo.count === 3) return 3;
     return 10 + FIVE_KIND_VALUE[combo.type];
+  }
+
+  function strongestCandidate(candidates) {
+    return candidates.slice().sort(function(a, b) {
+      var typeDiff = comboSortValue(b.combo) - comboSortValue(a.combo);
+      if (typeDiff !== 0) return typeDiff;
+      return b.combo.primary - a.combo.primary;
+    })[0];
+  }
+
+  function nextSeat(index) {
+    return (index + 1) % players.length;
+  }
+
+  function shouldTopDa(index) {
+    var next = players[nextSeat(index)];
+    return next && next.hand.length === 1;
+  }
+
+  function recordTopDaIfNeeded(index, cards, combo, isPass) {
+    if (!shouldTopDa(index)) return;
+    var candidates = legalCandidates(players[index].hand);
+    if (!candidates.length) return;
+    var strongest = strongestCandidate(candidates);
+    var usedStrongest = !isPass && combo && cards.length === strongest.cards.length && compareCombos(combo, strongest.combo) === 0;
+    if (usedStrongest) return;
+    topDaRecords.push({
+      offenderIndex: index,
+      offenderName: players[index].name,
+      targetIndex: nextSeat(index),
+      targetName: players[nextSeat(index)].name,
+      expected: cardsToText(strongest.cards),
+      actual: isPass ? 'Pass' : cardsToText(cards)
+    });
+    recordHistory('頂大', players[index].name + ' 未頂 ' + players[nextSeat(index)].name);
   }
 
   function enumerateCombos(hand) {
@@ -363,7 +445,7 @@
     container.innerHTML =
       '<div class="bd-shell">' +
         '<div class="bd-topbar">' +
-          '<div class="bd-title">' + escapeHtml(statusTitle()) + '</div>' +
+          '<div class="bd-title' + (currentPlayer === 0 ? ' my-turn' : '') + '">' + escapeHtml(statusTitle()) + '</div>' +
           '<div class="bd-actions"><button class="bd-icon-btn" onclick="App.GameManager.endGame()">×</button></div>' +
         '</div>' +
         '<div class="bd-board">' +
@@ -396,11 +478,11 @@
 
   function renderTable() {
     var last = lastPlay
-      ? lastPlay.cards.map(function(card) { return renderCard(card); }).join('') +
+      ? lastPlay.cards.map(function(card, index) { return renderTableCard(card, index, lastPlay.playerName); }).join('') +
         '<div class="bd-pill">' + escapeHtml(lastPlay.playerName) + ' · ' + COMBO_NAMES[lastPlay.combo.type] + '</div>'
       : '<div class="bd-last-empty">新一輪，可以自由出牌</div>';
     return '<div class="bd-table">' +
-      '<div class="bd-status"><span>' + escapeHtml(firstPlay ? '第一手必須包含 3♦' : '上一手') + '</span><span class="bd-pill">' + players[0].hand.length + ' 張手牌</span></div>' +
+      '<div class="bd-status"><span>' + escapeHtml(openingRuleText()) + '</span><span class="bd-pill">' + players[0].hand.length + ' 張手牌</span></div>' +
       '<div class="bd-last-play">' + last + '</div>' +
       '<div class="bd-history">' + history.slice().reverse().map(function(row) {
         return '<div class="bd-history-row"><span>' + escapeHtml(row.player) + '</span><span>' + escapeHtml(row.text) + '</span></div>';
@@ -412,7 +494,7 @@
     var hint = currentPlayer === 0 ? check.reason : '等待 AI 出牌';
     var canSubmit = currentPlayer === 0 && check.ok;
     var canPass = currentPlayer === 0 && !!lastPlay;
-    return '<div class="bd-hand-panel">' +
+    return '<div class="bd-hand-panel' + (currentPlayer === 0 ? ' active' : '') + '">' +
       '<div class="bd-hand-scroll">' + players[0].hand.map(renderHandCard).join('') + '</div>' +
       '<div class="bd-controls">' +
         '<div class="bd-hint">' + escapeHtml(hint) + '</div>' +
@@ -436,6 +518,32 @@
     '</button>';
   }
 
+  function renderTableCard(card, index, playerName) {
+    var seed = seededRandom(playerName + '-' + card.id + '-' + index);
+    var rotate = Math.round(seed * 24 - 12);
+    var x = Math.round(seededRandom(card.id + '-x-' + index) * 20 - 10);
+    var y = Math.round(seededRandom(card.id + '-y-' + playerName) * 14 - 7);
+    return renderCard(card, 'bd-table-card', 'style="--bd-rot:' + rotate + 'deg;--bd-x:' + x + 'px;--bd-y:' + y + 'px"');
+  }
+
+  function seededRandom(seed) {
+    var value = 0;
+    seed = String(seed || '');
+    for (var i = 0; i < seed.length; i++) {
+      value = (value * 31 + seed.charCodeAt(i)) >>> 0;
+    }
+    value = (value ^ (value << 13)) >>> 0;
+    value = (value ^ (value >>> 17)) >>> 0;
+    value = (value ^ (value << 5)) >>> 0;
+    return (value >>> 0) / 4294967295;
+  }
+
+  function openingRuleText() {
+    if (firstPlay && firstPlayRequiresDiamondThree) return '開局規則：3♦ 先手';
+    if (firstPlay) return '開局規則：上局勝出者先手';
+    return '上一手';
+  }
+
   function bindHand() {
     Array.prototype.forEach.call(container.querySelectorAll('[data-card-id]'), function(button) {
       button.addEventListener('click', function() { toggleCard(button.getAttribute('data-card-id')); });
@@ -451,6 +559,7 @@
 
   function renderResult() {
     var winner = players[placements[0]];
+    var scoring = calculateScores(placements[0]);
     container.innerHTML =
       '<div class="bd-shell"><div class="bd-result">' +
         '<h2>' + escapeHtml(winner.name) + ' 勝出</h2>' +
@@ -460,8 +569,10 @@
             '<div class="bd-result-rank">第 ' + (index + 1) + ' 名</div>' +
             '<div class="bd-result-name">' + escapeHtml(player.name) + '</div>' +
             '<div class="bd-result-left">剩 ' + player.hand.length + ' 張</div>' +
+            '<div class="bd-result-left">' + formatScore(scoring[playerIndex]) + '</div>' +
           '</div>';
         }).join('') + '</div>' +
+        renderTopDaSummary() +
         '<div class="bd-history">' + history.slice().reverse().map(function(row) {
           return '<div class="bd-history-row"><span>' + escapeHtml(row.player) + '</span><span>' + escapeHtml(row.text) + '</span></div>';
         }).join('') + '</div>' +
@@ -476,6 +587,57 @@
     container.querySelector('#bd-back-lobby').addEventListener('click', function() {
       App.GameManager.endGame();
     });
+  }
+
+  function calculateScores(winnerIndex) {
+    var scores = players.map(function(player, index) {
+      var left = player.hand.length;
+      var multiplier = scoreMultiplier(left);
+      var baseLoss = index === winnerIndex ? 0 : left * multiplier * BASE_STAKE;
+      return { delta: -baseLoss, baseLoss: baseLoss, penalty: 0, label: scoreLabel(left), left: left };
+    });
+    topDaRecords.forEach(function(record) {
+      var offender = scores[record.offenderIndex];
+      if (!offender || record.offenderIndex === winnerIndex) return;
+      var extra = scores.reduce(function(sum, item, index) {
+        return index !== winnerIndex && index !== record.offenderIndex ? sum + item.baseLoss : sum;
+      }, 0);
+      offender.penalty += extra;
+      offender.delta -= extra;
+    });
+    var winnerGain = scores.reduce(function(sum, item, index) {
+      return index === winnerIndex ? sum : sum - item.delta;
+    }, 0);
+    scores[winnerIndex].delta = winnerGain;
+    return scores;
+  }
+
+  function scoreMultiplier(left) {
+    if (left >= 13) return 4;
+    if (left >= 10) return 3;
+    if (left >= 8) return 2;
+    return 1;
+  }
+
+  function scoreLabel(left) {
+    if (left >= 13) return '四炒';
+    if (left >= 10) return '三炒';
+    if (left >= 8) return '雙炒';
+    return '';
+  }
+
+  function formatScore(item) {
+    var sign = item.delta > 0 ? '+' : '';
+    var label = item.label ? ' · ' + item.label : '';
+    var penalty = item.penalty ? ' · 頂大罰 ' + item.penalty : '';
+    return sign + item.delta + ' 分' + label + penalty;
+  }
+
+  function renderTopDaSummary() {
+    if (!topDaRecords.length) return '<p class="bd-score-note">沒有頂大罰分紀錄</p>';
+    return '<div class="bd-score-note">' + topDaRecords.map(function(record) {
+      return escapeHtml(record.offenderName + ' 未頂大：應出 ' + record.expected + '，實際 ' + record.actual);
+    }).join('<br>') + '</div>';
   }
 
   function escapeHtml(value) {

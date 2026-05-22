@@ -98,8 +98,9 @@ Room lobby has a compact debug panel:
 - Holder of `3♦` starts, and the first play must include `3♦`.
 - Supported hands: single, pair, triple, and five-card hands.
 - Five-card ranking: straight < flush < full house < four of a kind < straight flush.
-- Straight rules: `10JQKA` is valid, ace is high only, and `2` cannot be used in a straight.
-- AI chooses the smallest legal play or passes.
+- Straight ranking: `A2345` is largest, then `23456`, then `10JQKA`; `34567` is smallest.
+- Result scoring uses base stake `1`, remaining-card multipliers, and recorded top-card penalty notes.
+- AI chooses the smallest legal play, but automatically plays the strongest legal response when the next player has one card.
 
 Game-specific messages must be wrapped as:
 

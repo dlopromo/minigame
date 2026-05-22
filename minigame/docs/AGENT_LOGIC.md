@@ -201,9 +201,11 @@ Guess Color is a 4-slot color code game.
   - Triple.
   - Five-card hands: straight, flush, full house, four of a kind, straight flush.
 - Straight rules:
-  - `10JQKA` is valid.
-  - `2` cannot be used in a straight.
-  - Ace is high only.
+  - `A2345` is the largest straight.
+  - `23456` is the second largest straight.
+  - `10JQKA` is the third largest straight.
+  - `34567` is the smallest straight.
+  - If two straights use the same ranks, compare the suit of the highest-ranked card used for that straight pattern.
 - Turn rules:
   - If there is an active previous play, players must play the same card count
     and beat it, or pass.
@@ -211,12 +213,28 @@ Guess Color is a 4-slot color code game.
   - When every other active player passes, the last player who played cards opens
     the next round freely.
   - First player to empty their hand ends the game immediately.
+- Opening rule:
+  - First local round uses `3♦` holder starts and first play must include `3♦`.
+  - In local rematches with the same four seats, the previous winner starts and
+    may play any legal hand.
+- Scoring:
+  - Base stake is `1`.
+  - Loser base loss is remaining cards times multiplier.
+  - Multipliers: fewer than 8 cards x1, 8 or more x2, 10 or more x3, 13 x4.
+  - Result screen shows score delta and top-card penalty notes.
+- Top-card / 頂大:
+  - If the next player has one card left, the current player should play their
+    strongest legal response.
+  - Human player is not blocked from violating this; the violation is recorded
+    and scored at result time.
+  - AI automatically plays the strongest legal response in this situation.
 - AI:
   - Uses the same `analyze()` and `compareCombos()` rule path as the player.
   - Plays the smallest legal response.
-  - Opens with the lowest-cost legal hand, so the first AI opener will usually
-    play single `3♦`.
-  - No memory, defensive play, or scoring yet.
+  - In a top-card situation, plays the strongest legal response.
+  - Opens with the lowest-cost legal hand, so the first AI opener with `3♦` will
+    usually play single `3♦`.
+  - No memory or advanced defensive play yet.
 
 ## Guess Color Single Mode
 
