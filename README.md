@@ -10,15 +10,18 @@ Open:
 https://dlopromo.github.io/minigame/
 ```
 
-Current game:
+Current games:
 
 - Guess Color: a Mastermind / Hit & Blow style color-code game.
+- 鋤大DEE: a single-player four-seat Big Two MVP against 3 basic AI players.
 
 Current modes:
 
 - Local play
 - Manual two-player WebRTC connection
 - Firebase short-code room with players and spectators
+
+鋤大DEE MVP currently supports local single-player only.
 
 ## Firebase Setup
 
@@ -101,6 +104,6 @@ node --check minigame/games/guessColor/guessColor.js
 
 ## Roadmap
 
-- Add Big Dee / 鋤大DEE as the next game.
+- Improve Big Dee / 鋤大DEE AI, scoring, and future multiplayer seats.
 - Add arcade-style leaderboards.
 - Improve multiplayer reconnection and host recovery.

@@ -69,6 +69,10 @@ Current Guess Color multiplayer modes:
 - `coop`: cooperative turn-based play.
 - `race`: simultaneous race play.
 
+Current Big Dee / 鋤大DEE mode:
+
+- `single`: local four-seat game, human player versus 3 basic AI players.
+
 ## WebRTC Message Layers
 
 Short-code room state:
@@ -176,6 +180,43 @@ Guess Color is a 4-slot color code game.
   - First count exact position matches.
   - Then count remaining color-only matches.
 - Selecting an already-filled input peg removes it and makes that slot active again.
+
+## Big Dee MVP
+
+鋤大DEE is registered as `bigDee`.
+
+- Local single-player only for now.
+- Four seats: human player plus `AI 1`, `AI 2`, and `AI 3`.
+- Deck order:
+  - Rank low to high: `3,4,5,6,7,8,9,10,J,Q,K,A,2`.
+  - Suit low to high: `♦, ♣, ♥, ♠`.
+- Deal:
+  - 52 cards shuffled locally.
+  - Each seat receives 13 cards.
+  - Holder of `3♦` starts.
+  - First play must include `3♦`.
+- Supported hands:
+  - Single.
+  - Pair.
+  - Triple.
+  - Five-card hands: straight, flush, full house, four of a kind, straight flush.
+- Straight rules:
+  - `10JQKA` is valid.
+  - `2` cannot be used in a straight.
+  - Ace is high only.
+- Turn rules:
+  - If there is an active previous play, players must play the same card count
+    and beat it, or pass.
+  - A player cannot pass when opening a new round.
+  - When every other active player passes, the last player who played cards opens
+    the next round freely.
+  - First player to empty their hand ends the game immediately.
+- AI:
+  - Uses the same `analyze()` and `compareCombos()` rule path as the player.
+  - Plays the smallest legal response.
+  - Opens with the lowest-cost legal hand, so the first AI opener will usually
+    play single `3♦`.
+  - No memory, defensive play, or scoring yet.
 
 ## Guess Color Single Mode
 

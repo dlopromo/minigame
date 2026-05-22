@@ -86,6 +86,20 @@ Room lobby has a compact debug panel:
 - `Peers`: open WebRTC peers / known peer records.
 - `Queue`: pending Firebase fallback actions.
 
+## Big Dee MVP
+
+`bigDee` is currently local single-player only.
+
+- `supportsSingle: true`
+- `supportsMultiplayer: false`
+- Four seats: human + 3 basic AI players.
+- 52 cards, 13 cards per player.
+- Holder of `3♦` starts, and the first play must include `3♦`.
+- Supported hands: single, pair, triple, and five-card hands.
+- Five-card ranking: straight < flush < full house < four of a kind < straight flush.
+- Straight rules: `10JQKA` is valid, ace is high only, and `2` cannot be used in a straight.
+- AI chooses the smallest legal play or passes.
+
 Game-specific messages must be wrapped as:
 
 ```js
@@ -125,12 +139,14 @@ node --check minigame/js/signaling.js
 node --check minigame/js/lobby.js
 node --check minigame/js/webrtc.js
 node --check minigame/games/guessColor/guessColor.js
+node --check minigame/games/bigDee/bigDee.js
 node -e "JSON.parse(require('fs').readFileSync('firebase.json','utf8')); JSON.parse(require('fs').readFileSync('database.rules.json','utf8'));"
 ```
 
 Manual checks:
 
 - Local Guess Color works.
+- Local 鋤大DEE starts, deals 13 cards to each seat, and AI turns progress.
 - Empty username is rejected for multiplayer.
 - Special-character username is rejected for multiplayer.
 - Host creates a 4-digit room.
