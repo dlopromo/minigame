@@ -215,7 +215,10 @@ Multiplayer games should register:
 
 ```js
 {
+  minPlayers: 1,
   maxPlayers: 2,
+  allowSpectators: true,
+  aiFill: false,
   multiplayerModes: ['coop', 'race'],
   buildRoomStart: function(opts) {
     return {};
@@ -236,6 +239,17 @@ Multiplayer games should register:
 ```
 
 It returns the game-owned `initialState`.
+
+Rules:
+
+- `maxPlayers` is the hard player-seat cap; extra room members become spectators.
+- `minPlayers` is the minimum human seat count before AI fill is considered.
+- `allowSpectators` should default to true for this app's friends-room model.
+- `aiFill` means a game can add AI seats when humans are fewer than the legal
+  player count.
+- AI must use available game state to choose beneficial legal actions rather than
+  random actions.
+- Game screens should target iPhone 16 Pro portrait with no vertical page scroll.
 
 Guess Color example:
 

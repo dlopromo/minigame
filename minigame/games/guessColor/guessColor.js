@@ -1153,7 +1153,10 @@
     description: 'Hit & Blow',
     supportsSingle: true,
     supportsMultiplayer: true,
+    minPlayers: 1,
     maxPlayers: 2,
+    allowSpectators: true,
+    aiFill: false,
     multiplayerModes: ['coop', 'race'],
     buildRoomStart: function() {
       return { computerCode: generateComputerCode() };

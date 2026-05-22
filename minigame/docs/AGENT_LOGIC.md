@@ -72,6 +72,10 @@ Current Big Dee / 鋤大DEE mode:
 
 - `single`: local four-seat game, human player versus 3 basic AI players.
 
+Current Dou Dizhu / 鬥地主 mode:
+
+- `single`: local three-seat game, human player versus 2 AI players.
+
 ## WebRTC Message Layers
 
 Short-code room state:
@@ -235,6 +239,70 @@ Guess Color is a 4-slot color code game.
   - Opens with the lowest-cost legal hand, so the first AI opener with `3♦` will
     usually play single `3♦`.
   - No memory or advanced defensive play yet.
+
+## Dou Dizhu MVP
+
+鬥地主 is registered as `douDizhu`.
+
+- Local single-player only for now.
+- Three seats: human player plus `AI 1` and `AI 2`.
+- Deck:
+  - 54 cards.
+  - Normal card order: `3,4,5,6,7,8,9,10,J,Q,K,A,2`.
+  - Jokers: small joker, big joker; big joker is highest.
+  - Suits do not affect comparison.
+- Deal:
+  - 17 cards to each player.
+  - 3 bottom cards stay hidden during bidding.
+- Bidding:
+  - Current options are pass, 1, 2, and 3.
+  - Highest bidder becomes landlord.
+  - Landlord receives the 3 bottom cards.
+  - Bottom cards are then visible.
+- Supported hand families:
+  - Single.
+  - Pair.
+  - Triple.
+  - Triple with single.
+  - Triple with pair.
+  - Straight: at least 5 cards, `3` through `A`; no `2` or jokers.
+  - Pair chain: at least 3 consecutive pairs; no `2` or jokers.
+  - Triple chain.
+  - Airplane with singles.
+  - Airplane with pairs.
+  - Bomb.
+  - Rocket.
+  - Four with two singles.
+  - Four with two pairs.
+- Play rules:
+  - Landlord leads first.
+  - Follow with same type/shape and higher primary rank.
+  - Rocket beats all.
+  - Bomb beats all non-rocket, non-bomb hands and can be beaten by bigger bombs.
+  - Two consecutive passes reset the trick and the last player leads freely.
+- Scoring:
+  - Base score is the winning bid.
+  - Each bomb or rocket doubles the multiplier.
+  - Landlord wins or loses against each farmer; farmers share the same result.
+- AI:
+  - AI can inspect all hands.
+  - Farmers avoid covering a farmer teammate unless they can finish or the landlord is dangerous.
+  - AI prioritizes finishing, blocking near-empty landlord/farmers, and then lowest-cost legal play.
+
+## Global Game Contract
+
+Every existing and future game should preserve these room assumptions:
+
+- Declare `minPlayers`, `maxPlayers`, `allowSpectators`, and `aiFill`.
+- Extra room members above `maxPlayers` become spectators.
+- If the game can start below `maxPlayers`, fill empty seats with AI when `aiFill`
+  is true.
+- Spectators are read-only and may receive full-state views for friends-only play.
+- AI should use the known game state to choose the most beneficial legal move,
+  not random legal moves.
+- Main gameplay UI must be designed around iPhone 16 Pro portrait with no page
+  vertical scrolling; PC/tablet layouts should rebalance space instead of merely
+  scaling the mobile layout.
 
 ## Guess Color Single Mode
 

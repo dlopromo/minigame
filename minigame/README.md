@@ -34,7 +34,10 @@ App.GameManager.register({
   description: 'Hit & Blow',
   supportsSingle: true,
   supportsMultiplayer: true,
+  minPlayers: 1,
   maxPlayers: 2,
+  allowSpectators: true,
+  aiFill: false,
   multiplayerModes: ['coop', 'race'],
   buildRoomStart: function(opts) {
     return {};
@@ -102,6 +105,37 @@ Room lobby has a compact debug panel:
 - Result scoring uses base stake `1`, remaining-card multipliers, and recorded top-card penalty notes.
 - AI chooses the smallest legal play, but automatically plays the strongest legal response when the next player has one card.
 
+## Dou Dizhu MVP
+
+`douDizhu` is currently local single-player only.
+
+- `supportsSingle: true`
+- `supportsMultiplayer: false`
+- `minPlayers: 1`
+- `maxPlayers: 3`
+- `allowSpectators: true`
+- `aiFill: true`
+- Three seats: human + 2 AI players.
+- Uses 54 cards with small joker and big joker.
+- Bidding supports pass, 1, 2, and 3 points.
+- Highest bidder becomes landlord and receives the 3 bottom cards.
+- Supports the standard 13 hand families listed in the game spec, including rocket, bombs, straights, pair chains, airplanes, and four-with-two.
+- Bombs and rockets double the final multiplier.
+- AI reads all hands and uses a teammate-aware strategy instead of random play.
+
+## Global Game Contract
+
+All new games should declare:
+
+- `minPlayers`: minimum human player seats before AI fill.
+- `maxPlayers`: legal player seat cap; extra room members become spectators.
+- `allowSpectators: true` unless a game has a hard reason to block watching.
+- `aiFill: true` when empty player seats can be filled by AI.
+
+Room games should treat spectators as read-only full-state viewers. When a game
+uses AI fill, AI should make the best available decision from known state rather
+than random legal moves.
+
 Game-specific messages must be wrapped as:
 
 ```js
@@ -142,6 +176,7 @@ node --check minigame/js/lobby.js
 node --check minigame/js/webrtc.js
 node --check minigame/games/guessColor/guessColor.js
 node --check minigame/games/bigDee/bigDee.js
+node --check minigame/games/douDizhu/douDizhu.js
 node -e "JSON.parse(require('fs').readFileSync('firebase.json','utf8')); JSON.parse(require('fs').readFileSync('database.rules.json','utf8'));"
 ```
 
@@ -149,6 +184,7 @@ Manual checks:
 
 - Local Guess Color works.
 - Local 鋤大DEE starts, deals 13 cards to each seat, and AI turns progress.
+- Local 鬥地主 starts, bidding resolves, bottom cards reveal, and AI turns progress.
 - Empty username is rejected for multiplayer.
 - Special-character username is rejected for multiplayer.
 - Host creates a 4-digit room.

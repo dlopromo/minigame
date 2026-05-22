@@ -14,6 +14,7 @@ Current games:
 
 - Guess Color: a Mastermind / Hit & Blow style color-code game.
 - 鋤大DEE: a single-player four-seat Big Two MVP against 3 basic AI players.
+- 鬥地主: a three-player Landlord MVP with bidding, bottom cards, rockets, bombs, and AI farmers.
 
 Current modes:
 
@@ -22,6 +23,7 @@ Current modes:
 - Firebase short-code room with players and spectators
 
 鋤大DEE MVP currently supports local single-player only.
+鬥地主 MVP currently supports local single-player only, filling the other seats with AI.
 
 ## Firebase Setup
 
@@ -105,6 +107,6 @@ node --check minigame/games/guessColor/guessColor.js
 
 ## Roadmap
 
-- Improve Big Dee / 鋤大DEE AI, scoring, and future multiplayer seats.
+- Add future multiplayer seats for 鋤大DEE and 鬥地主 using the shared room/spectator/AI-fill contract.
 - Add arcade-style leaderboards.
 - Improve multiplayer reconnection and host recovery.

@@ -653,7 +653,10 @@
     description: '單人四人局，玩家對 3 個 AI',
     supportsSingle: true,
     supportsMultiplayer: false,
+    minPlayers: 1,
     maxPlayers: 4,
+    allowSpectators: true,
+    aiFill: true,
     multiplayerModes: [],
     init: function(gameContainer, gameOpts) {
       container = gameContainer;
