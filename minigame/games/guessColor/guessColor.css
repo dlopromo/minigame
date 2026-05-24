@@ -22,6 +22,9 @@
   background:#fff;color:#667085;font-size:1rem;font-weight:800;cursor:pointer;
   box-shadow:0 2px 8px rgba(31,41,51,.06);
 }
+.gc-icon-btn.game-chat-trigger{
+  width:auto;border-radius:10px;padding:0 9px;font-size:.78rem;position:relative;
+}
 .gc-icon-btn:active{transform:scale(.96)}
 .gc-room-info{
   flex-shrink:0;display:flex;align-items:center;justify-content:center;gap:8px;

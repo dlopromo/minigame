@@ -252,6 +252,134 @@ Guess Color is a 4-slot color code game.
   - Farmers avoid covering a farmer teammate unless they can finish or the landlord is dangerous.
   - AI prioritizes finishing, blocking near-empty landlord/farmers, and then lowest-cost legal play.
 
+## 21點 MVP
+
+21點 is registered as `blackjack`.
+
+- Modes:
+  - `single`: one human versus dealer.
+  - `room`: seated players independently play against the same dealer; spectators watch.
+- State machine phases:
+  - `DEALING`
+  - `PLAYER_TURN`
+  - `PLAYER_BUST`
+  - `DEALER_TURN`
+  - `RESULT`
+- Dealer rules:
+  - Dealer draws until 17 or above.
+  - Dealer second card is hidden during player turns unless the viewer is a spectator in future god-view work.
+- Player actions:
+  - `抽牌`
+  - `停牌`
+  - `推薦`
+- Bust handling:
+  - A bust immediately marks that player `bust`.
+  - The turn advances; the game must not stall on a busted player.
+- Settlement:
+  - Blackjack pays `+1.5`.
+  - Normal win pays `+1`.
+  - Push pays `0`.
+  - Loss pays `-1`.
+  - Local score chips keep cumulative rounds, wins, losses, pushes, blackjacks, and points.
+  - Result controls include `返回` and, where allowed, `再來一局`.
+
+## 2048 Race MVP
+
+2048 Race is registered as `tile2048`.
+
+- Modes:
+  - `single`: local endless 2048 with saved progress.
+  - `room`: multiple players race on boards generated from the same room seed.
+- There is no max tile cap. Values above 2048 continue to merge and use the
+  `v-super` visual style.
+- Local progress is saved to `localStorage` while the game is still playing.
+- Undo:
+  - Each player has an `undoStack`.
+  - The stack stores board, score, move count, and max tile.
+  - Maximum retained steps: 50.
+- Mobile:
+  - Swipe on the board maps to up/down/left/right.
+  - Board uses `touch-action: none` so swiping the board does not scroll the page.
+- Desktop:
+  - Arrow keys and WASD move the board when the game container is focused.
+- Settlement:
+  - A player is done when no legal move remains.
+  - Winner is highest max tile, then score, then earlier finish.
+
+## 轉色牌 MVP
+
+轉色牌 is registered as `colorShift`.
+
+- It is an UNO-like game using original naming and UI, not official UNO assets.
+- Card colors: red, blue, green, yellow, and wild.
+- Action cards:
+  - skip
+  - reverse
+  - draw2
+  - wild
+  - wild4
+- UX contract:
+  - Clicking a hand card only selects it.
+  - The player must press `出牌` to commit.
+  - `推薦` selects a legal card but never auto-submits.
+  - `抽牌` advances the turn after drawing.
+- AI uses the same scoring heuristic as the player suggestion, preferring finish,
+  draw/wild actions, and then useful high cards.
+- Single-player settlement has `返回` and `再來一局`.
+
+## 冚棉胎 MVP
+
+冚棉胎 is registered as `snapStack`.
+
+- A shared deck is flipped into a central pile.
+- If the last two ranks match, `snapOpen` becomes true and any active non-AI
+  player can press `冚`.
+- Correct slap:
+  - Player gains the whole pile size as score.
+  - Pile clears.
+- Wrong slap:
+  - Player loses 1 score.
+- AI:
+  - AI flips on its turn.
+  - When `snapOpen` is true, an AI reacts after a short delay.
+- Settlement:
+  - When deck and pile are empty, highest score wins.
+  - Room leaderboard receives each player score and winner.
+
+## 9UPPER MVP
+
+9UPPER is registered as `nineUpper`.
+
+- It is a prompt-answer-vote party game.
+- Prompt data is stored as question objects:
+
+```js
+{
+  id,
+  version,
+  category,
+  text,
+  enabled
+}
+```
+
+- Default question bank is original Hong Kong / office-friendly content.
+- The game tracks:
+  - `questionId`
+  - `questionVersion`
+  - `questionCategory`
+  - `playedQuestionIds`
+  - `questionCycle`
+- Question picking:
+  - Prefer enabled questions not already in `playedQuestionIds`.
+  - Only reset the cycle when the enabled question pool is exhausted.
+  - On reset, avoid immediately repeating the previous question when possible.
+- Round flow:
+  - `submit`: every player submits an answer.
+  - `vote`: answers are revealed in anonymized text order; players vote.
+  - `result`: votes are counted and scores are added.
+  - After `maxRounds`, status becomes `settled`.
+
 ## Global Game Contract
 
 Every existing and future game should preserve these room assumptions:

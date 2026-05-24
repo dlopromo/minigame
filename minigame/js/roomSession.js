@@ -10,7 +10,7 @@ App.RoomSession = (function() {
       roomCode: String(raw.roomCode || '').replace(/\D/g, '').slice(0, 4),
       clientId: String(raw.clientId || ''),
       authUid: String(raw.authUid || ''),
-      username: String(raw.username || '').trim().slice(0, 12),
+      username: String(raw.username || '').trim().normalize('NFKC'),
       isHost: !!raw.isHost,
       lastRole: raw.lastRole === 'spectator' ? 'spectator' : 'player',
       savedAt: Number(raw.savedAt || 0)

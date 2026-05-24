@@ -1,0 +1,23 @@
+# 鋤大DEE Rules
+
+- Four seats.
+- Rank low to high: `3,4,5,6,7,8,9,10,J,Q,K,A,2`.
+- Suit low to high: `♦, ♣, ♥, ♠`.
+- First round starts from the player holding `3♦`; first play must include `3♦`.
+- Supported plays:
+  - single
+  - pair
+  - triple
+  - five-card hands: straight, flush, full house, four of a kind, straight flush
+- Five-card ranking high to low:
+  - straight flush
+  - four of a kind
+  - full house
+  - flush
+  - straight
+- Straight order special cases:
+  - `A2345` is highest.
+  - `23456` is second highest.
+  - `10JQKA` is third highest.
+  - `34567` is lowest.
+- If all other players pass, the last player who played opens the next trick.

@@ -72,3 +72,18 @@ Watch room
 - If the round is still active, the game screen opens again.
 - If the host ended the round while the page was refreshing, the user lands in
   the party lobby.
+
+## Refresh / Close Handling
+
+`beforeunload` should not call `App.Signaling.leave()`.
+
+Reason:
+
+- Refresh is a normal recovery path and should keep the same room identity.
+- Explicit `leave()` changes member presence to lobby/offline before the browser
+  has a chance to resume, which can cause short-lived role and presence glitches.
+- Firebase `onDisconnect()` and the heartbeat/stale-member flow own accidental
+  disconnect detection.
+
+The app may still set `event.returnValue` during an active room/game so the
+browser shows a native confirmation for F5, tab close, or window close.

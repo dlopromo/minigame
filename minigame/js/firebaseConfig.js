@@ -10,6 +10,9 @@ App.FirebaseConfig = {
   messagingSenderId: "734959647301",
   appId: "1:734959647301:web:37cb7b9cb1fd52d9ae812c",
   databaseURL: "https://dlopromo-minigame-default-rtdb.asia-southeast1.firebasedatabase.app/",
+  // Optional local admin page gate only. Do not rely on this as real security;
+  // protect admin writes with Firebase Auth/Database Rules before public use.
+  // adminPin: "change-me",
 };
 
 window.App = App;

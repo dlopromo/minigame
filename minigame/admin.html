@@ -19,7 +19,13 @@
       <a class="btn-small btn-copy" href="index.html">返回遊戲</a>
     </div>
     <p class="room-role-label">監控 Firebase rooms、在線玩家、AI 接管、歷史紀錄與排行榜。</p>
+    <div class="admin-lock" id="admin-lock">
+      <input type="password" id="admin-pin-input" class="text-input" placeholder="Admin PIN" autocomplete="off">
+      <button class="btn btn-primary" onclick="App.Admin.unlock()">解鎖 Admin</button>
+      <p class="room-config-note" id="admin-lock-note"></p>
+    </div>
   </div>
+  <div class="room-debug-panel admin-debug-panel" id="admin-summary"></div>
   <div class="admin-layout">
     <section class="card room-party-card">
       <h2>房間列表</h2>

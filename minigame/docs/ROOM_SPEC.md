@@ -23,6 +23,9 @@ part of the active app flow.
 - Username is trimmed, capped at 12 characters, and must use only Chinese
   characters, English letters, or digits.
 - Spaces, punctuation, emoji, and symbols are invalid.
+- Duplicate usernames are blocked only while the matching member is active.
+  If a same-name member is offline or has not sent heartbeat for more than
+  60 seconds, a new client may enter with that name.
 
 ## Firebase Room Schema
 
@@ -148,24 +151,31 @@ Rules:
 
 ## Seating Rules
 
-At round start:
+At round start, the shared `App.RoomSeating.build(roomState, gameDef)` helper is
+the source of truth:
 
 ```text
 online queue ordered by queuedAt
         |
         v
-first maxPlayers users -> gameStart.players
-remaining room members -> gameStart.spectators
-empty seats + aiFill   -> AI records in gameStart.players
+first maxPlayers queued users -> gameStart.players
+queued users over maxPlayers  -> gameStart.spectators and remain queued
+unqueued room members         -> gameStart.spectators
+empty seats + aiFill          -> AI records in gameStart.players
 ```
 
 Important:
 
-- `queue` persists between rounds. A queued player will automatically be seated
-  again in the next round if there is room.
+- `queue` persists between rounds. A queued player who was not seated because
+  the current game was full will automatically be considered again next round.
 - `minRoomPlayers` is checked against queued real users.
 - Guess Color uses `minRoomPlayers: 2`.
 - 鋤大DEE and 鬥地主 use `minRoomPlayers: 2`; single-player should use local play.
+- 21點 uses `minRoomPlayers: 1`, `maxPlayers: 6`, and no AI fill.
+- 2048 Race uses `minRoomPlayers: 1`, `maxPlayers: 8`, and no AI fill.
+- 轉色牌 uses `minRoomPlayers: 2`, `maxPlayers: 6`, and AI fill.
+- 冚棉胎 uses `minRoomPlayers: 2`, `maxPlayers: 8`, and AI fill.
+- 9Upper uses `minRoomPlayers: 2`, `maxPlayers: 6`, and AI fill.
 - AI seats are not stored under `members`; they exist only in `gameStart` and
   game snapshots.
 
@@ -207,6 +217,16 @@ if the member owns a player seat:
         v
 if the member returns:
   same seat becomes human controlled again
+```
+
+Name reclaim:
+
+```text
+same normalizedName exists
+        |
+        v
+lastSeenAt within 60s -> block join
+lastSeenAt over 60s   -> mark old member offline, allow join
 ```
 
 Host migration is separate from player seats:

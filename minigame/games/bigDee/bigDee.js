@@ -43,6 +43,12 @@
   var openingRule = 'winner';
   var firstPlayRequiresDiamondThree = true;
   var topDaRecords = [];
+  var infoOpen = false;
+  var lastTurnNotice = '';
+  var playedPiles = [];
+  var handIntroDone = false;
+  var lastAnimatedPlayKey = '';
+  var resultSaved = false;
 
   function isRoomMode() { return opts && opts.roomId; }
   function isSpectator() { return opts && opts.role === 'spectator'; }
@@ -82,6 +88,8 @@
       return {
         id: seat.id || (isAI ? 'ai-' + (index + 1) : 'human'),
         name: seat.name || (isAI ? 'AI ' + (index + 1) : '玩家'),
+        playerColor: seat.playerColor || '',
+        playerIcon: seat.playerIcon || '',
         hand: [],
         ai: isAI,
         passed: false
@@ -113,6 +121,10 @@
     firstPlay = true;
     selectedIds = {};
     topDaRecords = [];
+    playedPiles = [];
+    handIntroDone = false;
+    lastAnimatedPlayKey = '';
+    resultSaved = false;
     history = [{ player: '系統', text: firstPlayRequiresDiamondThree ? players[currentPlayer].name + ' 持有 3♦ 先手' : '續局由上局勝出者 ' + players[currentPlayer].name + ' 先手' }];
     gameOver = false;
     placements = [];
@@ -129,6 +141,8 @@
         return {
           id: player.id,
           name: player.name,
+          playerColor: player.playerColor || '',
+          playerIcon: player.playerIcon || '',
           ai: !!player.ai,
           hand: cloneCards(player.hand),
           passed: !!player.passed
@@ -150,6 +164,14 @@
       openingRule: openingRule,
       firstPlayRequiresDiamondThree: !!firstPlayRequiresDiamondThree,
       topDaRecords: topDaRecords.slice(),
+      playedPiles: playedPiles.map(function(pile) {
+        return {
+          playerName: pile.playerName,
+          cards: cloneCards(pile.cards || []),
+          comboType: pile.comboType || '',
+          createdAt: pile.createdAt || 0
+        };
+      }),
       savedAt: Date.now()
     };
   }
@@ -181,6 +203,14 @@
     openingRule = state.openingRule || openingRule;
     firstPlayRequiresDiamondThree = !!state.firstPlayRequiresDiamondThree;
     topDaRecords = (state.topDaRecords || []).slice();
+    playedPiles = (state.playedPiles || []).map(function(pile) {
+      return {
+        playerName: pile.playerName || '',
+        cards: cloneCards(pile.cards || []).sort(byCard),
+        comboType: pile.comboType || '',
+        createdAt: pile.createdAt || 0
+      };
+    });
   }
 
   function publishState() {
@@ -198,7 +228,20 @@
   function commitTable() {
     publishState();
     render();
+    notifyTurn();
     scheduleAI();
+  }
+
+  function notifyTurn() {
+    if (!container || gameOver || isSpectator()) return;
+    if (App.Lobby && App.Lobby.setTitle) {
+      App.Lobby.setTitle(canControlCurrent() ? '輪到你 - 鋤大DEE' : players[currentPlayer].name + ' 思考中 - 鋤大DEE');
+    }
+    var key = currentPlayer + ':' + (lastPlay ? lastPlay.playerIndex : 'free') + ':' + players[currentPlayer].hand.length;
+    if (canControlCurrent() && lastTurnNotice !== key) {
+      lastTurnNotice = key;
+      App.Common.showToast('輪到你出牌', 'success');
+    }
   }
 
   function selfPlayerIndex() {
@@ -224,6 +267,7 @@
         player.ai = shouldAI;
         changed = true;
         recordHistory('系統', player.name + (shouldAI ? ' 斷線，AI 接管' : ' 已重連，恢復真人操作'));
+        App.Common.showToast(player.name + (shouldAI ? ' 斷線，AI 接管中' : ' 已重連'), shouldAI ? '' : 'success');
       }
       player.online = remote.online !== false;
       player.name = remote.name || player.name;
@@ -397,6 +441,13 @@
       cards: cloneCards(cards).sort(byCard),
       combo: check.combo
     };
+    playedPiles.push({
+      playerName: player.name,
+      cards: cloneCards(cards).sort(byCard),
+      comboType: check.combo.type,
+      createdAt: Date.now()
+    });
+    if (playedPiles.length > 18) playedPiles = playedPiles.slice(playedPiles.length - 18);
     firstPlay = false;
     clearPasses();
     recordHistory(player.name, '出了 ' + COMBO_NAMES[check.combo.type] + '（' + cardsToText(cards) + '）');
@@ -445,6 +496,8 @@
 
   function appendRoomHistory(winnerIndex, interrupted) {
     if (!isRoomMode() || !opts.isHost || !App.Signaling || !App.Signaling.appendHistory) return;
+    if (resultSaved) return;
+    resultSaved = true;
     var scoring = calculateScores(winnerIndex);
     App.Signaling.appendHistory({
       gameId: 'bigDee',
@@ -458,6 +511,8 @@
         return {
           id: player.id,
           name: player.name,
+          playerColor: player.playerColor || '',
+          playerIcon: player.playerIcon || '',
           ai: !!player.ai,
           left: player.hand.length,
           score: scoring[index] ? scoring[index].delta : 0
@@ -471,6 +526,8 @@
         return {
           id: player.id,
           name: player.name,
+          playerColor: player.playerColor || '',
+          playerIcon: player.playerIcon || '',
           score: scoring[index] ? scoring[index].delta : 0,
           win: index === winnerIndex
         };
@@ -527,7 +584,7 @@
     aiTimer = setTimeout(function() {
       aiTimer = null;
       aiMove(currentPlayer);
-    }, 520);
+    }, 720);
   }
 
   function sendRoomAction(action) {
@@ -539,10 +596,52 @@
     if (gameOver || index !== currentPlayer) return;
     var candidates = legalCandidates(players[index].hand);
     if (candidates.length) {
-      playCards(index, shouldTopDa(index) ? strongestCandidate(candidates).cards : candidates[0].cards);
+      playCards(index, pickBestCandidate(index, candidates).cards);
     } else {
       passTurn(index);
     }
+  }
+
+  function pickBestCandidate(index, candidates) {
+    if (shouldTopDa(index)) return strongestCandidate(candidates);
+    return candidates.slice().sort(function(a, b) {
+      return scoreCandidate(index, b) - scoreCandidate(index, a) || a.combo.primary - b.combo.primary;
+    })[0] || candidates[0];
+  }
+
+  function scoreCandidate(index, candidate) {
+    var hand = players[index].hand;
+    if (candidate.cards.length === hand.length) return 10000;
+    var score = candidate.cards.length * (lastPlay ? 24 : 130);
+    if (candidate.combo.count === 5) score += 150 + FIVE_KIND_VALUE[candidate.combo.type] * 14;
+    if (candidate.combo.type === 'triple') score += 70;
+    if (candidate.combo.type === 'pair') score += 35;
+    if (candidate.combo.type === 'single') score -= 18;
+    score -= candidate.combo.primary * (lastPlay ? 2 : 1);
+    if (firstPlay && firstPlayRequiresDiamondThree && candidate.cards.some(function(card) { return card.id === '3D'; })) score += 80;
+    return score;
+  }
+
+  function suggestPlay() {
+    if (!canControlCurrent()) return;
+    var index = selfPlayerIndex();
+    var candidates = legalCandidates(players[index].hand);
+    selectedIds = {};
+    if (!candidates.length) {
+      App.Common.showToast(lastPlay ? '沒有可出的組合，建議 Pass' : '請選擇可出的牌', 'error');
+      render();
+      return;
+    }
+    pickBestCandidate(index, candidates).cards.forEach(function(card) { selectedIds[card.id] = true; });
+    App.Common.showToast('已建議一組可出的牌');
+    render();
+  }
+
+  function clearSelection() {
+    if (!Object.keys(selectedIds).length) return false;
+    selectedIds = {};
+    render();
+    return true;
   }
 
   function legalCandidates(hand) {
@@ -648,20 +747,39 @@
     if (!container || gameOver) return;
     var selected = getSelectedCards();
     var check = selected.length ? canPlay(selected) : { ok: false, reason: lastPlay ? '選擇可壓過上一手的牌' : '請出一手牌' };
+    var playKey = currentPlayAnimationKey();
+    var animatePlay = !!playKey && playKey !== lastAnimatedPlayKey;
     container.innerHTML =
       '<div class="bd-shell">' +
         '<div class="bd-topbar">' +
           '<div class="bd-title' + (canControlCurrent() ? ' my-turn' : '') + '">' + escapeHtml(statusTitle()) + '</div>' +
-          '<div class="bd-actions"><button class="bd-icon-btn" onclick="App.GameManager.endGame()">×</button></div>' +
+          '<div class="bd-actions">' +
+            (isRoomMode() ? '<button class="bd-icon-btn game-chat-trigger" onclick="App.Lobby.toggleGameChat()" aria-label="Chat"><i class="fa-regular fa-comments" aria-hidden="true"></i><span class="chat-badge game-chat-unread"></span></button>' : '') +
+            '<button class="bd-icon-btn" id="bd-info-btn" aria-label="牌局資訊"><i class="fa-solid fa-circle-info" aria-hidden="true"></i></button>' +
+            '<button class="bd-icon-btn" onclick="App.GameManager.endGame()" aria-label="離開遊戲"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button>' +
+          '</div>' +
         '</div>' +
         '<div class="bd-board">' +
           renderOpponentSeats() +
-          renderTable() +
+          renderTable(animatePlay) +
         '</div>' +
         renderHandPanel(check) +
+        renderInfoDrawer() +
       '</div>';
     bindHand();
     bindControls();
+    handIntroDone = true;
+    if (animatePlay) lastAnimatedPlayKey = playKey;
+    notifyTurn();
+  }
+
+  function currentPlayAnimationKey() {
+    if (!lastPlay || !lastPlay.cards) return '';
+    return [
+      lastPlay.playerIndex,
+      lastPlay.cards.map(function(card) { return card.id; }).join('-'),
+      playedPiles.length
+    ].join(':');
   }
 
   function statusTitle() {
@@ -683,25 +801,49 @@
     var player = players[index];
     var cls = 'bd-seat ' + position + (currentPlayer === index ? ' active' : '') + (player.passed ? ' passed' : '');
     return '<div class="' + cls + '">' +
-      '<div class="bd-player-name">' + escapeHtml(player.name) + '</div>' +
-      '<div class="bd-seat-meta">' + player.hand.length + ' 張' + (player.passed ? ' · Pass' : '') + '</div>' +
+      '<div class="bd-player-line"><div class="bd-player-name">' + escapeHtml(player.name) + '</div><div class="bd-seat-meta">' + player.hand.length + ' 張</div></div>' +
+      '<div class="bd-card-backs">' + renderCardBacks(player.hand.length) + '</div>' +
+      '<div class="bd-seat-badges">' +
+        (currentPlayer === index ? '<span class="bd-seat-badge turn">輪到</span>' : '') +
+        (player.passed ? '<span class="bd-seat-badge">Pass</span>' : '') +
+        (player.ai ? '<span class="bd-seat-badge ai">AI</span>' : '') +
+      '</div>' +
     '</div>';
   }
 
-  function renderTable() {
+  function renderCardBacks(count) {
+    var shown = Math.min(10, count);
+    var html = '';
+    for (var i = 0; i < shown; i++) html += '<span class="bd-card-back"></span>';
+    return html;
+  }
+
+  function renderTable(animatePlay) {
     var self = selfPlayerIndex();
     var selfHandCount = self >= 0 && players[self] ? players[self].hand.length : 0;
     var last = lastPlay
-      ? lastPlay.cards.map(function(card, index) { return renderTableCard(card, index, lastPlay.playerName); }).join('') +
+      ? lastPlay.cards.map(function(card, index) { return renderTableCard(card, index, lastPlay.playerName, animatePlay); }).join('') +
         '<div class="bd-pill">' + escapeHtml(lastPlay.playerName) + ' · ' + COMBO_NAMES[lastPlay.combo.type] + '</div>'
       : '<div class="bd-last-empty">新一輪，可以自由出牌</div>';
     return '<div class="bd-table">' +
       '<div class="bd-status"><span>' + escapeHtml(openingRuleText()) + '</span><span class="bd-pill">' + (isSpectator() ? '觀戰' : selfHandCount + ' 張手牌') + '</span></div>' +
+      renderDiscardPiles() +
       '<div class="bd-last-play">' + last + '</div>' +
-      '<div class="bd-history">' + history.slice().reverse().map(function(row) {
-        return '<div class="bd-history-row"><span>' + escapeHtml(row.player) + '</span><span>' + escapeHtml(row.text) + '</span></div>';
-      }).join('') + '</div>' +
     '</div>';
+  }
+
+  function renderDiscardPiles() {
+    var piles = playedPiles.slice(0, lastPlay ? -1 : playedPiles.length).slice(-5);
+    if (!piles.length) return '<div class="bd-discard-area empty">已出牌堆</div>';
+    return '<div class="bd-discard-area">' + piles.map(function(pile, pileIndex) {
+      var cards = (pile.cards || []).slice(-5);
+      return '<div class="bd-discard-pile" style="--pile-i:' + pileIndex + '">' +
+        '<div class="bd-discard-stack">' + cards.map(function(card, cardIndex) {
+          return renderMiniPileCard(card, cardIndex, pile.playerName);
+        }).join('') + '</div>' +
+        '<span>' + escapeHtml(pile.playerName || '玩家') + '</span>' +
+      '</div>';
+    }).join('') + '</div>';
   }
 
   function renderHandPanel(check) {
@@ -711,12 +853,14 @@
     var hint = isSpectator() ? '觀戰模式：不可操作' : canControl ? check.reason : '未輪到你，操作暫時鎖定';
     var canSubmit = canControl && check.ok;
     var canPass = canControl && !!lastPlay;
+    var canSuggest = canControl && legalCandidates(hand).length > 0;
     return '<div class="bd-hand-panel' + (canControl ? ' active' : '') + '">' +
       '<div class="bd-hand-scroll">' + (isSpectator() ? renderSpectatorHands() : hand.map(renderHandCard).join('')) + '</div>' +
       '<div class="bd-controls">' +
         '<div class="bd-hint">' + escapeHtml(hint) + '</div>' +
-        '<button class="bd-action-btn secondary" id="bd-pass-btn"' + (canPass ? '' : ' disabled') + '>Pass</button>' +
-        '<button class="bd-action-btn" id="bd-play-btn"' + (canSubmit ? '' : ' disabled') + '>出牌</button>' +
+        '<button class="bd-action-btn secondary" id="bd-suggest-btn"' + (canSuggest ? '' : ' disabled') + '><i class="fa-regular fa-lightbulb" aria-hidden="true"></i><span>推薦</span></button>' +
+        '<button class="bd-action-btn secondary" id="bd-pass-btn"' + (canPass ? '' : ' disabled') + '><i class="fa-solid fa-forward-step" aria-hidden="true"></i><span>Pass</span></button>' +
+        '<button class="bd-action-btn" id="bd-play-btn"' + (canSubmit ? '' : ' disabled') + '><i class="fa-solid fa-paper-plane" aria-hidden="true"></i><span>出牌</span></button>' +
       '</div>' +
     '</div>';
   }
@@ -727,9 +871,10 @@
     }).join('') + '</div>';
   }
 
-  function renderHandCard(card) {
+  function renderHandCard(card, index) {
     var selected = selectedIds[card.id] ? ' selected' : '';
-    return renderCard(card, 'bd-hand-card' + selected, 'data-card-id="' + card.id + '"');
+    var intro = handIntroDone ? '' : ' bd-hand-intro';
+    return renderCard(card, 'bd-hand-card' + selected + intro, 'data-card-id="' + card.id + '" style="--bd-i:' + index + '"');
   }
 
   function renderCard(card, extraClass, attrs) {
@@ -741,12 +886,22 @@
     '</button>';
   }
 
-  function renderTableCard(card, index, playerName) {
+  function renderTableCard(card, index, playerName, animatePlay) {
     var seed = seededRandom(playerName + '-' + card.id + '-' + index);
     var rotate = Math.round(seed * 24 - 12);
     var x = Math.round(seededRandom(card.id + '-x-' + index) * 20 - 10);
     var y = Math.round(seededRandom(card.id + '-y-' + playerName) * 14 - 7);
-    return renderCard(card, 'bd-table-card', 'style="--bd-rot:' + rotate + 'deg;--bd-x:' + x + 'px;--bd-y:' + y + 'px"');
+    return renderCard(card, 'bd-table-card' + (animatePlay ? ' bd-animate-play' : ''), 'style="--bd-rot:' + rotate + 'deg;--bd-x:' + x + 'px;--bd-y:' + y + 'px;--bd-z:' + (index + 1) + '"');
+  }
+
+  function renderMiniPileCard(card, index, playerName) {
+    var red = card.suit === 'D' || card.suit === 'H';
+    var seed = seededRandom('pile-' + playerName + '-' + card.id + '-' + index);
+    var rotate = Math.round(seed * 28 - 14);
+    var x = Math.round(seededRandom(card.id + '-pile-x-' + index) * 14 - 7);
+    var y = Math.round(seededRandom(card.id + '-pile-y-' + playerName) * 10 - 5);
+    return '<span class="bd-mini-card ' + (red ? 'red' : '') + '" style="--mini-rot:' + rotate + 'deg;--mini-x:' + x + 'px;--mini-y:' + y + 'px;--mini-z:' + (index + 1) + '">' +
+      '<b>' + escapeHtml(card.rank) + '</b><em>' + SUIT_SYMBOLS[card.suit] + '</em></span>';
   }
 
   function seededRandom(seed) {
@@ -776,8 +931,30 @@
   function bindControls() {
     var playBtn = container.querySelector('#bd-play-btn');
     var passBtn = container.querySelector('#bd-pass-btn');
+    var suggestBtn = container.querySelector('#bd-suggest-btn');
+    var infoBtn = container.querySelector('#bd-info-btn');
+    var closeInfoBtn = container.querySelector('#bd-info-close');
     if (playBtn) playBtn.addEventListener('click', submitHumanPlay);
     if (passBtn) passBtn.addEventListener('click', humanPass);
+    if (suggestBtn) suggestBtn.addEventListener('click', suggestPlay);
+    if (infoBtn) infoBtn.addEventListener('click', function() { infoOpen = !infoOpen; render(); });
+    if (closeInfoBtn) closeInfoBtn.addEventListener('click', function() { infoOpen = false; render(); });
+  }
+
+  function renderInfoDrawer() {
+    return '<aside class="bd-info-drawer' + (infoOpen ? ' open' : '') + '">' +
+      '<div class="bd-info-head"><strong>牌局資訊</strong><button class="bd-icon-btn" id="bd-info-close" aria-label="關閉資訊"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button></div>' +
+      '<div class="bd-info-body">' +
+        '<section class="bd-info-section"><h3>玩家</h3>' + players.map(function(player) {
+          return '<div class="bd-info-row"><span>' + escapeHtml(player.name) + '</span><strong>' + player.hand.length + ' 張' + (player.ai ? ' · AI' : '') + '</strong></div>';
+        }).join('') + '</section>' +
+        '<section class="bd-info-section"><h3>紀錄</h3>' + history.slice().reverse().map(function(row) {
+          return '<div class="bd-info-row"><span>' + escapeHtml(row.player) + '</span><span>' + escapeHtml(row.text) + '</span></div>';
+        }).join('') + '</section>' +
+        '<section class="bd-info-section"><h3>頂大</h3>' + (topDaRecords.length ? topDaRecords.map(function(record) {
+          return '<div>' + escapeHtml(record.offenderName + ' 未頂大：應出 ' + record.expected + '，實際 ' + record.actual) + '</div>';
+        }).join('') : '<div>未有紀錄</div>') + '</section>' +
+      '</div></aside>';
   }
 
   function renderResult() {
@@ -800,7 +977,7 @@
           return '<div class="bd-history-row"><span>' + escapeHtml(row.player) + '</span><span>' + escapeHtml(row.text) + '</span></div>';
         }).join('') + '</div>' +
         (isRoomMode() ? '' : '<button class="bd-action-btn" id="bd-new-game">再來一局</button>') +
-        '<button class="bd-action-btn secondary" id="bd-back-lobby">返回大廳</button>' +
+        '<button class="bd-action-btn secondary" id="bd-back-lobby"><i class="fa-solid fa-arrow-left" aria-hidden="true"></i><span>返回大廳</span></button>' +
       '</div></div>';
     var newGameBtn = container.querySelector('#bd-new-game');
     if (newGameBtn) newGameBtn.addEventListener('click', function() {
@@ -934,6 +1111,29 @@
         return;
       }
       handleRoomAction(msg);
+    },
+    handleShortcut: function(action) {
+      if (action === 'suggest') {
+        if (!canControlCurrent()) return false;
+        suggestPlay();
+        return true;
+      }
+      if (action === 'pass') {
+        if (!canControlCurrent() || !lastPlay) return false;
+        humanPass();
+        return true;
+      }
+      if (action === 'primary') {
+        if (!canControlCurrent()) return false;
+        var selected = getSelectedCards();
+        if (selected.length && canPlay(selected).ok) {
+          submitHumanPlay();
+          return true;
+        }
+        return false;
+      }
+      if (action === 'cancel') return clearSelection();
+      return false;
     },
     destroy: function() {
       aiTimer = clearTimer(aiTimer);

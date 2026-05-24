@@ -470,7 +470,8 @@
             '<div class="gc-title" id="gc-turn-indicator">你的回合</div>' +
           '</div>' +
           '<div class="gc-actions">' +
-            '<button class="gc-icon-btn" id="gc-btn-leave-game" aria-label="離開遊戲">×</button>' +
+            (isRoomMode() ? '<button class="gc-icon-btn game-chat-trigger" onclick="App.Lobby.toggleGameChat()" aria-label="Chat"><i class="fa-regular fa-comments" aria-hidden="true"></i><span class="chat-badge game-chat-unread"></span></button>' : '') +
+            '<button class="gc-icon-btn" id="gc-btn-leave-game" aria-label="離開遊戲"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button>' +
           '</div>' +
         '</div>' +
         '<div class="gc-room-info" id="gc-room-info"></div>' +

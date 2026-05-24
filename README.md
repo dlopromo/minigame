@@ -15,15 +15,22 @@ Current games:
 - Guess Color: a Mastermind / Hit & Blow style color-code game.
 - 鋤大DEE: a four-seat Big Two MVP with real-player seats, AI fill, and spectators in rooms.
 - 鬥地主: a three-player Landlord MVP with bidding, bottom cards, rockets, bombs, AI fill, and spectators in rooms.
+- 21點: a Blackjack MVP with explicit phase handling so bust / dealer / result states do not stall.
+- 2048 Race: same-seed 2048 boards with no tile cap, local save progress, and Reverse undo.
+- 轉色牌: an UNO-like color/number/action card MVP.
+- 冚棉胎: a casual snap/slap reaction card MVP.
+- 9Upper: a bluff-answer voting party MVP.
 
 Current modes:
 
 - Local play
 - Firebase Party Room with queue, chat history, spectators, AI fill, AI takeover, host migration, room history, and room-scoped leaderboard
+- Focus/Boss mode: press `Shift` twice to cover the app with a quiet workspace brief, then press `Shift` twice or `Escape` to return.
 
-鋤大DEE and 鬥地主 support local single-player and short-code room starts. In
-rooms, queued users are seated first, extra users stay as spectators/queue, and
-empty legal seats are filled by AI when the game supports it.
+All games support local single-player and short-code room starts. In rooms,
+queued users are seated in `queuedAt` order up to the game's `maxPlayers`; extra
+users stay as spectators while remaining in the queue for the next round. Empty
+legal seats are filled by AI only when the game declares `aiFill: true`.
 
 ## Firebase Setup
 
@@ -82,6 +89,7 @@ See the detailed room contract in:
 
 ```text
 minigame/docs/ROOM_SPEC.md
+minigame/docs/PLATFORM_SPEC.md
 ```
 
 ## Development
@@ -103,10 +111,16 @@ http://127.0.0.1:4174/minigame/index.html
 Useful checks:
 
 ```bash
+node minigame/tests/run-tests.js
 node --check minigame/js/firebaseConfig.js
 node --check minigame/js/signaling.js
 node --check minigame/js/lobby.js
 node --check minigame/games/guessColor/guessColor.js
+node --check minigame/games/blackjack/blackjack.js
+node --check minigame/games/tile2048/tile2048.js
+node --check minigame/games/colorShift/colorShift.js
+node --check minigame/games/snapStack/snapStack.js
+node --check minigame/games/nineUpper/nineUpper.js
 ```
 
 ## Roadmap

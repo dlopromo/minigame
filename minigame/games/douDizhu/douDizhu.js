@@ -37,6 +37,12 @@
   var bombCount = 0;
   var gameOver = false;
   var aiTimer = null;
+  var infoOpen = false;
+  var lastTurnNotice = '';
+  var playedPiles = [];
+  var handIntroDone = false;
+  var lastAnimatedPlayKey = '';
+  var resultSaved = false;
 
   function isRoomMode() { return opts && opts.roomId; }
   function isSpectator() { return opts && opts.role === 'spectator'; }
@@ -80,6 +86,8 @@
       return {
         id: seat.id || (isAI ? 'ai-' + (index + 1) : 'human'),
         name: seat.name || (isAI ? 'AI ' + (index + 1) : '玩家'),
+        playerColor: seat.playerColor || '',
+        playerIcon: seat.playerIcon || '',
         ai: isAI,
         hand: [],
         role: 'farmer',
@@ -118,6 +126,10 @@
     bombCount = 0;
     gameOver = false;
     phase = 'bid';
+    playedPiles = [];
+    handIntroDone = false;
+    lastAnimatedPlayKey = '';
+    resultSaved = false;
   }
 
   function buildInitialState(seats) {
@@ -131,6 +143,8 @@
         return {
           id: player.id,
           name: player.name,
+          playerColor: player.playerColor || '',
+          playerIcon: player.playerIcon || '',
           ai: !!player.ai,
           hand: cloneCards(player.hand),
           role: player.role,
@@ -157,6 +171,14 @@
       history: history.slice(),
       bombCount: bombCount,
       gameOver: !!gameOver,
+      playedPiles: playedPiles.map(function(pile) {
+        return {
+          playerName: pile.playerName,
+          cards: cloneCards(pile.cards || []),
+          comboType: pile.comboType || '',
+          createdAt: pile.createdAt || 0
+        };
+      }),
       savedAt: Date.now()
     };
   }
@@ -192,6 +214,14 @@
     history = (state.history || []).slice();
     bombCount = state.bombCount || 0;
     gameOver = !!state.gameOver;
+    playedPiles = (state.playedPiles || []).map(function(pile) {
+      return {
+        playerName: pile.playerName || '',
+        cards: cloneCards(pile.cards || []).sort(byCard),
+        comboType: pile.comboType || '',
+        createdAt: pile.createdAt || 0
+      };
+    });
   }
 
   function publishState() {
@@ -209,7 +239,20 @@
   function commitTable() {
     publishState();
     render();
+    notifyTurn();
     scheduleAI();
+  }
+
+  function notifyTurn() {
+    if (!container || gameOver || isSpectator()) return;
+    if (App.Lobby && App.Lobby.setTitle) {
+      App.Lobby.setTitle(canControlCurrent() ? '輪到你 - 鬥地主' : players[currentPlayer].name + (phase === 'bid' ? ' 叫牌中' : ' 思考中') + ' - 鬥地主');
+    }
+    var key = phase + ':' + currentPlayer + ':' + (lastPlay ? lastPlay.playerIndex : 'free') + ':' + players[currentPlayer].hand.length;
+    if (canControlCurrent() && lastTurnNotice !== key) {
+      lastTurnNotice = key;
+      App.Common.showToast(phase === 'bid' ? '輪到你叫牌' : '輪到你出牌', 'success');
+    }
   }
 
   function selfPlayerIndex() {
@@ -235,6 +278,7 @@
         player.ai = shouldAI;
         changed = true;
         recordHistory('系統', player.name + (shouldAI ? ' 斷線，AI 接管' : ' 已重連，恢復真人操作'));
+        App.Common.showToast(player.name + (shouldAI ? ' 斷線，AI 接管中' : ' 已重連'), shouldAI ? '' : 'success');
       }
       player.online = remote.online !== false;
       player.name = remote.name || player.name;
@@ -439,6 +483,13 @@
       cards: cloneCards(cards).sort(byCard),
       combo: check.combo
     };
+    playedPiles.push({
+      playerName: player.name,
+      cards: cloneCards(cards).sort(byCard),
+      comboType: check.combo.type,
+      createdAt: Date.now()
+    });
+    if (playedPiles.length > 18) playedPiles = playedPiles.slice(playedPiles.length - 18);
     if (check.combo.type === 'bomb' || check.combo.type === 'rocket') bombCount++;
     passCount = 0;
     players.forEach(function(p) { p.passed = false; });
@@ -481,6 +532,8 @@
 
   function appendRoomHistory(winnerIndex, landlordWon, interrupted) {
     if (!isRoomMode() || !opts.isHost || !App.Signaling || !App.Signaling.appendHistory) return;
+    if (resultSaved) return;
+    resultSaved = true;
     var multiplier = Math.pow(2, bombCount);
     var score = currentBid * multiplier;
     App.Signaling.appendHistory({
@@ -499,6 +552,8 @@
         return {
           id: player.id,
           name: player.name,
+          playerColor: player.playerColor || '',
+          playerIcon: player.playerIcon || '',
           role: player.role,
           ai: !!player.ai,
           left: player.hand.length,
@@ -512,6 +567,8 @@
         return {
           id: player.id,
           name: player.name,
+          playerColor: player.playerColor || '',
+          playerIcon: player.playerIcon || '',
           score: scoreDelta(index, landlordWon, score),
           win: index === winnerIndex
         };
@@ -564,7 +621,7 @@
       aiTimer = null;
       if (phase === 'bid') placeBid(aiBidValue(players[currentPlayer]));
       else aiPlay(currentPlayer);
-    }, 520);
+    }, 720);
   }
 
   function humanBid(value) {
@@ -592,6 +649,29 @@
     else passTurn(index);
   }
 
+  function suggestPlay() {
+    if (phase !== 'play' || !canControlCurrent()) return;
+    var index = selfPlayerIndex();
+    var candidates = legalCandidates(players[index].hand);
+    selectedIds = {};
+    if (!candidates.length) {
+      App.Common.showToast(lastPlay ? '沒有可出的組合，建議 Pass' : '請選擇可出的牌', 'error');
+      render();
+      return;
+    }
+    var chosen = chooseSmartPlay(index, candidates) || candidates[0];
+    chosen.cards.forEach(function(card) { selectedIds[card.id] = true; });
+    App.Common.showToast('已建議一組可出的牌');
+    render();
+  }
+
+  function clearSelection() {
+    if (!Object.keys(selectedIds).length) return false;
+    selectedIds = {};
+    render();
+    return true;
+  }
+
   function legalCandidates(hand) {
     return enumerateCombos(hand).filter(function(item) {
       return canPlay(item.cards).ok;
@@ -614,7 +694,39 @@
     if (isLandlord && players.some(function(p) { return p.role === 'farmer' && p.hand.length <= 2; })) {
       return strongestCandidate(candidates);
     }
-    return candidates[0];
+    return candidates.slice().sort(function(a, b) {
+      return scoreCandidate(index, b) - scoreCandidate(index, a) || candidateSort(a, b);
+    })[0] || candidates[0];
+  }
+
+  function scoreCandidate(index, candidate) {
+    var combo = candidate.combo;
+    var player = players[index];
+    var score = 0;
+    if (candidate.cards.length === player.hand.length) return 10000;
+    if (!lastPlay) {
+      score += candidate.cards.length * 90;
+      if (combo.type === 'airplane_pair' || combo.type === 'airplane_single') score += 180;
+      if (combo.type === 'triple_chain') score += 160;
+      if (combo.type === 'pair_chain') score += 120;
+      if (combo.type === 'straight') score += 110;
+      if (combo.type === 'triple_pair') score += 95;
+      if (combo.type === 'triple_single') score += 85;
+      if (combo.type === 'triple') score += 70;
+      if (combo.type === 'pair') score += 35;
+      if (combo.type === 'single') score -= 24;
+      if (combo.type === 'bomb') score -= 180;
+      if (combo.type === 'rocket') score -= 240;
+      score -= combo.primary * 1.5;
+      return score;
+    }
+    score += combo.type === 'bomb' || combo.type === 'rocket' ? -260 : 80;
+    score -= combo.primary * 3;
+    score -= candidate.cards.length;
+    if (lastPlay && players[lastPlay.playerIndex] && players[lastPlay.playerIndex].role !== player.role) {
+      score += players[lastPlay.playerIndex].hand.length <= 2 ? 260 : 0;
+    }
+    return score;
   }
 
   function canFinishWith(candidates) {
@@ -787,16 +899,35 @@
     if (!container || gameOver) return;
     var selected = getSelectedCards();
     var check = selected.length ? canPlay(selected) : { ok: false, reason: phase === 'bid' ? '叫牌階段' : lastPlay ? '選擇可壓過上一手的牌' : '可自由出牌' };
+    var playKey = currentPlayAnimationKey();
+    var animatePlay = !!playKey && playKey !== lastAnimatedPlayKey;
     container.innerHTML =
       '<div class="ddz-shell">' +
         '<div class="ddz-topbar">' +
           '<div class="ddz-title' + (canControlCurrent() ? ' my-turn' : '') + '">' + escapeHtml(titleText()) + '</div>' +
-          '<div class="ddz-actions"><button class="ddz-icon-btn" onclick="App.GameManager.endGame()">×</button></div>' +
+          '<div class="ddz-actions">' +
+            (isRoomMode() ? '<button class="ddz-icon-btn game-chat-trigger" onclick="App.Lobby.toggleGameChat()" aria-label="Chat"><i class="fa-regular fa-comments" aria-hidden="true"></i><span class="chat-badge game-chat-unread"></span></button>' : '') +
+            '<button class="ddz-icon-btn" id="ddz-info-btn" aria-label="牌局資訊"><i class="fa-solid fa-circle-info" aria-hidden="true"></i></button>' +
+            '<button class="ddz-icon-btn" onclick="App.GameManager.endGame()" aria-label="離開遊戲"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button>' +
+          '</div>' +
         '</div>' +
-        '<div class="ddz-board">' + renderSeats() + renderTable() + '</div>' +
+        '<div class="ddz-board">' + renderSeats() + renderTable(animatePlay) + '</div>' +
         renderHandPanel(check) +
+        renderInfoDrawer() +
       '</div>';
     bindControls();
+    handIntroDone = true;
+    if (animatePlay) lastAnimatedPlayKey = playKey;
+    notifyTurn();
+  }
+
+  function currentPlayAnimationKey() {
+    if (!lastPlay || !lastPlay.cards) return '';
+    return [
+      lastPlay.playerIndex,
+      lastPlay.cards.map(function(card) { return card.id; }).join('-'),
+      playedPiles.length
+    ].join(':');
   }
 
   function titleText() {
@@ -835,21 +966,46 @@
     return '<div class="' + cls + '">' +
       '<div class="ddz-name">' + escapeHtml(player.name) + '</div>' +
       '<div class="ddz-meta"><span class="ddz-role">' + role + '</span> · ' + player.hand.length + ' 張' + bid + '</div>' +
+      '<div class="ddz-card-backs">' + renderCardBacks(player.hand.length) + '</div>' +
+      '<div class="ddz-seat-badges">' +
+        (currentPlayer === index ? '<span class="ddz-seat-badge turn">輪到</span>' : '') +
+        (player.passed ? '<span class="ddz-seat-badge">Pass</span>' : '') +
+        (player.ai ? '<span class="ddz-seat-badge ai">AI</span>' : '') +
+      '</div>' +
     '</div>';
   }
 
-  function renderTable() {
+  function renderCardBacks(count) {
+    var shown = Math.min(10, count);
+    var html = '';
+    for (var i = 0; i < shown; i++) html += '<span class="ddz-card-back"></span>';
+    return html;
+  }
+
+  function renderTable(animatePlay) {
     var last = lastPlay
-      ? lastPlay.cards.map(function(card, index) { return renderTableCard(card, index, lastPlay.playerName); }).join('') + '<span class="ddz-pill">' + escapeHtml(lastPlay.playerName) + ' · ' + TYPE_NAMES[lastPlay.combo.type] + '</span>'
+      ? lastPlay.cards.map(function(card, index) { return renderTableCard(card, index, lastPlay.playerName, animatePlay); }).join('') + '<span class="ddz-pill">' + escapeHtml(lastPlay.playerName) + ' · ' + TYPE_NAMES[lastPlay.combo.type] + '</span>'
       : '<div class="ddz-empty">' + (phase === 'bid' ? '等待叫牌' : '自由出牌') + '</div>';
     return '<div class="ddz-table">' +
       '<div class="ddz-info"><span>底分 ' + currentBid + ' · 倍數 x' + Math.pow(2, bombCount) + '</span><span class="ddz-pill">' + phaseLabel() + '</span></div>' +
+      renderDiscardPiles() +
       '<div class="ddz-last-play">' + last + '</div>' +
       '<div class="ddz-bottom-cards"><span class="ddz-bottom-label">底牌</span>' + (phase === 'bid' ? renderBackCards(3) : bottomCards.map(function(card) { return renderCard(card); }).join('')) + '</div>' +
-      '<div class="ddz-history">' + history.slice().reverse().map(function(row) {
-        return '<div class="ddz-history-row"><span>' + escapeHtml(row.player) + '</span><span>' + escapeHtml(row.text) + '</span></div>';
-      }).join('') + '</div>' +
     '</div>';
+  }
+
+  function renderDiscardPiles() {
+    var piles = playedPiles.slice(0, lastPlay ? -1 : playedPiles.length).slice(-5);
+    if (!piles.length) return '<div class="ddz-discard-area empty">已出牌堆</div>';
+    return '<div class="ddz-discard-area">' + piles.map(function(pile, pileIndex) {
+      var cards = (pile.cards || []).slice(-5);
+      return '<div class="ddz-discard-pile" style="--pile-i:' + pileIndex + '">' +
+        '<div class="ddz-discard-stack">' + cards.map(function(card, cardIndex) {
+          return renderMiniPileCard(card, cardIndex, pile.playerName);
+        }).join('') + '</div>' +
+        '<span>' + escapeHtml(pile.playerName || '玩家') + '</span>' +
+      '</div>';
+    }).join('') + '</div>';
   }
 
   function phaseLabel() {
@@ -863,6 +1019,7 @@
     var canBid = phase === 'bid' && canControl;
     var canPlayNow = phase === 'play' && canControl && check.ok;
     var canPass = phase === 'play' && canControl && !!lastPlay;
+    var canSuggest = phase === 'play' && canControl && legalCandidates(hand).length > 0;
     return '<div class="ddz-hand-panel' + (canControl ? ' active' : '') + '">' +
       '<div class="ddz-hand">' + (isSpectator() ? renderSpectatorHands() : hand.map(renderHandCard).join('')) + '</div>' +
       (phase === 'bid'
@@ -873,8 +1030,9 @@
             return '<button class="ddz-btn' + (value === 0 ? ' secondary' : '') + '" data-bid="' + value + '"' + (disabled ? ' disabled' : '') + '>' + label + '</button>';
           }).join('') + '</div>'
         : '<div class="ddz-controls"><div class="ddz-hint">' + escapeHtml(check.reason) + '</div>' +
-          '<button class="ddz-btn secondary" id="ddz-pass-btn"' + (canPass ? '' : ' disabled') + '>Pass</button>' +
-          '<button class="ddz-btn" id="ddz-play-btn"' + (canPlayNow ? '' : ' disabled') + '>出牌</button></div>') +
+          '<button class="ddz-btn secondary" id="ddz-suggest-btn"' + (canSuggest ? '' : ' disabled') + '><i class="fa-regular fa-lightbulb" aria-hidden="true"></i><span>推薦</span></button>' +
+          '<button class="ddz-btn secondary" id="ddz-pass-btn"' + (canPass ? '' : ' disabled') + '><i class="fa-solid fa-forward-step" aria-hidden="true"></i><span>Pass</span></button>' +
+          '<button class="ddz-btn" id="ddz-play-btn"' + (canPlayNow ? '' : ' disabled') + '><i class="fa-solid fa-paper-plane" aria-hidden="true"></i><span>出牌</span></button></div>') +
     '</div>';
   }
 
@@ -884,8 +1042,9 @@
     }).join('') + '</div>';
   }
 
-  function renderHandCard(card) {
-    return renderCard(card, 'ddz-hand-card' + (selectedIds[card.id] ? ' selected' : ''), 'data-card-id="' + card.id + '"');
+  function renderHandCard(card, index) {
+    var intro = handIntroDone ? '' : ' ddz-hand-intro';
+    return renderCard(card, 'ddz-hand-card' + (selectedIds[card.id] ? ' selected' : '') + intro, 'data-card-id="' + card.id + '" style="--ddz-i:' + index + '"');
   }
 
   function renderBackCards(count) {
@@ -903,12 +1062,25 @@
       '<span class="ddz-rank">' + label + '</span><span class="ddz-suit">' + suit + '</span><span class="ddz-mini">' + suit + '</span></button>';
   }
 
-  function renderTableCard(card, index, playerName) {
+  function renderTableCard(card, index, playerName, animatePlay) {
     var seed = seededRandom(playerName + '-' + card.id + '-' + index);
     var rotate = Math.round(seed * 24 - 12);
     var x = Math.round(seededRandom(card.id + '-x-' + index) * 20 - 10);
     var y = Math.round(seededRandom(card.id + '-y-' + playerName) * 14 - 7);
-    return renderCard(card, 'ddz-table-card', 'style="--ddz-rot:' + rotate + 'deg;--ddz-x:' + x + 'px;--ddz-y:' + y + 'px"');
+    return renderCard(card, 'ddz-table-card' + (animatePlay ? ' ddz-animate-play' : ''), 'style="--ddz-rot:' + rotate + 'deg;--ddz-x:' + x + 'px;--ddz-y:' + y + 'px;--ddz-z:' + (index + 1) + '"');
+  }
+
+  function renderMiniPileCard(card, index, playerName) {
+    var red = card.suit === 'D' || card.suit === 'H';
+    var joker = card.suit === 'J';
+    var label = card.rank === 'SJ' ? '小' : card.rank === 'BJ' ? '大' : card.rank;
+    var suit = joker ? '★' : SUIT_SYMBOLS[card.suit];
+    var seed = seededRandom('pile-' + playerName + '-' + card.id + '-' + index);
+    var rotate = Math.round(seed * 28 - 14);
+    var x = Math.round(seededRandom(card.id + '-pile-x-' + index) * 14 - 7);
+    var y = Math.round(seededRandom(card.id + '-pile-y-' + playerName) * 10 - 5);
+    return '<span class="ddz-mini-card ' + (red ? 'red ' : '') + (joker ? 'joker' : '') + '" style="--mini-rot:' + rotate + 'deg;--mini-x:' + x + 'px;--mini-y:' + y + 'px;--mini-z:' + (index + 1) + '">' +
+      '<b>' + escapeHtml(label) + '</b><em>' + suit + '</em></span>';
   }
 
   function seededRandom(seed) {
@@ -930,8 +1102,32 @@
     });
     var playBtn = container.querySelector('#ddz-play-btn');
     var passBtn = container.querySelector('#ddz-pass-btn');
+    var suggestBtn = container.querySelector('#ddz-suggest-btn');
+    var infoBtn = container.querySelector('#ddz-info-btn');
+    var closeInfoBtn = container.querySelector('#ddz-info-close');
     if (playBtn) playBtn.addEventListener('click', humanPlay);
     if (passBtn) passBtn.addEventListener('click', humanPass);
+    if (suggestBtn) suggestBtn.addEventListener('click', suggestPlay);
+    if (infoBtn) infoBtn.addEventListener('click', function() { infoOpen = !infoOpen; render(); });
+    if (closeInfoBtn) closeInfoBtn.addEventListener('click', function() { infoOpen = false; render(); });
+  }
+
+  function renderInfoDrawer() {
+    return '<aside class="ddz-info-drawer' + (infoOpen ? ' open' : '') + '">' +
+      '<div class="ddz-info-head"><strong>牌局資訊</strong><button class="ddz-icon-btn" id="ddz-info-close" aria-label="關閉資訊"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button></div>' +
+      '<div class="ddz-info-body">' +
+        '<section class="ddz-info-section"><h3>局勢</h3>' +
+          '<div class="ddz-info-row"><span>階段</span><strong>' + escapeHtml(phaseLabel()) + '</strong></div>' +
+          '<div class="ddz-info-row"><span>底分</span><strong>' + currentBid + '</strong></div>' +
+          '<div class="ddz-info-row"><span>炸彈/火箭</span><strong>' + bombCount + ' 次</strong></div>' +
+        '</section>' +
+        '<section class="ddz-info-section"><h3>玩家</h3>' + players.map(function(player) {
+          return '<div class="ddz-info-row"><span>' + escapeHtml(player.name) + '</span><strong>' + escapeHtml(player.role === 'landlord' ? '地主' : '農民') + ' · ' + player.hand.length + ' 張' + (player.ai ? ' · AI' : '') + '</strong></div>';
+        }).join('') + '</section>' +
+        '<section class="ddz-info-section"><h3>紀錄</h3>' + history.slice().reverse().map(function(row) {
+          return '<div class="ddz-info-row"><span>' + escapeHtml(row.player) + '</span><span>' + escapeHtml(row.text) + '</span></div>';
+        }).join('') + '</section>' +
+      '</div></aside>';
   }
 
   function renderResult(landlordWon, winnerIndex) {
@@ -950,7 +1146,7 @@
         }).join('') + '</div>' +
         '<p class="ddz-result-score">底分 ' + currentBid + ' · 炸彈/火箭 ' + bombCount + ' 次 · 倍數 x' + multiplier + ' · 勝出：' + escapeHtml(players[winnerIndex].name) + '</p>' +
         (isRoomMode() ? '' : '<button class="ddz-btn" id="ddz-new-game">再來一局</button>') +
-        '<button class="ddz-btn secondary" id="ddz-back">返回大廳</button>' +
+        '<button class="ddz-btn secondary" id="ddz-back"><i class="fa-solid fa-arrow-left" aria-hidden="true"></i><span>返回大廳</span></button>' +
       '</div></div>';
     var newGameBtn = container.querySelector('#ddz-new-game');
     if (newGameBtn) newGameBtn.addEventListener('click', function() {
@@ -1046,6 +1242,31 @@
         return;
       }
       handleRoomAction(msg);
+    },
+    handleShortcut: function(action) {
+      if (action === 'suggest') {
+        if (phase !== 'play' || !canControlCurrent()) return false;
+        suggestPlay();
+        return true;
+      }
+      if (action === 'pass') {
+        if (phase !== 'play' || !canControlCurrent() || !lastPlay) return false;
+        humanPass();
+        return true;
+      }
+      if (action === 'primary') {
+        if (!canControlCurrent()) return false;
+        if (phase === 'play') {
+          var selected = getSelectedCards();
+          if (selected.length && canPlay(selected).ok) {
+            humanPlay();
+            return true;
+          }
+        }
+        return false;
+      }
+      if (action === 'cancel') return clearSelection();
+      return false;
     },
     destroy: function() {
       aiTimer = clearTimer(aiTimer);

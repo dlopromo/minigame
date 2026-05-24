@@ -48,6 +48,9 @@
             "name": {
               ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 12 && newData.val().matches(/^[A-Za-z0-9\\u4e00-\\u9fff]+$/)"
             },
+            "normalizedName": {
+              ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 12 && newData.val().matches(/^[a-z0-9\\u4e00-\\u9fff]+$/)"
+            },
             "role": {
               ".validate": "newData.val() === 'host' || newData.val() === 'member'"
             },
@@ -62,6 +65,12 @@
             },
             "authUid": {
               ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 128"
+            },
+            "playerColor": {
+              ".validate": "newData.isString() && newData.val().matches(/^(red|blue|green|yellow|purple|orange|teal|pink)$/)"
+            },
+            "playerIcon": {
+              ".validate": "newData.isString() && newData.val().matches(/^(fox|cat|dog|bear|rabbit|panda|penguin|tiger)$/)"
             },
             "joinedAt": {
               ".validate": "newData.isNumber()"
@@ -86,6 +95,12 @@
             "queuedAt": {
               ".validate": "newData.isNumber()"
             },
+            "playerColor": {
+              ".validate": "newData.isString() && newData.val().matches(/^(red|blue|green|yellow|purple|orange|teal|pink)$/)"
+            },
+            "playerIcon": {
+              ".validate": "newData.isString() && newData.val().matches(/^(fox|cat|dog|bear|rabbit|panda|penguin|tiger)$/)"
+            },
             "$other": {
               ".validate": false
             }
@@ -105,6 +120,15 @@
             },
             "createdAt": {
               ".validate": "newData.isNumber()"
+            },
+            "mentions": {
+              ".validate": true
+            },
+            "playerColor": {
+              ".validate": "newData.isString() && newData.val().matches(/^(red|blue|green|yellow|purple|orange|teal|pink)$/)"
+            },
+            "playerIcon": {
+              ".validate": "newData.isString() && newData.val().matches(/^(fox|cat|dog|bear|rabbit|panda|penguin|tiger)$/)"
             },
             "$other": {
               ".validate": false

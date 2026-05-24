@@ -4,32 +4,69 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>MiniGame</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" crossorigin="anonymous" referrerpolicy="no-referrer">
 <link rel="stylesheet" href="css/common.css">
 <link rel="stylesheet" href="css/lobby.css">
 <link rel="stylesheet" href="games/guessColor/guessColor.css">
-<link rel="stylesheet" href="games/bigDee/bigDee.css">
-<link rel="stylesheet" href="games/douDizhu/douDizhu.css">
+<link rel="stylesheet" href="games/bigDee/bigDee.css?v=20260524-icons">
+<link rel="stylesheet" href="games/douDizhu/douDizhu.css?v=20260524-icons">
+<link rel="stylesheet" href="games/blackjack/blackjack.css?v=20260524-icons">
+<link rel="stylesheet" href="games/tile2048/tile2048.css">
+<link rel="stylesheet" href="games/colorShift/colorShift.css?v=20260524-icons">
+<link rel="stylesheet" href="games/snapStack/snapStack.css?v=20260524-icons">
+<link rel="stylesheet" href="games/nineUpper/nineUpper.css">
 </head>
 <body>
 <div class="toast-container" id="toast-container"></div>
+<aside class="focus-cover" id="focus-cover" aria-hidden="true">
+  <div class="focus-window">
+    <header class="focus-head">
+      <div>
+        <span>Workspace Brief</span>
+        <strong>Project Status</strong>
+      </div>
+      <small>Shift Shift to return</small>
+    </header>
+    <section class="focus-summary">
+      <div><span>Tasks</span><strong>12</strong><small>3 due today</small></div>
+      <div><span>Inbox</span><strong>7</strong><small>2 unread</small></div>
+      <div><span>Calendar</span><strong>14:30</strong><small>Standup</small></div>
+    </section>
+    <section class="focus-list" aria-label="Workspace tasks">
+      <div><span class="focus-dot done"></span><p>Q2 landing notes</p><strong>Done</strong></div>
+      <div><span class="focus-dot active"></span><p>Partner follow-up</p><strong>Review</strong></div>
+      <div><span class="focus-dot"></span><p>Weekly metrics draft</p><strong>Later</strong></div>
+      <div><span class="focus-dot"></span><p>Invoice checklist</p><strong>Pending</strong></div>
+    </section>
+    <footer class="focus-foot">Synced just now · Internal workspace</footer>
+  </div>
+</aside>
 
 <!-- Home Screen -->
 <div id="screen-home" class="screen active">
-  <div class="card">
-    <h1>MiniGame</h1>
-    <p class="subtitle">選擇遊玩方式</p>
-    <div class="mode-buttons">
-      <button class="btn btn-primary" onclick="App.Lobby.selectMode('single')">本機遊玩</button>
-      <button class="btn btn-secondary" onclick="App.Lobby.selectMode('room')">Party Room</button>
+  <div class="home-shell">
+    <section class="home-panel">
+      <div class="home-title-row">
+        <div>
+          <span class="app-eyebrow">Office break games</span>
+          <h1>MiniGame</h1>
+        </div>
+        <span class="status-dot">Ready</span>
+      </div>
+      <div class="home-actions">
+        <button class="btn btn-primary" onclick="App.Lobby.selectMode('room')"><i class="fa-solid fa-users" aria-hidden="true"></i> Party Room</button>
+        <button class="btn btn-secondary" onclick="App.Lobby.selectMode('single')"><i class="fa-solid fa-laptop" aria-hidden="true"></i> 本機遊玩</button>
+      </div>
+      <div class="home-hints">
+        <span>4 位房碼</span>
+        <span>Chat</span>
+        <span>Queue</span>
+        <span>AI 補位</span>
+      </div>
+    </section>
+    <div class="home-help">
+      Firebase Party Room 可跨網絡連線。輸入名字和房碼即可加入，未排隊會先觀戰。
     </div>
-  </div>
-  <div class="card">
-    <h2>連線說明</h2>
-    <p style="font-size:.85rem;line-height:1.6;color:var(--muted)">
-      Party Room 使用 Firebase 建立 4 位數字房間碼，朋友輸入名字即可加入。<br>
-      大家留在同一房間聊天、排隊、觀戰，房主可切換遊戲並開下一局。<br>
-      未加入隊列的人一律觀戰；新一局會自動從隊列抽人入座，不足人數時按遊戲規則補 AI。
-    </p>
   </div>
 </div>
 
@@ -42,76 +79,70 @@
     </p>
     <input type="text" id="room-player-name-input" placeholder="中文/英文/數字，最多12字" maxlength="12" class="text-input" autocomplete="nickname">
     <input type="text" id="room-code-input" placeholder="輸入 4 位數字" maxlength="4" inputmode="numeric" pattern="[0-9]*" class="text-input room-code-input">
-    <button class="btn btn-primary" onclick="App.Lobby.joinShortRoom()">進入 / 建立房間</button>
-    <button class="btn btn-secondary" onclick="App.Lobby.createShortRoom()">隨機建立房間</button>
+    <button class="btn btn-primary" onclick="App.Lobby.joinShortRoom()"><i class="fa-solid fa-right-to-bracket" aria-hidden="true"></i> 進入 / 建立房間</button>
+    <button class="btn btn-secondary" onclick="App.Lobby.createShortRoom()"><i class="fa-solid fa-shuffle" aria-hidden="true"></i> 隨機建立房間</button>
     <p class="room-config-note" id="room-config-note"></p>
   </div>
-  <button class="btn btn-secondary" onclick="App.Lobby.goHome()">← 返回</button>
+  <button class="btn btn-secondary" onclick="App.Lobby.goHome()"><i class="fa-solid fa-arrow-left" aria-hidden="true"></i> 返回</button>
 </div>
 
 <!-- Room Lobby Screen -->
 <div id="screen-room-lobby" class="screen">
-  <div class="card room-card">
-    <div class="room-code-line">
+  <div class="room-dashboard">
+    <section class="room-hero">
       <div>
         <span class="room-eyebrow">房間碼</span>
         <strong id="room-code-label">----</strong>
       </div>
-      <button class="btn-small btn-copy" onclick="App.Lobby.copyRoomCode()">複製</button>
-    </div>
+      <button class="btn-small btn-copy" onclick="App.Lobby.copyRoomCode()"><i class="fa-regular fa-copy" aria-hidden="true"></i><span class="btn-label">複製</span></button>
+    </section>
+    <section class="room-status-strip" aria-label="Room info">
+      <div><span>狀態</span><strong id="room-status-pill">Lobby</strong></div>
+      <div><span>房主</span><strong id="room-host-label">未知</strong></div>
+      <div><span>隊列</span><strong id="room-queue-label">0 人</strong></div>
+      <div><span>同步</span><strong id="room-actions-label">0</strong></div>
+      <div class="room-strip-hide"><span>回合</span><strong id="room-round-label">未開始</strong></div>
+      <div class="room-strip-hide"><span>傳輸</span><strong id="room-transport-pill">Firebase</strong></div>
+    </section>
     <p class="room-role-label" id="room-role-label">等待同步...</p>
-    <div class="room-debug-panel" aria-label="Room info">
-      <div>
-        <span>狀態</span>
-        <strong id="room-status-pill">Lobby</strong>
-      </div>
-      <div>
-        <span>傳輸</span>
-        <strong id="room-transport-pill">Firebase</strong>
-      </div>
-      <div>
-        <span>房主</span>
-        <strong id="room-host-label">未知</strong>
-      </div>
-      <div>
-        <span>回合</span>
-        <strong id="room-round-label">未開始</strong>
-      </div>
-      <div>
-        <span>隊列</span>
-        <strong id="room-queue-label">0 人</strong>
-      </div>
-      <div>
-        <span>Queue</span>
-        <strong id="room-actions-label">0</strong>
-      </div>
+    <div class="room-main-grid">
+      <section class="room-panel people-panel">
+        <div class="room-section-head"><h2>成員</h2><span id="room-member-count">0</span></div>
+        <div class="room-chip-list" id="room-player-list"></div>
+      </section>
+      <section class="room-panel people-panel">
+        <div class="room-section-head"><h2>隊列 / 觀戰</h2><span id="room-queue-count">0</span></div>
+        <div class="room-chip-list" id="room-spectator-list"></div>
+      </section>
+      <section class="room-panel room-profile-card">
+        <div class="room-section-head"><h2>身份</h2><span id="room-profile-status">同步</span></div>
+        <div class="room-profile-summary" id="room-profile-summary"></div>
+        <div class="room-profile-options" id="room-color-options" aria-label="玩家顏色"></div>
+        <div class="room-profile-options" id="room-icon-options" aria-label="玩家圖示"></div>
+      </section>
+      <section class="room-panel room-leaderboard-card">
+        <div class="room-section-head"><h2>MVP</h2><span id="room-mvp-count">0</span></div>
+        <div class="room-leaderboard-list" id="room-leaderboard-list"></div>
+      </section>
+      <section class="room-panel room-chat-card">
+        <div class="room-section-head">
+          <h2>Chat</h2>
+          <button class="room-panel-toggle" id="room-chat-toggle" onclick="App.Lobby.toggleRoomChat()"><i class="fa-regular fa-comments" aria-hidden="true"></i> 開啟 <span id="room-chat-count">0</span></button>
+        </div>
+        <div class="room-chat-list" id="room-chat-list"></div>
+        <div class="room-chat-input-row">
+          <input type="text" id="room-chat-input" class="text-input" maxlength="120" placeholder="輸入訊息..." autocomplete="off">
+          <button class="btn-small btn-copy" onclick="App.Lobby.sendRoomChat()"><i class="fa-regular fa-paper-plane" aria-hidden="true"></i><span class="btn-label">送出</span></button>
+          <div class="mention-panel" id="room-mention-panel" aria-hidden="true"></div>
+        </div>
+      </section>
+    </div>
+    <div class="room-action-bar">
+      <button class="btn btn-primary" id="room-queue-toggle" onclick="App.Lobby.toggleQueue()"><i class="fa-solid fa-list-ol" aria-hidden="true"></i> 加入隊列</button>
+      <button class="btn btn-secondary" id="room-host-actions" onclick="App.Lobby.showGameSelect('room')"><i class="fa-solid fa-gamepad" aria-hidden="true"></i> 選擇遊戲</button>
+      <button class="btn btn-ghost" onclick="App.Lobby.goHome()"><i class="fa-solid fa-door-open" aria-hidden="true"></i> 離開房間</button>
     </div>
   </div>
-  <div class="card room-party-card">
-    <h2>房間成員</h2>
-    <div class="room-list" id="room-player-list"></div>
-  </div>
-  <div class="card room-party-card">
-    <h2>隊列 / 觀戰</h2>
-    <div class="room-list" id="room-spectator-list"></div>
-  </div>
-  <div class="card room-chat-card">
-    <h2>Chat</h2>
-    <div class="room-chat-list" id="room-chat-list"></div>
-    <div class="room-chat-input-row">
-      <input type="text" id="room-chat-input" class="text-input" maxlength="120" placeholder="輸入訊息..." autocomplete="off">
-      <button class="btn-small btn-copy" onclick="App.Lobby.sendRoomChat()">送出</button>
-    </div>
-  </div>
-  <div class="card" id="room-host-actions">
-    <h2>房主操作</h2>
-    <p style="font-size:.85rem;color:var(--muted);margin-bottom:12px">
-      選擇遊戲後，系統會從隊列抽人入座，不足人數按遊戲規則補 AI。
-    </p>
-    <button class="btn btn-primary" onclick="App.Lobby.showGameSelect('room')">選擇遊戲</button>
-  </div>
-  <button class="btn btn-primary" id="room-queue-toggle" onclick="App.Lobby.toggleQueue()">加入隊列</button>
-  <button class="btn btn-secondary" onclick="App.Lobby.goHome()">離開房間</button>
 </div>
 
 <!-- Game Selection Screen -->
@@ -120,7 +151,7 @@
     <h2 id="game-select-title">選擇遊戲</h2>
     <div class="game-grid" id="game-grid"></div>
   </div>
-  <button class="btn btn-secondary" onclick="App.Lobby.backFromGameSelect()">← 返回</button>
+  <button class="btn btn-secondary" onclick="App.Lobby.backFromGameSelect()"><i class="fa-solid fa-arrow-left" aria-hidden="true"></i> 返回</button>
 </div>
 
 <!-- Multiplayer Mode Selection Screen -->
@@ -132,7 +163,7 @@
     </p>
     <div class="mode-choice-grid" id="mode-choice-grid"></div>
   </div>
-  <button class="btn btn-secondary" onclick="App.Lobby.showGameSelect('room')">← 返回遊戲選擇</button>
+  <button class="btn btn-secondary" onclick="App.Lobby.showGameSelect('room')"><i class="fa-solid fa-arrow-left" aria-hidden="true"></i> 返回遊戲選擇</button>
 </div>
 
 <!-- Waiting Screen -->
@@ -142,7 +173,7 @@
       <span class="spinner"></span>等待房主選擇遊戲...
     </div>
   </div>
-  <button class="btn btn-secondary" onclick="App.Lobby.goHome()">← 返回</button>
+  <button class="btn btn-secondary" onclick="App.Lobby.goHome()"><i class="fa-solid fa-arrow-left" aria-hidden="true"></i> 返回</button>
 </div>
 
 <!-- Game Container -->
@@ -150,19 +181,40 @@
   <div id="game-container"></div>
 </div>
 
+<aside class="game-chat-drawer" id="game-chat-drawer" aria-hidden="true">
+  <div class="game-chat-panel">
+    <div class="game-chat-head">
+      <strong>Chat</strong>
+      <button class="btn-small btn-copy" onclick="App.Lobby.toggleGameChat(false)"><i class="fa-solid fa-xmark" aria-hidden="true"></i><span class="btn-label">關閉</span></button>
+    </div>
+    <div class="room-chat-list" id="game-chat-list"></div>
+    <div class="room-chat-input-row">
+      <input type="text" id="game-chat-input" class="text-input" maxlength="120" placeholder="輸入訊息..." autocomplete="off">
+      <button class="btn-small btn-copy" onclick="App.Lobby.sendGameChat()"><i class="fa-regular fa-paper-plane" aria-hidden="true"></i><span class="btn-label">送出</span></button>
+      <div class="mention-panel" id="game-mention-panel" aria-hidden="true"></div>
+    </div>
+  </div>
+</aside>
+
 <!-- Scripts -->
+<script src="js/common.js?v=20260524"></script>
+<script src="js/roomSession.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-database-compat.js"></script>
-<script src="js/common.js"></script>
-<script src="js/roomSession.js"></script>
 <script src="js/firebaseConfig.js"></script>
 <script src="js/signaling.js"></script>
 <script src="js/gameManager.js"></script>
-<script src="games/guessColor/guessColor.js"></script>
-<script src="games/bigDee/bigDee.js"></script>
-<script src="games/douDizhu/douDizhu.js"></script>
+<script src="js/roomSeating.js"></script>
+<script src="games/guessColor/guessColor.js?v=20260524-icons"></script>
+<script src="games/bigDee/bigDee.js?v=20260524-icons"></script>
+<script src="games/douDizhu/douDizhu.js?v=20260524-icons"></script>
+<script src="games/blackjack/blackjack.js?v=20260524-icons"></script>
+<script src="games/tile2048/tile2048.js"></script>
+<script src="games/colorShift/colorShift.js?v=20260524-icons"></script>
+<script src="games/snapStack/snapStack.js?v=20260524-icons"></script>
+<script src="games/nineUpper/nineUpper.js?v=20260524-icons"></script>
 <script src="js/lobby.js"></script>
-<script>App.Lobby.init();</script>
+<script>App.Common.initFocusMode(); App.Common.initGlobalShortcuts(); App.Lobby.init();</script>
 </body>
 </html>

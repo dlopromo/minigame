@@ -13,6 +13,7 @@ This folder contains the static mini-game app served by GitHub Pages.
 - `js/roomSession.js`: `localStorage` room resume ticket helper.
 - `js/firebaseConfig.js`: Firebase web config.
 - `js/signaling.js`: Firebase Realtime Database party room, queue, chat, actions, and snapshots.
+- `js/roomSeating.js`: pure queue, spectator, and AI-fill seating rules.
 - `js/admin.js`: Admin monitor page logic.
 - `js/gameManager.js`: game registration and lifecycle.
 - `js/lobby.js`: local play and Firebase Party Room flow.
@@ -78,7 +79,7 @@ There is one multiplayer path:
 
 Party Rooms use Firebase as the room and round authority. Firebase works over
 WAN, so friends do not need to be on the same LAN.
-Guess Color, 鋤大DEE, and 鬥地主 room play are Firebase-first: non-host clients write actions to `gameActions`, the host applies them, and `gameState` becomes the source of truth for board/turn/result updates.
+Guess Color, 鋤大DEE, 鬥地主, 21點, 2048 Race, 轉色牌, 冚棉胎, and 9Upper room play are Firebase-first: non-host clients write actions to `gameActions`, the host applies them, and `gameState` becomes the source of truth for board/turn/result updates.
 The host removes each `gameActions/{actionId}` after processing or discarding it, so old fallback actions do not replay forever.
 Refresh resume is Firebase-only: the same browser returns to the same room and
 restores active game state from `gameStart` and `gameState`.
@@ -94,6 +95,11 @@ Room lobby has a compact debug panel:
 - `回合`: active round id suffix.
 - `隊列`: queued users.
 - `Queue`: pending Firebase action count.
+
+Room seating is centralized in `App.RoomSeating.build(roomState, gameDef)`.
+Queued online users are seated by `queuedAt` up to `maxPlayers`; overflow users
+remain queued and spectate this round. AI seats are added only when
+`aiFill: true`.
 
 ## Big Dee MVP
 
@@ -134,6 +140,73 @@ Room lobby has a compact debug panel:
 - Supports the standard 13 hand families listed in the game spec, including rocket, bombs, straights, pair chains, airplanes, and four-with-two.
 - Bombs and rockets double the final multiplier.
 - AI reads all hands and uses a teammate-aware strategy instead of random play.
+
+## Blackjack MVP
+
+`blackjack` supports local single-player and short-code room play.
+
+- `supportsSingle: true`
+- `supportsMultiplayer: true`
+- `minPlayers: 1`
+- `minRoomPlayers: 1`
+- `maxPlayers: 6`
+- `allowSpectators: true`
+- `aiFill: false`
+- Every seated player plays their own hand against the same dealer.
+- Dealer hits until 17 or above.
+- Aces count as 11 when possible, otherwise 1.
+- Room players submit hit/stand actions through Firebase `gameActions`; the host
+  applies them and publishes `gameState`.
+- Results write room history and room leaderboard deltas.
+
+## 2048 Race MVP
+
+`tile2048` supports local single-player and short-code room play.
+
+- `maxPlayers: 8`
+- `minRoomPlayers: 1`
+- `aiFill: false`
+- Each seated player gets a same-seed 2048 board.
+- Players move independently; room clients send move actions and the host
+  updates `gameState`.
+- There is no max tile cap; 4096, 8192, 16384 and beyond remain playable.
+- Single-player active progress is saved locally and can be resumed after refresh.
+- Reverse restores the previous board snapshot, with up to 50 steps retained.
+- Round ends only when all active boards are stuck.
+
+## Color Shift MVP
+
+`colorShift` is an UNO-like card game without using the UNO brand.
+
+- `maxPlayers: 6`
+- `minRoomPlayers: 2`
+- `aiFill: true`
+- Supports numbers, skip, reverse, draw two, wild, and wild draw four.
+- Click playable cards directly; draw when blocked.
+- Wild cards auto-pick the color most common in the player's remaining hand.
+
+## Snap Stack MVP
+
+`snapStack` is the casual 冚棉胎 MVP.
+
+- `maxPlayers: 8`
+- `minRoomPlayers: 2`
+- `aiFill: true`
+- Players rotate flipping cards from a shared deck.
+- If the latest two cards share a rank, anyone can press `冚`; correct slap
+  scores the pile, wrong slap loses one point.
+- Firebase arrival order decides room slap order; this is casual, not a strict
+  latency-fair competitive mode.
+
+## 9Upper MVP
+
+`nineUpper` is a prompt-answer-vote party game.
+
+- `maxPlayers: 6`
+- `minRoomPlayers: 2`
+- `aiFill: true`
+- Built-in prompt deck, anonymous answer reveal, voting, and five-round scoring.
+- Single-player uses bot answers and bot votes.
 
 ## Global Game Contract
 
@@ -210,12 +283,18 @@ that snapshot.
 Static checks:
 
 ```bash
+node minigame/tests/run-tests.js
 node --check minigame/js/firebaseConfig.js
 node --check minigame/js/signaling.js
 node --check minigame/js/lobby.js
 node --check minigame/games/guessColor/guessColor.js
 node --check minigame/games/bigDee/bigDee.js
 node --check minigame/games/douDizhu/douDizhu.js
+node --check minigame/games/blackjack/blackjack.js
+node --check minigame/games/tile2048/tile2048.js
+node --check minigame/games/colorShift/colorShift.js
+node --check minigame/games/snapStack/snapStack.js
+node --check minigame/games/nineUpper/nineUpper.js
 node -e "JSON.parse(require('fs').readFileSync('firebase.json','utf8')); JSON.parse(require('fs').readFileSync('database.rules.json','utf8'));"
 ```
 
@@ -244,3 +323,9 @@ Read these before changing room or game lifecycle code:
 
 - `docs/AGENT_LOGIC.md`
 - `docs/ROOM_SPEC.md`
+- `docs/PLATFORM_SPEC.md`
+- `docs/UI_UX_BACKLOG.md`
+- `games/tile2048/rules.md`
+- `games/tile2048/state-machine.md`
+- `games/blackjack/rules.md`
+- `games/blackjack/state-machine.md`

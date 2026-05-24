@@ -50,7 +50,15 @@ App.GameManager = (function() {
     activeGame = game;
     onGameEnd = endCallback;
     container.innerHTML = '';
-    game.init(container, opts);
+    try {
+      game.init(container, opts);
+    } catch (e) {
+      activeGame = null;
+      container.innerHTML = '<div class="card"><h2>遊戲啟動失敗</h2><p style="color:#667085;font-size:.85rem">' +
+        (window.App && App.Common && App.Common.escapeHtml ? App.Common.escapeHtml(e.message) : 'Unknown error') +
+        '</p></div>';
+      throw e;
+    }
   }
 
   function handleMessage(msg) {
@@ -59,18 +67,29 @@ App.GameManager = (function() {
     }
   }
 
-  function endGame() {
+  function endGame(options) {
+    options = options || {};
+    if (activeGame && !options.skipConfirm && App.Common && !App.Common.confirmDanger('要離開目前遊戲嗎？')) {
+      return false;
+    }
     if (activeGame && activeGame.destroy) {
       activeGame.destroy();
     }
     activeGame = null;
     if (onGameEnd) {
+      if (App.Common) App.Common.suppressNextDangerConfirm = true;
       onGameEnd();
       onGameEnd = null;
     }
+    return true;
   }
 
   function getActiveGame() { return activeGame; }
+
+  function handleShortcut(action) {
+    if (!activeGame || !activeGame.handleShortcut) return false;
+    return !!activeGame.handleShortcut(action);
+  }
 
   return {
     register: register,
@@ -80,6 +99,7 @@ App.GameManager = (function() {
     startGame: startGame,
     handleMessage: handleMessage,
     endGame: endGame,
+    handleShortcut: handleShortcut,
     getActiveGame: getActiveGame
   };
 })();

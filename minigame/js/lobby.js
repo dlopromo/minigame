@@ -11,6 +11,15 @@ App.Lobby = (function() {
   var roomRole = 'member';
   var roomActionIds = {};
   var launchedRoomGameKey = '';
+  var chatDrawerOpen = false;
+  var roomChatOpen = false;
+  var lastSeenChatCount = 0;
+  var lastMentionNoticeKey = '';
+  var lastHostNoticeEpoch = 0;
+  var titleFlashTimer = null;
+  var titleFlashBase = 'MiniGame';
+  var titleFlashOn = false;
+  var mentionState = { target: '', query: '', index: 0, people: [] };
 
   var modeMeta = {
     coop: {
@@ -24,11 +33,18 @@ App.Lobby = (function() {
   };
 
   function normalizeUsername(value) {
-    return String(value || '').trim().slice(0, 12);
+    return String(value || '').trim().normalize('NFKC');
   }
 
   function isValidUsername(name) {
     return /^[A-Za-z0-9\u4e00-\u9fff]+$/.test(name);
+  }
+
+  function weightedNameLength(name) {
+    if (App.Signaling && App.Signaling.weightedNameLength) return App.Signaling.weightedNameLength(name);
+    return Array.from(String(name || '')).reduce(function(total, ch) {
+      return total + (/[\u4e00-\u9fff]/.test(ch) ? 2 : 1);
+    }, 0);
   }
 
   function requireUsername(value) {
@@ -39,6 +55,10 @@ App.Lobby = (function() {
     }
     if (!isValidUsername(name)) {
       App.Common.showToast('名字只可使用中文、英文或數字', 'error');
+      return '';
+    }
+    if (weightedNameLength(name) > 12) {
+      App.Common.showToast('名字最多 12 個英數長度，中文字會計 2 格', 'error');
       return '';
     }
     return name;
@@ -67,7 +87,37 @@ App.Lobby = (function() {
   }
 
   function setTitle(text) {
-    document.title = text ? text + ' - MiniGame' : 'MiniGame';
+    var title = text ? text + ' - MiniGame' : 'MiniGame';
+    titleFlashBase = title;
+    if (App.Common && App.Common.focusModeActive) {
+      App.Common.focusModePreviousTitle = title;
+      return;
+    }
+    document.title = title;
+    var needsAttention = /輪到你|你的回合|Your Turn/i.test(text || '');
+    if (needsAttention && document.hidden) startTitleFlash(title);
+    else stopTitleFlash(title);
+  }
+
+  function startTitleFlash(title) {
+    if (App.Common && App.Common.focusModeActive) return;
+    if (titleFlashTimer) return;
+    titleFlashTimer = setInterval(function() {
+      if (App.Common && App.Common.focusModeActive) return;
+      titleFlashOn = !titleFlashOn;
+      document.title = titleFlashOn ? '(你的回合!) ' + title : title;
+    }, 900);
+  }
+
+  function stopTitleFlash(title) {
+    if (titleFlashTimer) clearInterval(titleFlashTimer);
+    titleFlashTimer = null;
+    titleFlashOn = false;
+    if (App.Common && App.Common.focusModeActive) {
+      App.Common.focusModePreviousTitle = title || titleFlashBase || 'MiniGame';
+      return;
+    }
+    document.title = title || titleFlashBase || 'MiniGame';
   }
 
   function saveRoomSession(room) {
@@ -142,6 +192,8 @@ App.Lobby = (function() {
         queuedAt: item.queuedAt || 0,
         online: member.online !== false,
         role: member.role || 'member',
+        playerColor: member.playerColor || item.playerColor || '',
+        playerIcon: member.playerIcon || item.playerIcon || '',
         presence: member.presence || 'lobby',
         queueStatus: 'queued'
       };
@@ -173,6 +225,8 @@ App.Lobby = (function() {
         name: member.name || person.name || (isAI ? 'AI' : '玩家'),
         online: isAI ? true : member.online !== false,
         authUid: member.authUid || person.authUid || '',
+        playerColor: member.playerColor || person.playerColor || '',
+        playerIcon: member.playerIcon || person.playerIcon || '',
         joinedAt: member.joinedAt || person.joinedAt || 0,
         lastSeenAt: member.lastSeenAt || person.lastSeenAt || 0,
         connectionVersion: member.connectionVersion || person.connectionVersion || 0,
@@ -204,6 +258,10 @@ App.Lobby = (function() {
     if (!roomState || !selfId) return playerName;
     var record = roomState.members && roomState.members[selfId];
     return (record && record.name) || playerName;
+  }
+
+  function getSelfMember() {
+    return roomState && roomState.members && roomState.members[selfId] ? roomState.members[selfId] : null;
   }
 
   function isSelfQueued() {
@@ -243,9 +301,14 @@ App.Lobby = (function() {
     }
     people.forEach(function(person) {
       var row = el('div');
-      row.className = 'room-person' + (person.online === false ? ' offline' : '');
+      var color = App.Common && App.Common.getPlayerColor ? App.Common.getPlayerColor(person.playerColor) : { value: '#d9e1ea' };
+      row.className = 'room-person with-avatar' + (person.online === false ? ' offline' : '');
+      row.style.setProperty('--player-color', color.value);
+      row.innerHTML = App.Common.renderPlayerAvatar ? App.Common.renderPlayerAvatar(person) : '';
       var info = el('div');
-      info.appendChild(el('div', 'room-person-name', person.name || '玩家'));
+      var nameNode = el('div', 'room-person-name', person.name || '玩家');
+      nameNode.title = person.name || '玩家';
+      info.appendChild(nameNode);
       var meta = person.online === false ? '離線' : (options.queue || person.queueStatus === 'queued' ? '隊列中' : person.presence === 'playing' ? '遊戲中' : '觀戰 / 房間中');
       info.appendChild(el('div', 'room-person-meta', meta));
       var badges = el('div');
@@ -259,6 +322,82 @@ App.Lobby = (function() {
       row.appendChild(badges);
       target.appendChild(row);
     });
+  }
+
+  function renderProfileControls() {
+    var member = getSelfMember();
+    var summary = document.getElementById('room-profile-summary');
+    var status = document.getElementById('room-profile-status');
+    var colorTarget = document.getElementById('room-color-options');
+    var iconTarget = document.getElementById('room-icon-options');
+    if (!summary || !colorTarget || !iconTarget) return;
+    if (!member) {
+      summary.innerHTML = '<span>等待身份同步</span>';
+      return;
+    }
+    if (status) status.textContent = member.online === false ? '離線' : '在線';
+    summary.innerHTML = (App.Common.renderPlayerAvatar ? App.Common.renderPlayerAvatar(member) : '') +
+      '<span title="' + App.Common.escapeHtml(member.name || '玩家') + '">' + App.Common.escapeHtml(member.name || '玩家') + '</span>';
+    var members = getRoomMembers().filter(function(person) { return person.id !== selfId && person.online !== false; });
+    var usedColors = {};
+    var usedIcons = {};
+    members.forEach(function(person) {
+      if (person.playerColor) usedColors[person.playerColor] = true;
+      if (person.playerIcon) usedIcons[person.playerIcon] = true;
+    });
+    colorTarget.innerHTML = '';
+    (App.Common.playerColors || []).forEach(function(color) {
+      var btn = el('button', 'room-profile-choice color' + (member.playerColor === color.id ? ' active' : ''));
+      btn.type = 'button';
+      btn.style.setProperty('--choice-color', color.value);
+      btn.title = color.name + (usedColors[color.id] ? '（已被使用）' : '');
+      btn.disabled = !!usedColors[color.id] && member.playerColor !== color.id;
+      btn.setAttribute('aria-label', color.name);
+      btn.onclick = function() { updateRoomProfile({ playerColor: color.id }); };
+      colorTarget.appendChild(btn);
+    });
+    iconTarget.innerHTML = '';
+    (App.Common.playerIcons || []).forEach(function(icon) {
+      var btn = el('button', 'room-profile-choice icon' + (member.playerIcon === icon.id ? ' active' : ''));
+      btn.type = 'button';
+      btn.title = icon.name + (usedIcons[icon.id] ? '（已被使用）' : '');
+      btn.disabled = !!usedIcons[icon.id] && member.playerIcon !== icon.id;
+      btn.textContent = icon.value;
+      btn.onclick = function() { updateRoomProfile({ playerIcon: icon.id }); };
+      iconTarget.appendChild(btn);
+    });
+  }
+
+  function renderLeaderboard() {
+    var target = document.getElementById('room-leaderboard-list');
+    var count = document.getElementById('room-mvp-count');
+    if (!target || !roomState) return;
+    var rows = Object.keys(roomState.leaderboard || {}).map(function(id) {
+      var row = roomState.leaderboard[id] || {};
+      var member = roomState.members && roomState.members[id] ? roomState.members[id] : {};
+      return Object.assign({ id: id }, row, {
+        name: member.name || row.name || '玩家',
+        playerColor: member.playerColor || row.playerColor || '',
+        playerIcon: member.playerIcon || row.playerIcon || ''
+      });
+    }).sort(function(a, b) {
+      return Number(b.wins || 0) - Number(a.wins || 0) || Number(b.score || 0) - Number(a.score || 0) || String(a.name).localeCompare(String(b.name));
+    });
+    if (count) count.textContent = String(rows.length);
+    if (!rows.length) {
+      target.innerHTML = '<p class="room-list-empty">未有賽果</p>';
+      return;
+    }
+    target.innerHTML = rows.slice(0, 6).map(function(row, index) {
+      var plays = Number(row.plays || 0);
+      var wins = Number(row.wins || 0);
+      var winRate = plays ? Math.round(wins / plays * 100) : 0;
+      return '<div class="room-mvp-row">' +
+        '<span class="room-mvp-rank">#' + (index + 1) + '</span>' +
+        '<div class="room-mvp-name">' + (App.Common.renderPlayerAvatar ? App.Common.renderPlayerAvatar(row) : '') + ' ' + App.Common.escapeHtml(row.name || '玩家') + '</div>' +
+        '<span class="room-mvp-score">' + wins + 'W · ' + winRate + '%</span>' +
+      '</div>';
+    }).join('');
   }
 
   function renderRoomLobby() {
@@ -278,34 +417,224 @@ App.Lobby = (function() {
           : 'Party Room';
       roleLabel.textContent = '你目前是：' + roleText + '　' + statusText;
     }
-    renderPeople('room-player-list', getRoomMembers());
-    renderPeople('room-spectator-list', getRoomQueue(), { queue: true });
+    var members = getRoomMembers();
+    var queue = getRoomQueue();
+    renderPeople('room-player-list', members);
+    renderPeople('room-spectator-list', queue, { queue: true });
+    renderProfileControls();
+    renderLeaderboard();
+    setText('room-member-count', String(members.length));
+    setText('room-queue-count', String(queue.length));
+    renderRoomChatPanelState();
     renderRoomChat();
     renderRoomDebug();
     var actions = document.getElementById('room-host-actions');
     if (actions) actions.style.display = isHost ? 'block' : 'none';
     var queueBtn = document.getElementById('room-queue-toggle');
     if (queueBtn) {
-      queueBtn.textContent = isSelfQueued() ? '離開隊列' : '加入隊列';
+      queueBtn.innerHTML = isSelfQueued()
+        ? '<i class="fa-solid fa-user-minus" aria-hidden="true"></i> 離開隊列'
+        : '<i class="fa-solid fa-list-ol" aria-hidden="true"></i> 加入隊列';
       queueBtn.className = isSelfQueued() ? 'btn btn-secondary' : 'btn btn-primary';
     }
     showScreen('room-lobby');
   }
 
+  function setText(id, text) {
+    var node = document.getElementById(id);
+    if (node) node.textContent = text;
+  }
+
   function renderRoomChat() {
-    var target = document.getElementById('room-chat-list');
-    if (!target || !roomState) return;
+    if (!roomState) return;
     var messages = getPeople(roomState.chat).sort(function(a, b) {
       return (a.createdAt || 0) - (b.createdAt || 0);
     });
+    setText('room-chat-count', String(messages.length));
+    renderChatTarget('room-chat-list', messages);
+    renderChatTarget('game-chat-list', messages);
+    updateChatBadge(messages.length);
+    notifyMention(messages);
+    renderRoomChatPanelState();
+  }
+
+  function notifyMention(messages) {
+    if (!selfId || !messages || !messages.length) return;
+    var latest = messages.filter(function(msg) {
+      return msg.from !== selfId && mentionList(msg.mentions).indexOf(selfId) !== -1;
+    }).pop();
+    if (!latest || latest.id === lastMentionNoticeKey) return;
+    lastMentionNoticeKey = latest.id;
+    if (App.Common && App.Common.showToast) App.Common.showToast((latest.name || '玩家') + ' 提到了你', 'success');
+    startTitleFlash('有人 @ 你 - MiniGame');
+  }
+
+  function renderRoomChatPanelState() {
+    var card = document.querySelector('.room-chat-card');
+    var toggle = document.getElementById('room-chat-toggle');
+    if (!card) return;
+    var compact = window.matchMedia && window.matchMedia('(max-width:480px)').matches;
+    var collapsed = compact && !roomChatOpen;
+    card.classList.toggle('is-collapsed', collapsed);
+    if (toggle) {
+      var count = Object.keys((roomState && roomState.chat) || {}).length;
+      toggle.innerHTML = (collapsed ? '開啟 ' : '收起 ') + '<span id="room-chat-count">' + count + '</span>';
+    }
+  }
+
+  function renderChatTarget(targetId, messages) {
+    var target = document.getElementById(targetId);
+    if (!target) return;
     target.innerHTML = messages.length ? '' : '<p class="room-list-empty">未有訊息</p>';
     messages.forEach(function(msg) {
       var row = el('div', 'room-chat-message');
-      row.appendChild(el('strong', '', msg.name || '玩家'));
-      row.appendChild(el('span', '', msg.text || ''));
+      if (mentionList(msg.mentions).indexOf(selfId) !== -1) row.className += ' mentioned';
+      var name = el('strong', msg.playerColor ? 'has-color' : '', msg.name || '玩家');
+      if (msg.playerColor && App.Common.getPlayerColor) {
+        name.style.setProperty('--player-color', App.Common.getPlayerColor(msg.playerColor).value);
+      }
+      row.appendChild(name);
+      var body = el('span');
+      body.innerHTML = renderMentions(msg.text || '');
+      row.appendChild(body);
       target.appendChild(row);
     });
     target.scrollTop = target.scrollHeight;
+  }
+
+  function mentionList(value) {
+    if (Array.isArray(value)) return value.filter(Boolean);
+    if (value && typeof value === 'object') {
+      return Object.keys(value).map(function(key) {
+        return typeof value[key] === 'string' ? value[key] : key;
+      }).filter(Boolean);
+    }
+    return [];
+  }
+
+  function renderMentions(text) {
+    var escaped = App.Common.escapeHtml(text || '');
+    var members = getRoomMembers();
+    members.forEach(function(member) {
+      if (!member.name) return;
+      var color = App.Common.getPlayerColor ? App.Common.getPlayerColor(member.playerColor).value : '#3498DB';
+      var pattern = new RegExp('@' + escapeRegExp(member.name), 'g');
+      escaped = escaped.replace(pattern, '<span class="chat-mention" style="--mention-color:' + color + '">@' + App.Common.escapeHtml(member.name) + '</span>');
+    });
+    return escaped;
+  }
+
+  function mentionParts(input) {
+    var value = input ? input.value : '';
+    var cursor = input && typeof input.selectionStart === 'number' ? input.selectionStart : value.length;
+    var before = value.slice(0, cursor);
+    var match = before.match(/(^|\s)@([A-Za-z0-9\u4e00-\u9fff]*)$/);
+    if (!match) return null;
+    return {
+      start: cursor - match[2].length - 1,
+      end: cursor,
+      query: match[2] || '',
+      value: value
+    };
+  }
+
+  function mentionPanel(target) {
+    return document.getElementById(target === 'game' ? 'game-mention-panel' : 'room-mention-panel');
+  }
+
+  function hideMentionPanel(target) {
+    var panel = mentionPanel(target);
+    if (panel) {
+      panel.classList.remove('open');
+      panel.setAttribute('aria-hidden', 'true');
+      panel.innerHTML = '';
+    }
+    if (!target || mentionState.target === target) mentionState = { target: '', query: '', index: 0, people: [] };
+  }
+
+  function renderMentionPanel(target, input) {
+    var panel = mentionPanel(target);
+    if (!panel || !roomState) return;
+    var parts = mentionParts(input);
+    if (!parts) {
+      hideMentionPanel(target);
+      return;
+    }
+    var query = parts.query.toLowerCase();
+    var people = getRoomMembers().filter(function(person) {
+      if (!person.name || person.id === selfId) return false;
+      return !query || String(person.name).toLowerCase().indexOf(query) !== -1;
+    }).slice(0, 6);
+    if (!people.length) {
+      hideMentionPanel(target);
+      return;
+    }
+    mentionState = {
+      target: target,
+      query: parts.query,
+      index: Math.min(mentionState.target === target ? mentionState.index : 0, people.length - 1),
+      people: people
+    };
+    panel.innerHTML = people.map(function(person, index) {
+      return '<button type="button" class="mention-option' + (index === mentionState.index ? ' active' : '') + '" data-mention-id="' + person.id + '">' +
+        (App.Common.renderPlayerAvatar ? App.Common.renderPlayerAvatar(person) : '') +
+        '<span>' + App.Common.escapeHtml(person.name || '玩家') + '</span>' +
+      '</button>';
+    }).join('');
+    panel.classList.add('open');
+    panel.setAttribute('aria-hidden', 'false');
+    Array.prototype.forEach.call(panel.querySelectorAll('[data-mention-id]'), function(button) {
+      button.addEventListener('mousedown', function(e) {
+        e.preventDefault();
+        chooseMention(target, input, button.getAttribute('data-mention-id'));
+      });
+    });
+  }
+
+  function chooseMention(target, input, id) {
+    var person = getRoomMembers().filter(function(item) { return item.id === id; })[0];
+    var parts = mentionParts(input);
+    if (!person || !parts || !input) return false;
+    var insert = '@' + person.name + ' ';
+    input.value = parts.value.slice(0, parts.start) + insert + parts.value.slice(parts.end);
+    var caret = parts.start + insert.length;
+    input.setSelectionRange(caret, caret);
+    hideMentionPanel(target);
+    input.focus();
+    return true;
+  }
+
+  function handleMentionKey(target, input, e) {
+    if (mentionState.target !== target || !mentionState.people.length) return false;
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      var delta = e.key === 'ArrowDown' ? 1 : -1;
+      mentionState.index = (mentionState.index + delta + mentionState.people.length) % mentionState.people.length;
+      renderMentionPanel(target, input);
+      return true;
+    }
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      return chooseMention(target, input, mentionState.people[mentionState.index].id);
+    }
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      hideMentionPanel(target);
+      return true;
+    }
+    return false;
+  }
+
+  function escapeRegExp(value) {
+    return String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  }
+
+  function updateChatBadge(count) {
+    var unread = Math.max(0, count - lastSeenChatCount);
+    Array.prototype.forEach.call(document.querySelectorAll('.game-chat-unread'), function(node) {
+      node.textContent = unread > 9 ? '9+' : String(unread);
+      node.classList.toggle('has-unread', unread > 0 && !chatDrawerOpen);
+    });
   }
 
   function notifyRoomUpdateToGame() {
@@ -347,6 +676,21 @@ App.Lobby = (function() {
     return isHost && !wasHost;
   }
 
+  function notifyHostNotice(state) {
+    var notice = state && state.hostNotice;
+    var epoch = notice ? Number(notice.epoch || 0) : 0;
+    if (!epoch) return;
+    if (!roomState) {
+      lastHostNoticeEpoch = epoch;
+      return;
+    }
+    if (epoch === lastHostNoticeEpoch) return;
+    lastHostNoticeEpoch = epoch;
+    var newHost = notice.hostName || '新房主';
+    var oldHost = notice.previousHostName || '房主';
+    App.Common.showToast(oldHost + ' 已離開，' + newHost + ' 已成為新房主', 'success');
+  }
+
   function maybeClaimHost(state) {
     if (!state || !App.Signaling || !App.Signaling.claimHost || state.hostId === selfId) return;
     var members = getPeople(state.members);
@@ -355,6 +699,9 @@ App.Lobby = (function() {
     var candidate = members.filter(function(person) {
       return person.online !== false;
     }).sort(function(a, b) {
+      var aSpectator = a.role === 'spectator' || a.presence === 'spectating';
+      var bSpectator = b.role === 'spectator' || b.presence === 'spectating';
+      if (aSpectator !== bSpectator) return aSpectator ? 1 : -1;
       return (a.joinedAt || 0) - (b.joinedAt || 0);
     })[0];
     if (!candidate || candidate.id !== selfId) return;
@@ -369,6 +716,7 @@ App.Lobby = (function() {
       goHome();
       return;
     }
+    notifyHostNotice(state);
     roomState = state;
     maybeClaimHost(state);
     var becameHost = refreshHostFlag(state);
@@ -377,6 +725,7 @@ App.Lobby = (function() {
       return;
     }
     notifyRoomUpdateToGame();
+    renderRoomChat();
     if (becameHost) processPendingRoomActions(state);
     maybeLaunchRoomGameFromState();
     if (!gameActive) renderRoomLobby();
@@ -490,10 +839,26 @@ App.Lobby = (function() {
 
       var card = document.createElement('div');
       card.className = 'game-card';
+      var badges = [];
+      if (playContext === 'room') {
+        badges.push('玩家 ' + (game.minRoomPlayers || game.minPlayers || 1) + '-' + (game.maxPlayers || 2));
+        if (game.aiFill) badges.push('AI 補位');
+        if (game.allowSpectators) badges.push('可觀戰');
+        if (roomState) {
+          var ready = getRoomQueue().length >= getGameMinRoomPlayers(game.id);
+          badges.push(ready ? '可開始' : '隊列不足');
+        }
+      } else {
+        badges.push('單人');
+        if (game.maxPlayers > 1) badges.push('AI 對手');
+      }
       card.innerHTML =
         '<div class="game-icon">' + game.icon + '</div>' +
         '<div class="game-name">' + game.name + '</div>' +
-        '<div class="game-desc">' + game.description + '</div>';
+        '<div class="game-desc">' + game.description + '</div>' +
+        '<div class="game-card-meta">' + badges.map(function(badge) {
+          return '<span class="game-badge">' + badge + '</span>';
+        }).join('') + '</div>';
       card.onclick = function() { onGameSelected(game.id); };
       grid.appendChild(card);
     });
@@ -546,63 +911,26 @@ App.Lobby = (function() {
 
   function rebalanceRoomForGame(gameId) {
     if (!roomState) return Promise.resolve();
-    var maxPlayers = getGameMaxPlayers(gameId);
     var game = App.GameManager.getGame(gameId);
+    var seating = App.RoomSeating && App.RoomSeating.build
+      ? App.RoomSeating.build(roomState, game)
+      : null;
+    if (!seating) return Promise.reject(new Error('Room seating module not ready'));
     var members = getRoomMembers().filter(function(person) { return person.online !== false; });
-    var queue = getRoomQueue();
-    var seatedRealPlayers = queue.slice(0, maxPlayers);
     var seatedIds = {};
-    seatedRealPlayers.forEach(function(person) { seatedIds[person.id] = true; });
-    var spectators = members.filter(function(person) { return !seatedIds[person.id]; });
-    var gamePlayers = seatedRealPlayers.map(function(person) {
-      return {
-        id: person.id,
-        name: person.name,
-        role: 'player',
-        isAI: false,
-        online: person.online !== false,
-        authUid: person.authUid || '',
-        joinedAt: person.joinedAt || Date.now(),
-        lastSeenAt: person.lastSeenAt || Date.now(),
-        connectionVersion: person.connectionVersion || 0
-      };
-    });
-    if (game && game.aiFill) {
-      while (gamePlayers.length < maxPlayers) {
-        var aiNumber = gamePlayers.length + 1;
-        gamePlayers.push({
-          id: 'ai-' + aiNumber,
-          name: 'AI ' + aiNumber,
-          role: 'player',
-          isAI: true,
-          online: true,
-          joinedAt: Date.now(),
-          lastSeenAt: Date.now(),
-          connectionVersion: 0
-        });
-      }
-    }
+    seating.players.forEach(function(person) { if (!person.isAI) seatedIds[person.id] = true; });
     var updates = { players: null, spectators: null };
     members.forEach(function(person) {
       updates['members/' + person.id + '/presence'] = seatedIds[person.id] ? 'playing' : 'spectating';
     });
-    updates.maxPlayers = maxPlayers;
+    updates.maxPlayers = seating.maxPlayers;
     return App.Signaling.updateRoom(updates).then(function() {
       return {
-        players: gamePlayers,
-        spectators: spectators.map(function(person) {
-          return {
-            id: person.id,
-            name: person.name,
-            role: 'spectator',
-            online: person.online !== false,
-            authUid: person.authUid || '',
-            joinedAt: person.joinedAt || Date.now(),
-            lastSeenAt: person.lastSeenAt || Date.now(),
-            connectionVersion: person.connectionVersion || 0
-          };
-        }),
-        maxPlayers: maxPlayers
+        players: seating.players,
+        spectators: seating.spectators,
+        waitingQueue: seating.waitingQueue,
+        rolesByClientId: seating.rolesByClientId,
+        maxPlayers: seating.maxPlayers
       };
     });
   }
@@ -614,8 +942,12 @@ App.Lobby = (function() {
   function buildRoomStart(gameId, mode, seating) {
     var game = App.GameManager.getGame(gameId);
     var roles = {};
-    seating.players.forEach(function(person) { roles[person.id] = 'player'; });
-    seating.spectators.forEach(function(person) { roles[person.id] = 'spectator'; });
+    if (seating.rolesByClientId) {
+      roles = Object.assign({}, seating.rolesByClientId);
+    } else {
+      seating.players.forEach(function(person) { roles[person.id] = 'player'; });
+      seating.spectators.forEach(function(person) { roles[person.id] = 'spectator'; });
+    }
     var initialState = {};
     if (game && typeof game.buildRoomStart === 'function') {
       initialState = game.buildRoomStart({
@@ -755,6 +1087,7 @@ App.Lobby = (function() {
     setTitle('載入中...');
     var container = document.getElementById('game-container');
     gameActive = true;
+    lastSeenChatCount = Object.keys((roomState && roomState.chat) || {}).length;
     launchedRoomGameKey = payload.roundId || (gameId + ':' + mode + ':' + (roomState && roomState.updatedAt || ''));
     App.GameManager.startGame(gameId, container, makeGameOpts(mode, payload), function() {
       gameActive = false;
@@ -793,10 +1126,11 @@ App.Lobby = (function() {
   }
 
   function goHome() {
+    if ((playContext === 'room' || gameActive) && App.Common && !App.Common.confirmDanger('要離開目前房間 / 遊戲嗎？')) return;
     if (playContext === 'room') clearRoomSession();
     if (playContext === 'room') App.Signaling.leave();
     if (gameActive) {
-      App.GameManager.endGame();
+      App.GameManager.endGame({ skipConfirm: true });
       gameActive = false;
     }
     playContext = null;
@@ -808,6 +1142,7 @@ App.Lobby = (function() {
     roomRole = 'member';
     roomActionIds = {};
     launchedRoomGameKey = '';
+    lastHostNoticeEpoch = 0;
     setTitle('');
     showScreen('home');
   }
@@ -821,19 +1156,41 @@ App.Lobby = (function() {
     }
     var chatInput = document.getElementById('room-chat-input');
     if (chatInput) {
+      chatInput.addEventListener('input', function() { renderMentionPanel('room', chatInput); });
+      chatInput.addEventListener('blur', function() { setTimeout(function() { hideMentionPanel('room'); }, 120); });
       chatInput.addEventListener('keydown', function(e) {
+        if (handleMentionKey('room', chatInput, e)) return;
         if (e.key === 'Enter') {
           e.preventDefault();
           sendRoomChat();
         }
       });
     }
+    var gameChatInput = document.getElementById('game-chat-input');
+    if (gameChatInput) {
+      gameChatInput.addEventListener('input', function() { renderMentionPanel('game', gameChatInput); });
+      gameChatInput.addEventListener('blur', function() { setTimeout(function() { hideMentionPanel('game'); }, 120); });
+      gameChatInput.addEventListener('keydown', function(e) {
+        if (handleMentionKey('game', gameChatInput, e)) return;
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          sendGameChat();
+        }
+      });
+    }
 
     window.addEventListener('beforeunload', function(e) {
-      if (playContext === 'room') App.Signaling.leave();
+      if (playContext !== 'room' && !gameActive) return;
+      e.preventDefault();
+      e.returnValue = '';
+      return '';
     });
 
     attemptRoomResume();
+    document.addEventListener('visibilitychange', function() {
+      if (!document.hidden) stopTitleFlash(titleFlashBase);
+      else if (/輪到你|你的回合|Your Turn/i.test(titleFlashBase)) startTitleFlash(titleFlashBase);
+    });
   }
 
   function sendRoomGameAction(payload) {
@@ -857,6 +1214,15 @@ App.Lobby = (function() {
     });
   }
 
+  function updateRoomProfile(profile) {
+    if (playContext !== 'room' || !roomState || !App.Signaling || !App.Signaling.updateProfile) return;
+    App.Signaling.updateProfile(profile).then(function() {
+      App.Common.showToast('身份標記已更新', 'success');
+    }).catch(function(e) {
+      App.Common.showToast(e.message || '更新身份標記失敗', 'error');
+    });
+  }
+
   function sendRoomChat() {
     var input = document.getElementById('room-chat-input');
     var text = input ? input.value : '';
@@ -866,6 +1232,40 @@ App.Lobby = (function() {
     }).catch(function(e) {
       App.Common.showToast('送出訊息失敗：' + e.message, 'error');
     });
+  }
+
+  function sendGameChat() {
+    var input = document.getElementById('game-chat-input');
+    var text = input ? input.value : '';
+    if (!String(text || '').trim()) return;
+    App.Signaling.sendChat(text).then(function() {
+      if (input) input.value = '';
+      lastSeenChatCount = Object.keys((roomState && roomState.chat) || {}).length;
+      updateChatBadge(lastSeenChatCount);
+    }).catch(function(e) {
+      App.Common.showToast('送出訊息失敗：' + e.message, 'error');
+    });
+  }
+
+  function toggleGameChat(force) {
+    var drawer = document.getElementById('game-chat-drawer');
+    if (!drawer) return;
+    chatDrawerOpen = force === undefined ? !chatDrawerOpen : !!force;
+    drawer.classList.toggle('open', chatDrawerOpen);
+    drawer.setAttribute('aria-hidden', chatDrawerOpen ? 'false' : 'true');
+    if (chatDrawerOpen) {
+      lastSeenChatCount = Object.keys((roomState && roomState.chat) || {}).length;
+      renderRoomChat();
+      var input = document.getElementById('game-chat-input');
+      if (input) setTimeout(function() { input.focus(); }, 40);
+    } else {
+      updateChatBadge(Object.keys((roomState && roomState.chat) || {}).length);
+    }
+  }
+
+  function toggleRoomChat(force) {
+    roomChatOpen = force === undefined ? !roomChatOpen : !!force;
+    renderRoomChatPanelState();
   }
 
   function backFromGameSelect() {
@@ -911,7 +1311,11 @@ App.Lobby = (function() {
     joinShortRoom: joinShortRoom,
     copyRoomCode: copyRoomCode,
     toggleQueue: toggleQueue,
+    toggleRoomChat: toggleRoomChat,
+    updateRoomProfile: updateRoomProfile,
     sendRoomChat: sendRoomChat,
+    sendGameChat: sendGameChat,
+    toggleGameChat: toggleGameChat,
     backFromGameSelect: backFromGameSelect,
     renderRoomLobby: renderRoomLobby,
     goHome: goHome,
