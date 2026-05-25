@@ -45,6 +45,7 @@
    - Big Dee, Dou Dizhu, Color Shift, Blackjack, and Snap Stack use CSS cards.
    - Card games have selected-card lift, latest-card emphasis, or table pile feedback where relevant.
    - Big Dee and Dou Dizhu include enlarged central play areas and layered card piles.
+   - Main card games now share a muted reference-style tabletop skin: diamond felt, translucent seats, darker card backs, enlarged central play cards, and clearer action buttons.
 
 8. 2048 controls and persistence
    - Desktop keyboard and mobile swipe are supported.
@@ -97,4 +98,3 @@ node --check minigame/tests/run-tests.js
 node minigame/tests/run-tests.js
 git diff --check
 ```
-
