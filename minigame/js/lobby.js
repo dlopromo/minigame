@@ -13,6 +13,7 @@ App.Lobby = (function() {
   var launchedRoomGameKey = '';
   var chatDrawerOpen = false;
   var roomChatOpen = false;
+  var globalGameChatVisible = false;
   var lastSeenChatCount = 0;
   var lastMentionNoticeKey = '';
   var lastHostNoticeEpoch = 0;
@@ -567,7 +568,8 @@ App.Lobby = (function() {
     if (!target) return;
     target.innerHTML = messages.length ? '' : '<p class="room-list-empty">未有訊息</p>';
     messages.forEach(function(msg) {
-      var row = el('div', 'room-chat-message');
+      var kind = msg.kind || 'player';
+      var row = el('div', 'room-chat-message ' + kind);
       if (mentionList(msg.mentions).indexOf(selfId) !== -1) row.className += ' mentioned';
       var name = el('strong', msg.playerColor ? 'has-color' : '', msg.name || '玩家');
       if (msg.playerColor && App.Common.getPlayerColor) {
@@ -717,6 +719,19 @@ App.Lobby = (function() {
     });
   }
 
+  function setGlobalGameChatVisible(visible) {
+    globalGameChatVisible = !!visible;
+    var button = document.getElementById('global-game-chat-button');
+    if (button) button.hidden = !globalGameChatVisible;
+  }
+
+  function logRoomEvent(kind, text, eventType) {
+    if (playContext !== 'room' || !App.Signaling) return Promise.resolve();
+    if (kind === 'game' && App.Signaling.sendGameMessage) return App.Signaling.sendGameMessage(text, eventType).catch(function() {});
+    if (App.Signaling.sendSystemMessage) return App.Signaling.sendSystemMessage(text, eventType).catch(function() {});
+    return Promise.resolve();
+  }
+
   function notifyRoomUpdateToGame() {
     if (!gameActive || playContext !== 'room') return;
     var start = roomState && roomState.gameStart ? roomState.gameStart : null;
@@ -749,6 +764,7 @@ App.Lobby = (function() {
     roomRole = getSelfRole();
     if (isHost && !wasHost) {
       App.Common.showToast('房主已自動轉移給你', 'success');
+      logRoomEvent('system', '房主已轉移給 ' + getSelfName(), 'host_migration');
       saveRoomSession({ code: state.code, selfId: selfId, role: 'host', isHost: true });
     } else if (!isHost && wasHost) {
       saveRoomSession({ code: state.code, selfId: selfId, role: roomRole, isHost: false });
@@ -847,6 +863,7 @@ App.Lobby = (function() {
       voteId: vote && vote.voteId ? vote.voteId : ''
     }) : Promise.resolve();
     return history.then(function() {
+      logRoomEvent('system', '返回 Party Room', 'return_lobby');
       return App.Signaling.updateRoom(updates);
     });
   }
@@ -934,6 +951,7 @@ App.Lobby = (function() {
       else watchRoomAsGuest();
       setTitle('房間 ' + room.code);
       App.Common.showToast('房間已建立', 'success');
+      logRoomEvent('system', playerName + ' 建立並進入房間', 'room_join');
     } catch (e) {
       App.Common.showToast(e.message, 'error');
     }
@@ -969,6 +987,7 @@ App.Lobby = (function() {
       else watchRoomAsGuest();
       setTitle('房間 ' + room.code);
       App.Common.showToast(room.created ? '房間不存在，已建立新房間' : '已進入房間', 'success');
+      logRoomEvent('system', playerName + (room.created ? ' 建立並進入房間' : ' 進入房間'), 'room_join');
     } catch (e) {
       App.Common.showToast(e.message, 'error');
     }
@@ -1153,6 +1172,8 @@ App.Lobby = (function() {
           gameActions: null
         });
       }).then(function() {
+        var gameName = game && game.name ? game.name : selectedGameId;
+        logRoomEvent('system', '遊戲開始：' + gameName + '（' + mode + '）', 'game_start');
         var payload = makeGameStartPayload(roomStart);
         if (!gameActive) launchRoomGame(selectedGameId, mode, payload);
       }).catch(function(e) {
@@ -1213,6 +1234,7 @@ App.Lobby = (function() {
     setTitle('載入中...');
     var container = document.getElementById('game-container');
     gameActive = true;
+    setGlobalGameChatVisible(false);
     App.GameManager.startGame(gameId, container, {
       mode: 'single',
       isHost: true,
@@ -1234,10 +1256,12 @@ App.Lobby = (function() {
     setTitle('載入中...');
     var container = document.getElementById('game-container');
     gameActive = true;
+    setGlobalGameChatVisible(true);
     lastSeenChatCount = Object.keys((roomState && roomState.chat) || {}).length;
     launchedRoomGameKey = payload.roundId || (gameId + ':' + mode + ':' + (roomState && roomState.updatedAt || ''));
     App.GameManager.startGame(gameId, container, makeGameOpts(mode, payload), function() {
       gameActive = false;
+      setGlobalGameChatVisible(false);
       if (playContext === 'room') {
         if (isHost) {
           var updates = {
@@ -1274,6 +1298,7 @@ App.Lobby = (function() {
 
   function goHome() {
     if ((playContext === 'room' || gameActive) && App.Common && !App.Common.confirmDanger('要離開目前房間 / 遊戲嗎？')) return;
+    if (playContext === 'room' && roomState) logRoomEvent('system', getSelfName() + ' 離開房間', 'room_leave');
     if (playContext === 'room') clearRoomSession();
     if (playContext === 'room') App.Signaling.leave();
     if (gameActive) {
@@ -1291,6 +1316,7 @@ App.Lobby = (function() {
     processedVoteIds = {};
     launchedRoomGameKey = '';
     lastHostNoticeEpoch = 0;
+    setGlobalGameChatVisible(false);
     setTitle('');
     showScreen('home');
   }
@@ -1367,6 +1393,7 @@ App.Lobby = (function() {
     };
     App.Signaling.startVote(type || 'return_lobby', payload, titleMap[type] || '房間投票', 30000).then(function() {
       App.Common.showToast('投票已發起', 'success');
+      logRoomEvent('system', getSelfName() + ' 發起投票：' + (titleMap[type] || '房間投票'), 'vote_start');
     }).catch(function(e) {
       App.Common.showToast(e.message || '未能發起投票', 'error');
     });
@@ -1374,14 +1401,19 @@ App.Lobby = (function() {
 
   function castRoomVote(agree) {
     if (playContext !== 'room' || !roomState || !App.Signaling || !App.Signaling.castVote) return;
-    App.Signaling.castVote(!!agree).catch(function(e) {
+    App.Signaling.castVote(!!agree).then(function() {
+      logRoomEvent('system', getSelfName() + (agree ? ' 同意投票' : ' 反對投票'), 'vote_cast');
+    }).catch(function(e) {
       App.Common.showToast('投票失敗：' + e.message, 'error');
     });
   }
 
   function toggleQueue() {
     if (playContext !== 'room' || !roomState || !App.Signaling || !App.Signaling.setQueueStatus) return;
-    App.Signaling.setQueueStatus(!isSelfQueued()).catch(function(e) {
+    var next = !isSelfQueued();
+    App.Signaling.setQueueStatus(next).then(function() {
+      logRoomEvent('system', getSelfName() + (next ? ' 加入隊列' : ' 離開隊列'), next ? 'queue_join' : 'queue_leave');
+    }).catch(function(e) {
       App.Common.showToast('更新隊列失敗：' + e.message, 'error');
     });
   }
@@ -1467,6 +1499,7 @@ App.Lobby = (function() {
       else watchRoomAsGuest();
       setTitle('房間 ' + room.code);
       App.Common.showToast('已返回房間 ' + room.code, 'success');
+      logRoomEvent('system', playerName + ' 重新連線', 'room_resume');
     }).catch(function(e) {
       clearRoomSession();
       setTitle('');
@@ -1495,6 +1528,7 @@ App.Lobby = (function() {
     renderRoomLobby: renderRoomLobby,
     goHome: goHome,
     sendRoomGameAction: sendRoomGameAction,
+    logRoomEvent: logRoomEvent,
     setTitle: setTitle
   };
 })();

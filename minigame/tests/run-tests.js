@@ -121,6 +121,8 @@ function testStaleNameReclaim() {
   }, ['a', 'b', 'c'], now);
   assert.strictEqual(expired.done, true);
   assert.strictEqual(expired.status, 'rejected');
+  assert.strictEqual(App.Signaling._test.chatText('  hello  '), 'hello');
+  assert.strictEqual(App.Signaling._test.chatText('x'.repeat(140)).length, 120);
 }
 
 function testBlackjackRules() {

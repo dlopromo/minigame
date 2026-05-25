@@ -160,6 +160,12 @@
   function record(name, text) {
     state.history.push({ name: name, text: text });
     if (state.history.length > 30) state.history = state.history.slice(state.history.length - 30);
+    logGameChat(name, text);
+  }
+
+  function logGameChat(name, text) {
+    if (!isRoomMode() || !opts.isHost || !App.Lobby || !App.Lobby.logRoomEvent) return;
+    App.Lobby.logRoomEvent('game', name + '：' + text, 'game_action');
   }
 
   function activePlayer() { return state.players[state.currentIndex]; }

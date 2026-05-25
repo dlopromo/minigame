@@ -177,6 +177,16 @@
 .room-chat-message.mentioned{
   border:1px solid #f2c078;background:#fff8ec;border-radius:9px;padding:5px 6px;
 }
+.room-chat-message.system,.room-chat-message.game{
+  grid-template-columns:auto minmax(0,1fr);
+  border-radius:9px;padding:5px 6px;border:1px solid #e2e8f0;background:#fff;
+}
+.room-chat-message.system{background:#f6f8fb}
+.room-chat-message.game{background:#f2f8f5;border-color:#d8eadf}
+.room-chat-message.system strong,.room-chat-message.game strong{
+  padding:1px 6px;border-radius:999px;background:#e9eef5;color:#526071;font-size:.72rem;
+}
+.room-chat-message.game strong{background:#dff1e6;color:#2f6943}
 .room-chat-message strong{
   max-width:10ch;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text);
 }
@@ -221,6 +231,13 @@
   background:#c2410c;color:#fff;font-size:.62rem;font-weight:850;display:none;place-items:center;
 }
 .chat-badge.has-unread{display:grid}
+.global-game-chat-button{
+  position:fixed;right:18px;bottom:18px;width:46px;height:46px;border-radius:999px;border:1px solid #d9e1ea;
+  background:#fff;color:#344054;display:grid;place-items:center;box-shadow:0 12px 30px rgba(31,41,51,.16);
+  cursor:pointer;z-index:1200;font-size:1rem;
+}
+.global-game-chat-button[hidden]{display:none}
+.global-game-chat-button:hover{background:#f7fafc}
 .admin-screen{align-items:stretch;max-width:1180px}
 .admin-layout{display:grid;grid-template-columns:340px minmax(0,1fr);gap:16px;width:100%}
 .admin-lock{display:grid;grid-template-columns:minmax(0,220px) auto;gap:8px;align-items:center;margin-top:10px}
@@ -258,6 +275,7 @@
   .room-action-bar .btn{padding:10px 8px;font-size:.83rem}
   .game-chat-drawer{padding:6px;align-items:flex-end}
   .game-chat-panel{height:min(58dvh,460px);width:100%;border-radius:14px 14px 10px 10px}
+  .global-game-chat-button{right:12px;bottom:12px;width:44px;height:44px}
   .admin-layout{grid-template-columns:1fr}
   .admin-debug-panel{grid-template-columns:repeat(2,1fr)}
 }

@@ -25,6 +25,24 @@ Related root Firebase files:
 - `../firebase.json`: points Firebase CLI at the RTDB rules file.
 - `../database.rules.json`: friends-only MVP validation for room codes, users, signaling, room start state, game state, and fallback game actions.
 
+## Project Tree
+
+The app is kept as a standalone static GitHub Pages project:
+
+- Project settings: root `README.md`, `firebase.json`, `database.rules.json`, `.gitignore`.
+- Static app entry: `minigame/index.html`.
+- Shared styles: `minigame/css/`.
+- App shell and room flow: `minigame/js/lobby.js`, `minigame/js/gameManager.js`.
+- Firebase / RTDB layer: `minigame/js/firebaseConfig.js`, `minigame/js/signaling.js`.
+- Room helpers: `minigame/js/roomSession.js`, `minigame/js/roomSeating.js`.
+- Shared UI utilities: `minigame/js/common.js`.
+- Games: `minigame/games/<gameId>/`.
+- Admin monitor: `minigame/admin.html`, `minigame/js/admin.js`.
+- Tests: `minigame/tests/`.
+- Agent / technical docs: `minigame/docs/`.
+
+There is a single Guess Color implementation at `games/guessColor/`. No game owns a separate Chatroom implementation; room chat is centralized in Lobby + Signaling.
+
 ## Game Module Contract
 
 Each game registers itself through `App.GameManager.register()`.
@@ -76,6 +94,18 @@ There is one multiplayer path:
 
 - Firebase Party Room: RTDB stores members, queue, chat, round start, actions,
   and game snapshots.
+
+Chatroom is a standard room capability. The lobby, game screen, and in-room
+result screens use the same Firebase chat stream. Room lifecycle events and
+public game actions are written into chat; hidden information such as other
+players' hands, deck order, non-public draws, and Guess Color secret answers is
+not written to chat.
+
+Detailed chat contract:
+
+```text
+docs/CHATROOM_SPEC.md
+```
 
 Party Rooms use Firebase as the room and round authority. Firebase works over
 WAN, so friends do not need to be on the same LAN.

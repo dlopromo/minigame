@@ -533,6 +533,13 @@ Frontend-only limitation:
 
 - Room history lives at `rooms/{code}/history`.
 - Room leaderboard lives at `rooms/{code}/leaderboard`.
+- Room chat lives at `rooms/{code}/chat` and is shared by lobby, active game,
+  and in-room result UI.
+- Chat messages use `kind: player | system | game`.
+- Games should log only public actions to chat through
+  `App.Lobby.logRoomEvent('game', text, eventType)`.
+- Do not write hidden data to chat: other players' hands, non-public draw
+  results, deck order, secret code, hidden role, or hidden state.
 - Guess Color records completion and simple win points.
 - 鋤大DEE and 鬥地主 record room score deltas.
 - `minigame/admin.html` is a lightweight monitor page for room state, AI takeover,

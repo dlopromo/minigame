@@ -545,29 +545,53 @@ App.Signaling = (function() {
     });
   }
 
-  function sendChat(text) {
-    if (!roomCode || !selfId) return Promise.resolve();
-    var value = String(text || '').trim().slice(0, 120);
+  function chatText(value) {
+    return String(value || '').trim().slice(0, 120);
+  }
+
+  function pushChatMessage(message) {
+    if (!roomCode || !selfId || !message) return Promise.resolve();
+    var value = chatText(message.text);
     if (!value) return Promise.resolve();
-    return ref('rooms/' + roomCode).once('value').then(function(snapshot) {
+    var code = roomCode;
+    var kind = String(message.kind || 'player').match(/^(player|system|game)$/) ? String(message.kind || 'player') : 'player';
+    var eventType = String(message.eventType || (kind === 'player' ? 'chat' : kind)).slice(0, 40);
+    return ref('rooms/' + code).once('value').then(function(snapshot) {
       var data = normalizeRoom(snapshot);
       var member = data.members && data.members[selfId];
       var mentions = [];
-      Object.keys(data.members || {}).forEach(function(id) {
-        var target = data.members[id] || {};
-        if (!target.name) return;
-        if (value.indexOf('@' + target.name) !== -1) mentions.push(id);
-      });
-      return ref('rooms/' + roomCode + '/chat').push({
+      if (kind === 'player') {
+        Object.keys(data.members || {}).forEach(function(id) {
+          var target = data.members[id] || {};
+          if (!target.name) return;
+          if (value.indexOf('@' + target.name) !== -1) mentions.push(id);
+        });
+      }
+      var payload = {
         from: selfId,
-        name: member && member.name ? member.name : '玩家',
-        playerColor: member && member.playerColor ? member.playerColor : '',
-        playerIcon: member && member.playerIcon ? member.playerIcon : '',
+        name: kind === 'player' ? (member && member.name ? member.name : '玩家') : (kind === 'system' ? '系統' : '遊戲'),
+        kind: kind,
+        eventType: eventType,
         mentions: mentions,
         text: value,
         createdAt: firebase.database.ServerValue.TIMESTAMP
-      });
+      };
+      if (kind === 'player' && member && member.playerColor) payload.playerColor = member.playerColor;
+      if (kind === 'player' && member && member.playerIcon) payload.playerIcon = member.playerIcon;
+      return ref('rooms/' + code + '/chat').push(payload);
     });
+  }
+
+  function sendChat(text) {
+    return pushChatMessage({ kind: 'player', eventType: 'chat', text: text });
+  }
+
+  function sendSystemMessage(text, eventType) {
+    return pushChatMessage({ kind: 'system', eventType: eventType || 'room_event', text: text });
+  }
+
+  function sendGameMessage(text, eventType) {
+    return pushChatMessage({ kind: 'game', eventType: eventType || 'game_action', text: text });
   }
 
   function updateProfile(profile) {
@@ -619,7 +643,15 @@ App.Signaling = (function() {
     if (!roomCode || !entry) return Promise.resolve();
     entry.createdAt = firebase.database.ServerValue.TIMESTAMP;
     entry.createdBy = selfId;
-    return ref('rooms/' + roomCode + '/history').push(entry);
+    return ref('rooms/' + roomCode + '/history').push(entry).then(function(result) {
+      var status = String(entry.status || '');
+      if (status === 'completed' || status === 'interrupted') {
+        var title = entry.summary || ((entry.gameName || entry.gameId || '遊戲') + (status === 'completed' ? ' 完成' : ' 中斷'));
+        if (entry.winnerName) title += '，勝出：' + entry.winnerName;
+        sendGameMessage(title, status === 'completed' ? 'game_end' : 'game_interrupted').catch(function() {});
+      }
+      return result;
+    });
   }
 
   function updateLeaderboard(updates) {
@@ -774,6 +806,8 @@ App.Signaling = (function() {
     updateRoom: updateRoom,
     setQueueStatus: setQueueStatus,
     sendChat: sendChat,
+    sendSystemMessage: sendSystemMessage,
+    sendGameMessage: sendGameMessage,
     setGameState: setGameState,
     appendHistory: appendHistory,
     updateLeaderboard: updateLeaderboard,
@@ -796,7 +830,8 @@ App.Signaling = (function() {
       isStaleMember: isStaleMember,
       markStaleMembers: markStaleMembers,
       selectHostCandidate: selectHostCandidate,
-      voteDecision: voteDecision
+      voteDecision: voteDecision,
+      chatText: chatText
     },
     getRoomCode: getRoomCode,
     getSelfId: getSelfId,

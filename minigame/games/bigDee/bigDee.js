@@ -427,6 +427,12 @@
   function recordHistory(playerName, text) {
     history.push({ player: playerName, text: text });
     if (history.length > 7) history = history.slice(history.length - 7);
+    logGameChat(playerName, text);
+  }
+
+  function logGameChat(playerName, text) {
+    if (!isRoomMode() || !opts.isHost || !App.Lobby || !App.Lobby.logRoomEvent) return;
+    App.Lobby.logRoomEvent('game', playerName + '：' + text, 'game_action');
   }
 
   function playCards(index, cards) {

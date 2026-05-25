@@ -124,6 +124,12 @@
             "createdAt": {
               ".validate": "newData.isNumber()"
             },
+            "kind": {
+              ".validate": "newData.isString() && newData.val().matches(/^(player|system|game)$/)"
+            },
+            "eventType": {
+              ".validate": "newData.isString() && newData.val().length <= 40"
+            },
             "mentions": {
               ".validate": true
             },

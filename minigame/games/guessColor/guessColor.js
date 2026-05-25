@@ -265,6 +265,7 @@
       createdAt: Date.now()
     };
     opponentGuesses.push(guessRecord);
+    logGameChat(player.name || 'AI', result.hits === SLOTS ? '猜中答案' : '提交了一次猜測');
     if (result.hits === SLOTS) {
       gameOver = true;
       saveRoomSnapshot({ gameOver: true, winner: 'team', winnerPlayerId: player.id, turnClientId: '' });
@@ -296,6 +297,7 @@
       createdAt: Date.now()
     };
     opponentGuesses.push(guessRecord);
+    logGameChat(player.name || 'AI', result.hits === SLOTS ? '猜中答案' : '提交了一次猜測');
     var raceProgress = {};
     raceProgress[player.id] = {
       attempts: existing.length + 1,
@@ -349,6 +351,11 @@
         };
       })).catch(function() {});
     }
+  }
+
+  function logGameChat(name, text) {
+    if (!isRoomMode() || !opts.isHost || !App.Lobby || !App.Lobby.logRoomEvent) return;
+    App.Lobby.logRoomEvent('game', (name || '玩家') + '：' + text, 'game_action');
   }
 
   function setTitle(text) {
@@ -909,6 +916,7 @@
     guessActiveSlot = 0;
     if (result.hits === SLOTS) {
       gameOver = true;
+      logGameChat(opts.playerName || '玩家', '猜中答案');
       send({ type: 'coop_guess', playerId: opts.selfId, playerName: opts.playerName, colors: colors, hits: result.hits, blows: result.blows, code: computerCode, createdAt: guessRecord.createdAt });
       send({ type: 'game_over', winner: 'team', code: computerCode });
       saveRoomSnapshot({ gameOver: true, winner: 'team', winnerPlayerId: opts.selfId, turnClientId: '' });
@@ -917,6 +925,7 @@
       updateTurnIndicator();
       showResult(true);
     } else {
+      logGameChat(opts.playerName || '玩家', '提交了一次猜測');
       send({ type: 'coop_guess', playerId: opts.selfId, playerName: opts.playerName, colors: colors, hits: result.hits, blows: result.blows, createdAt: guessRecord.createdAt });
       myTurn = false;
       saveRoomSnapshot();
@@ -948,6 +957,7 @@
       finished: result.hits === SLOTS,
       guesses: myGuesses
     });
+    logGameChat(opts.playerName || '玩家', result.hits === SLOTS ? '猜中答案' : '提交了一次猜測');
     if (result.hits === SLOTS) {
       finishedAt = elapsed;
       gameOver = true;
@@ -1092,6 +1102,7 @@
       blows: msg.blows,
       createdAt: msg.createdAt || Date.now()
     });
+    logGameChat(msg.playerName || opts.opponentName || '隊友', msg.hits === SLOTS ? '猜中答案' : '提交了一次猜測');
     renderOpponentGuesses();
     if (msg.hits === SLOTS) {
       gameOver = true;
@@ -1109,6 +1120,8 @@
   }
 
   function handleRaceProgress(msg) {
+    var progressPlayer = getPlayerById(msg.playerId) || {};
+    if (!msg.finished) logGameChat(msg.playerName || progressPlayer.name || opts.opponentName || '對方', '提交了一次猜測');
     opponentProgress = {
       attempts: msg.attempts || 0,
       elapsed: msg.elapsed || 0,
@@ -1136,6 +1149,7 @@
   }
 
   function handleRaceFinish(msg) {
+    logGameChat(msg.playerName || opts.opponentName || '對方', '猜中答案');
     opponentProgress = {
       attempts: msg.attempts || 0,
       elapsed: msg.elapsed || 0,

@@ -74,6 +74,8 @@ available.
 - Username is required, capped at 12 characters, and may only use Chinese characters, English letters, or digits.
 - Host chooses the game and multiplayer mode from the persistent Party Room.
 - Room chat and queue stay alive across game switches.
+- The same Chatroom stays visible in the room lobby, game screen, and in-room result flow.
+- Public room/game events are logged into Chatroom; hidden game information is not logged.
 - Users must join the queue to play; unqueued users are spectators.
 - Room state in Firebase starts each round.
 - Firebase room/signaling state works over WAN.
@@ -90,6 +92,7 @@ See the detailed room contract in:
 ```text
 minigame/docs/ROOM_SPEC.md
 minigame/docs/PLATFORM_SPEC.md
+minigame/docs/CHATROOM_SPEC.md
 ```
 
 ## Development

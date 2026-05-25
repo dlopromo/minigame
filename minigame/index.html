@@ -180,6 +180,10 @@
 <!-- Game Container -->
 <div id="screen-game" class="screen">
   <div id="game-container"></div>
+  <button id="global-game-chat-button" class="global-game-chat-button" onclick="App.Lobby.toggleGameChat()" aria-label="Chat" hidden>
+    <i class="fa-regular fa-comments" aria-hidden="true"></i>
+    <span class="chat-badge game-chat-unread"></span>
+  </button>
 </div>
 
 <aside class="game-chat-drawer" id="game-chat-drawer" aria-hidden="true">
