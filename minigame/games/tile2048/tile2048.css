@@ -13,6 +13,11 @@
 .t2048-board{aspect-ratio:1/1;align-self:center;justify-self:center;width:min(100%,260px);display:grid;grid-template-columns:repeat(4,1fr);grid-template-rows:repeat(4,1fr);gap:5px;border-radius:12px;background:#b9ada1;padding:6px;box-shadow:inset 0 6px 14px rgba(55,65,81,.12);touch-action:none;user-select:none}
 .t2048-tile{display:grid;place-items:center;border-radius:8px;background:#cdc1b4;color:#776e65;font-weight:900;font-size:clamp(.82rem,2.65vw,1.48rem);box-shadow:0 2px 5px rgba(31,41,51,.07);animation:t2048SlideIn .18s cubic-bezier(.2,.8,.2,1) both;transition:transform .14s ease,background .14s ease,color .14s ease}
 .t2048-tile:not(.empty){animation:t2048Spawn .2s cubic-bezier(.2,.8,.2,1) both}
+.t2048-board.move-left .t2048-tile:not(.empty){animation:t2048SlideLeft .18s cubic-bezier(.2,.8,.2,1),t2048Spawn .2s cubic-bezier(.2,.8,.2,1)}
+.t2048-board.move-right .t2048-tile:not(.empty){animation:t2048SlideRight .18s cubic-bezier(.2,.8,.2,1),t2048Spawn .2s cubic-bezier(.2,.8,.2,1)}
+.t2048-board.move-up .t2048-tile:not(.empty){animation:t2048SlideUp .18s cubic-bezier(.2,.8,.2,1),t2048Spawn .2s cubic-bezier(.2,.8,.2,1)}
+.t2048-board.move-down .t2048-tile:not(.empty){animation:t2048SlideDown .18s cubic-bezier(.2,.8,.2,1),t2048Spawn .2s cubic-bezier(.2,.8,.2,1)}
+.t2048-board.has-merge .t2048-tile:not(.empty){box-shadow:0 4px 10px rgba(31,41,51,.12),0 0 0 3px rgba(237,194,46,.18)}
 .t2048-tile.empty{color:transparent}
 .t2048-tile.v2{background:#eee4da}.t2048-tile.v4{background:#ede0c8}.t2048-tile.v8{background:#f2b179;color:#fff}.t2048-tile.v16{background:#f59563;color:#fff}.t2048-tile.v32{background:#f67c5f;color:#fff}.t2048-tile.v64{background:#f65e3b;color:#fff}.t2048-tile.v128{background:#edcf72;color:#fff;font-size:clamp(.74rem,2.25vw,1.28rem)}.t2048-tile.v256{background:#edcc61;color:#fff;font-size:clamp(.74rem,2.25vw,1.28rem)}.t2048-tile.v512{background:#edc850;color:#fff;font-size:clamp(.74rem,2.25vw,1.28rem)}.t2048-tile.v1024{background:#edc53f;color:#fff;font-size:clamp(.66rem,2vw,1.08rem)}.t2048-tile.v2048{background:#edc22e;color:#fff;font-size:clamp(.66rem,2vw,1.08rem)}.t2048-tile.v-super{background:linear-gradient(145deg,#3f5464,#536f7d);color:#fff;font-size:clamp(.58rem,1.8vw,.98rem)}
 .t2048-controls{display:grid;grid-template-columns:minmax(0,1fr) repeat(6,auto);gap:7px;align-items:center;background:#fff;border:1px solid #dfe5ee;border-radius:14px;padding:8px}
@@ -23,6 +28,10 @@
 .t2048-btn:disabled{opacity:.42;cursor:not-allowed}
 @keyframes t2048SlideIn{from{opacity:.72;transform:translateY(4px)}to{opacity:1;transform:translateY(0)}}
 @keyframes t2048Spawn{0%{opacity:0;transform:scale(.72)}70%{opacity:1;transform:scale(1.07)}100%{opacity:1;transform:scale(1)}}
+@keyframes t2048SlideLeft{from{transform:translateX(14px)}to{transform:translateX(0)}}
+@keyframes t2048SlideRight{from{transform:translateX(-14px)}to{transform:translateX(0)}}
+@keyframes t2048SlideUp{from{transform:translateY(14px)}to{transform:translateY(0)}}
+@keyframes t2048SlideDown{from{transform:translateY(-14px)}to{transform:translateY(0)}}
 @media(max-width:760px){
   .t2048-shell{padding:6px;gap:5px;border-radius:12px}
   .t2048-title{font-size:.98rem}

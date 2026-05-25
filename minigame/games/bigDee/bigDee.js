@@ -960,25 +960,28 @@
   function renderResult() {
     var winner = players[placements[0]];
     var scoring = calculateScores(placements[0]);
+    var actions = (isRoomMode() ? '' : '<button class="bd-action-btn" id="bd-new-game">再來一局</button>') +
+      '<button class="bd-action-btn secondary" id="bd-back-lobby"><i class="fa-solid fa-arrow-left" aria-hidden="true"></i><span>返回大廳</span></button>';
     container.innerHTML =
-      '<div class="bd-shell"><div class="bd-result">' +
-        '<h2>' + escapeHtml(winner.name) + ' 勝出</h2>' +
-        '<div class="bd-result-grid">' + placements.map(function(playerIndex, index) {
+      '<div class="bd-shell">' + App.Common.renderResultPanel({
+        eyebrow: '鋤大DEE 結算',
+        title: winner.name + ' 勝出',
+        subtitle: topDaRecords.length ? '頂大紀錄 ' + topDaRecords.length + ' 宗，已計入分數' : '未有頂大罰分',
+        rows: placements.map(function(playerIndex, index) {
           var player = players[playerIndex];
-          return '<div class="bd-result-card">' +
-            '<div class="bd-result-rank">第 ' + (index + 1) + ' 名</div>' +
-            '<div class="bd-result-name">' + escapeHtml(player.name) + '</div>' +
-            '<div class="bd-result-left">剩 ' + player.hand.length + ' 張</div>' +
-            '<div class="bd-result-left">' + formatScore(scoring[playerIndex]) + '</div>' +
-          '</div>';
-        }).join('') + '</div>' +
-        renderTopDaSummary() +
-        '<div class="bd-history">' + history.slice().reverse().map(function(row) {
-          return '<div class="bd-history-row"><span>' + escapeHtml(row.player) + '</span><span>' + escapeHtml(row.text) + '</span></div>';
-        }).join('') + '</div>' +
-        (isRoomMode() ? '' : '<button class="bd-action-btn" id="bd-new-game">再來一局</button>') +
-        '<button class="bd-action-btn secondary" id="bd-back-lobby"><i class="fa-solid fa-arrow-left" aria-hidden="true"></i><span>返回大廳</span></button>' +
-      '</div></div>';
+          return {
+            rank: '#' + (index + 1),
+            name: player.name,
+            person: player,
+            primary: '剩 ' + player.hand.length + ' 張',
+            secondary: formatScore(scoring[playerIndex])
+          };
+        }),
+        history: history.slice().reverse().map(function(row) {
+          return { label: row.player, text: row.text };
+        }),
+        actionsHtml: actions
+      }) + '</div>';
     var newGameBtn = container.querySelector('#bd-new-game');
     if (newGameBtn) newGameBtn.addEventListener('click', function() {
       setupGame();

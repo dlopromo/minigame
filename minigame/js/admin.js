@@ -192,6 +192,9 @@ var App = window.App || {};
       '</div>' +
       '<div class="admin-actions">' +
         '<button class="btn-small btn-copy" data-admin-action="repair">修復房主</button>' +
+        '<button class="btn-small btn-copy" data-admin-action="reset-lobby">返回 Lobby</button>' +
+        '<button class="btn-small btn-copy" data-admin-action="clear-actions">清理 Actions</button>' +
+        '<button class="btn-small btn-copy" data-admin-action="clear-vote">清理投票</button>' +
         '<button class="btn-small btn-copy" data-admin-action="interrupt">標記中斷</button>' +
         '<button class="btn-small btn-danger" data-admin-action="close">強制關閉</button>' +
       '</div>' +
@@ -213,6 +216,7 @@ var App = window.App || {};
         '<div><div class="room-person-name">' + escapeHtml(member.name || '玩家') + '</div>' +
         '<div class="room-person-meta">' + (member.online === false ? '離線' : '在線') + ' · ' + escapeHtml(member.presence || 'lobby') + '</div></div>' +
         '<div class="room-person-badges">' + (member.id === hostId ? '<span class="room-badge host">房主</span>' : '') +
+          (member.id !== hostId ? '<button class="room-badge admin-host" data-host-id="' + escapeHtml(member.id) + '">設房主</button>' : '') +
           '<button class="room-badge admin-kick" data-kick-id="' + escapeHtml(member.id) + '">踢出</button></div>' +
       '</div>';
     }).join('') + '</div>';
@@ -261,6 +265,11 @@ var App = window.App || {};
         kickPlayer(btn.getAttribute('data-kick-id'));
       });
     });
+    Array.prototype.forEach.call(detail.querySelectorAll('[data-host-id]'), function(btn) {
+      btn.addEventListener('click', function() {
+        transferHost(btn.getAttribute('data-host-id'));
+      });
+    });
   }
 
   function roomRef() {
@@ -306,9 +315,67 @@ var App = window.App || {};
       }).catch(showAdminError);
       return;
     }
+    if (action === 'reset-lobby') {
+      resetToLobby('admin_reset_lobby');
+      return;
+    }
+    if (action === 'clear-actions') {
+      roomRef().update({
+        gameActions: null,
+        updatedAt: firebase.database.ServerValue.TIMESTAMP
+      }).then(function() {
+        App.Common.showToast('Actions 已清理', 'success');
+      }).catch(showAdminError);
+      return;
+    }
+    if (action === 'clear-vote') {
+      roomRef().update({
+        vote: null,
+        updatedAt: firebase.database.ServerValue.TIMESTAMP
+      }).then(function() {
+        App.Common.showToast('投票已清理', 'success');
+      }).catch(showAdminError);
+      return;
+    }
     if (action === 'repair') {
       repairHost();
     }
+  }
+
+  function resetToLobby(reason) {
+    var room = rooms[selectedCode] || {};
+    var updates = {
+      status: 'lobby',
+      gameId: '',
+      mode: '',
+      activeGameId: '',
+      activeMode: '',
+      roundId: '',
+      gameStart: null,
+      gameState: null,
+      currentRound: null,
+      gameActions: null,
+      vote: null,
+      updatedAt: firebase.database.ServerValue.TIMESTAMP
+    };
+    people(room.members).forEach(function(member) {
+      updates['members/' + member.id + '/presence'] = 'lobby';
+    });
+    var entry = room.roundId ? {
+      gameId: room.gameId || '',
+      gameName: room.gameId || '未完成遊戲',
+      mode: room.mode || '',
+      roundId: room.roundId || '',
+      status: 'interrupted',
+      reason: reason || 'admin_reset_lobby',
+      createdAt: firebase.database.ServerValue.TIMESTAMP
+    } : null;
+    var job = entry ? roomRef().child('history').push(entry) : Promise.resolve();
+    job.then(function() {
+      return roomRef().update(updates);
+    }).then(function() {
+      App.Common.showToast('已返回 Lobby', 'success');
+    }).catch(showAdminError);
   }
 
   function repairHost() {
@@ -355,6 +422,34 @@ var App = window.App || {};
     updates.updatedAt = firebase.database.ServerValue.TIMESTAMP;
     roomRef().update(updates).then(function() {
       App.Common.showToast('玩家已標記踢出', 'success');
+    }).catch(showAdminError);
+  }
+
+  function transferHost(playerId) {
+    if (!playerId || !selectedCode) return;
+    roomRef().transaction(function(room) {
+      if (!room || !room.members || !room.members[playerId]) return room;
+      var oldHostId = room.hostId || '';
+      var oldHost = room.members[oldHostId] || {};
+      var nextHost = room.members[playerId] || {};
+      room.hostId = playerId;
+      room.hostEpoch = Number(room.hostEpoch || 0) + 1;
+      room.hostNotice = {
+        hostId: playerId,
+        hostName: nextHost.name || '玩家',
+        previousHostId: oldHostId,
+        previousHostName: oldHost.name || '',
+        epoch: room.hostEpoch,
+        createdAt: firebase.database.ServerValue.TIMESTAMP
+      };
+      Object.keys(room.members).forEach(function(id) {
+        room.members[id].role = id === playerId ? 'host' : 'member';
+      });
+      if (room.gameStart) room.gameStart.hostId = playerId;
+      room.updatedAt = firebase.database.ServerValue.TIMESTAMP;
+      return room;
+    }).then(function() {
+      App.Common.showToast('房主已轉移', 'success');
     }).catch(showAdminError);
   }
 

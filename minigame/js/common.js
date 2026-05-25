@@ -88,6 +88,32 @@ App.Common = {
       this.escapeHtml(icon.name + ' / ' + color.name) + '">' + this.escapeHtml(icon.value) + '</span>';
   },
 
+  renderResultPanel: function(options) {
+    options = options || {};
+    var rows = (options.rows || []).map(function(row) {
+      var avatar = row.person ? App.Common.renderPlayerAvatar(row.person) : '';
+      return '<div class="game-result-row">' +
+        '<div class="game-result-rank">' + App.Common.escapeHtml(row.rank || '') + '</div>' +
+        '<div class="game-result-name">' + avatar + '<span>' + App.Common.escapeHtml(row.name || '玩家') + '</span></div>' +
+        '<div class="game-result-stat">' + App.Common.escapeHtml(row.primary || '') + '</div>' +
+        '<div class="game-result-stat muted">' + App.Common.escapeHtml(row.secondary || '') + '</div>' +
+      '</div>';
+    }).join('');
+    var history = (options.history || []).slice(0, 8).map(function(item) {
+      return '<div class="game-result-history-row"><span>' + App.Common.escapeHtml(item.label || item.player || '') + '</span><span>' + App.Common.escapeHtml(item.text || '') + '</span></div>';
+    }).join('');
+    return '<section class="game-result-panel">' +
+      '<div class="game-result-hero">' +
+        '<span>' + App.Common.escapeHtml(options.eyebrow || 'Result') + '</span>' +
+        '<h2>' + App.Common.escapeHtml(options.title || '結算') + '</h2>' +
+        (options.subtitle ? '<p>' + App.Common.escapeHtml(options.subtitle) + '</p>' : '') +
+      '</div>' +
+      '<div class="game-result-list">' + rows + '</div>' +
+      (history ? '<div class="game-result-history">' + history + '</div>' : '') +
+      (options.actionsHtml ? '<div class="game-result-actions">' + options.actionsHtml + '</div>' : '') +
+    '</section>';
+  },
+
   initFocusMode: function() {
     if (this.focusModeReady) return;
     this.focusModeReady = true;

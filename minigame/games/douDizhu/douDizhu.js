@@ -1133,21 +1133,28 @@
   function renderResult(landlordWon, winnerIndex) {
     var multiplier = Math.pow(2, bombCount);
     var score = currentBid * multiplier;
+    var actions = (isRoomMode() ? '' : '<button class="ddz-btn" id="ddz-new-game">再來一局</button>') +
+      '<button class="ddz-btn secondary" id="ddz-back"><i class="fa-solid fa-arrow-left" aria-hidden="true"></i><span>返回大廳</span></button>';
     container.innerHTML =
-      '<div class="ddz-shell"><div class="ddz-result">' +
-        '<h2>' + (landlordWon ? '地主勝出' : '農民勝出') + '</h2>' +
-        '<div class="ddz-result-grid">' + players.map(function(player, index) {
+      '<div class="ddz-shell">' + App.Common.renderResultPanel({
+        eyebrow: '鬥地主結算',
+        title: landlordWon ? '地主勝出' : '農民勝出',
+        subtitle: '底分 ' + currentBid + ' · 炸彈/火箭 ' + bombCount + ' 次 · 倍數 x' + multiplier + ' · 勝出：' + players[winnerIndex].name,
+        rows: players.map(function(player, index) {
           var delta = scoreDelta(index, landlordWon, score);
-          return '<div class="ddz-result-card">' +
-            '<div class="ddz-result-name">' + escapeHtml(player.name) + ' · ' + (player.role === 'landlord' ? '地主' : '農民') + '</div>' +
-            '<div class="ddz-result-score">' + (delta > 0 ? '+' : '') + delta + ' 分</div>' +
-            '<div class="ddz-result-score">剩 ' + player.hand.length + ' 張</div>' +
-          '</div>';
-        }).join('') + '</div>' +
-        '<p class="ddz-result-score">底分 ' + currentBid + ' · 炸彈/火箭 ' + bombCount + ' 次 · 倍數 x' + multiplier + ' · 勝出：' + escapeHtml(players[winnerIndex].name) + '</p>' +
-        (isRoomMode() ? '' : '<button class="ddz-btn" id="ddz-new-game">再來一局</button>') +
-        '<button class="ddz-btn secondary" id="ddz-back"><i class="fa-solid fa-arrow-left" aria-hidden="true"></i><span>返回大廳</span></button>' +
-      '</div></div>';
+          return {
+            rank: player.role === 'landlord' ? '地主' : '農民',
+            name: player.name,
+            person: player,
+            primary: (delta > 0 ? '+' : '') + delta + ' 分',
+            secondary: '剩 ' + player.hand.length + ' 張'
+          };
+        }),
+        history: history.slice().reverse().map(function(row) {
+          return { label: row.player, text: row.text };
+        }),
+        actionsHtml: actions
+      }) + '</div>';
     var newGameBtn = container.querySelector('#ddz-new-game');
     if (newGameBtn) newGameBtn.addEventListener('click', function() {
       setupGame();

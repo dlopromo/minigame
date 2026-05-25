@@ -7,6 +7,7 @@
   var state = null;
   var aiTimer = null;
   var suggestedCardId = '';
+  var selectedWildColor = 'red';
 
   function isRoomMode() { return opts && opts.roomId; }
   function isSpectator() { return opts && opts.role === 'spectator'; }
@@ -124,6 +125,7 @@
 
   function setupGame() {
     suggestedCardId = '';
+    selectedWildColor = 'red';
     if (opts && opts.initialState && opts.initialState.state) state = clone(opts.initialState.state);
     else state = buildInitialState();
   }
@@ -131,6 +133,7 @@
   function restartSingle() {
     if (isRoomMode()) return false;
     suggestedCardId = '';
+    selectedWildColor = 'red';
     state = buildInitialState();
     render();
     scheduleAI();
@@ -162,14 +165,43 @@
   function activePlayer() { return state.players[state.currentIndex]; }
   function topCard() { return state.discard[state.discard.length - 1]; }
 
+  function syncPlayerPresence(roomPlayers) {
+    if (!isRoomMode() || !roomPlayers || !roomPlayers.length || !state || !state.players) return;
+    var byId = {};
+    roomPlayers.forEach(function(person) { byId[person.id] = person; });
+    var changed = false;
+    state.players.forEach(function(player) {
+      var remote = byId[player.id];
+      var nativeAI = /^ai-/.test(player.id || '');
+      if (!remote || nativeAI) return;
+      var shouldAI = remote.online === false;
+      if (!!player.ai !== shouldAI) {
+        player.ai = shouldAI;
+        player.isAI = shouldAI;
+        changed = true;
+        record('系統', player.name + (shouldAI ? ' 斷線，AI 接管' : ' 已重連，恢復真人操作'));
+        App.Common.showToast(player.name + (shouldAI ? ' 斷線，AI 接管中' : ' 已重連'), shouldAI ? '' : 'success');
+      }
+      player.online = remote.online !== false;
+      player.name = remote.name || player.name;
+      player.playerColor = remote.playerColor || player.playerColor || '';
+      player.playerIcon = remote.playerIcon || player.playerIcon || '';
+    });
+    if (changed) {
+      if (opts.isHost) publishState();
+      render();
+      scheduleAI();
+    }
+  }
+
   function advance(extra) {
     state.currentIndex = nextIndex(state.currentIndex, extra || 1);
   }
 
-  function applyAction(card, player) {
+  function applyAction(card, player, chosenColor) {
     var skip = 1;
     if (card.color === 'wild') {
-      card.chosenColor = chooseColor(player.hand);
+      card.chosenColor = COLORS.indexOf(chosenColor) !== -1 ? chosenColor : chooseColor(player.hand);
       state.activeColor = card.chosenColor;
     } else {
       state.activeColor = card.color;
@@ -189,7 +221,7 @@
     return skip;
   }
 
-  function playCard(playerId, cardId) {
+  function playCard(playerId, cardId, chosenColor) {
     if (state.status !== 'playing') return;
     var player = activePlayer();
     if (!player || player.id !== playerId) return;
@@ -199,8 +231,9 @@
     var top = normalizeTop(topCard());
     if (!canPlay(card, top, state.activeColor)) return;
     suggestedCardId = '';
+    selectedWildColor = 'red';
     player.hand.splice(index, 1);
-    var skip = applyAction(card, player);
+    var skip = applyAction(card, player, chosenColor);
     state.discard.push(card);
     record(player.name, '出了 ' + labelCard(card));
     if (!player.hand.length) {
@@ -257,8 +290,14 @@
   function humanPlay(cardId) {
     var player = selfPlayer();
     if (!player || !canControl()) return;
-    if (isRoomMode() && !opts.isHost) sendRoomAction({ type: 'cs_play', playerId: opts.selfId, cardId: cardId });
-    else playCard(player.id, cardId);
+    var card = player.hand.filter(function(item) { return item.id === cardId; })[0];
+    var chosenColor = card && card.color === 'wild' ? selectedWildColor : '';
+    if (card && card.color === 'wild' && COLORS.indexOf(chosenColor) === -1) {
+      App.Common.showToast('請先選擇轉色顏色', 'error');
+      return;
+    }
+    if (isRoomMode() && !opts.isHost) sendRoomAction({ type: 'cs_play', playerId: opts.selfId, cardId: cardId, chosenColor: chosenColor });
+    else playCard(player.id, cardId, chosenColor);
   }
 
   function selectCard(cardId) {
@@ -272,6 +311,7 @@
       return false;
     }
     suggestedCardId = suggestedCardId === cardId ? '' : cardId;
+    if (suggestedCardId && card.color === 'wild' && COLORS.indexOf(selectedWildColor) === -1) selectedWildColor = chooseColor(player.hand);
     render();
     return true;
   }
@@ -317,6 +357,7 @@
       return false;
     }
     suggestedCardId = card.id;
+    if (card.color === 'wild') selectedWildColor = chooseColor(player.hand);
     render();
     if (App.Common && App.Common.showToast) App.Common.showToast('已選出建議牌', 'success');
     return true;
@@ -324,7 +365,7 @@
 
   function handleRoomAction(msg) {
     if (!isRoomMode() || !opts.isHost || !msg) return;
-    if (msg.type === 'cs_play') playCard(msg.playerId, msg.cardId);
+    if (msg.type === 'cs_play') playCard(msg.playerId, msg.cardId, msg.chosenColor);
     if (msg.type === 'cs_draw') draw(msg.playerId);
   }
 
@@ -336,7 +377,7 @@
     aiTimer = setTimeout(function() {
       aiTimer = null;
       var card = suggestedCard(player);
-      if (card) playCard(player.id, card.id);
+      if (card) playCard(player.id, card.id, card.color === 'wild' ? chooseColor(player.hand) : '');
       else draw(player.id);
     }, 720);
   }
@@ -399,7 +440,43 @@
     var top = normalizeTop(topCard());
     var opponents = state.players.filter(function(player) { return !self || player.id !== self.id; });
     var selectedSuggested = self && suggestedCardId && self.hand.some(function(card) { return card.id === suggestedCardId; });
+    var selectedCard = self && suggestedCardId ? self.hand.filter(function(card) { return card.id === suggestedCardId; })[0] : null;
+    var colorPicker = canAct && selectedCard && selectedCard.color === 'wild'
+      ? '<div class="cs-color-picker" aria-label="選擇轉色顏色">' + COLORS.map(function(color) {
+          return '<button type="button" class="cs-color-dot ' + color + (selectedWildColor === color ? ' active' : '') + '" data-wild-color="' + color + '" aria-label="' + COLOR_NAMES[color] + '"></button>';
+        }).join('') + '</div>'
+      : '';
     var settled = state.status === 'settled';
+    if (settled) {
+      var ranked = state.players.slice().sort(function(a, b) {
+        if (a.id === state.winnerId) return -1;
+        if (b.id === state.winnerId) return 1;
+        return a.hand.length - b.hand.length;
+      });
+      var actions = '<button class="cs-btn secondary" id="cs-back"><i class="fa-solid fa-arrow-left" aria-hidden="true"></i><span>返回</span></button>' +
+        (isRoomMode() ? '' : '<button class="cs-btn" id="cs-new"><i class="fa-solid fa-rotate-right" aria-hidden="true"></i><span>再來一局</span></button>');
+      container.innerHTML = '<div class="cs-shell">' + App.Common.renderResultPanel({
+        eyebrow: '轉色牌結算',
+        title: winnerText(),
+        subtitle: '剩牌越少排名越前',
+        rows: ranked.map(function(player, index) {
+          return {
+            rank: '#' + (index + 1),
+            name: player.name,
+            person: player,
+            primary: player.id === state.winnerId ? '勝出' : '剩 ' + player.hand.length + ' 張',
+            secondary: player.ai ? 'AI' : '玩家'
+          };
+        }),
+        history: state.history.slice().reverse().map(function(row) {
+          return { label: row.name, text: row.text };
+        }),
+        actionsHtml: actions
+      }) + '</div>';
+      bindControls();
+      if (App.Lobby && App.Lobby.setTitle) App.Lobby.setTitle('轉色牌結算');
+      return;
+    }
     container.innerHTML =
       '<div class="cs-shell">' +
         '<div class="cs-topbar"><div class="cs-title' + (canAct ? ' my-turn' : '') + '">' + (state.status === 'settled' ? winnerText() : canAct ? '輪到你出牌' : activePlayer().name + ' 出牌中') + '</div>' +
@@ -407,14 +484,10 @@
         '<section class="cs-opponents">' + opponents.map(renderOpponent).join('') + '</section>' +
         '<section class="cs-table"><div class="cs-pile">' + renderCard(topCard(), false) + '</div><div class="cs-color ' + state.activeColor + '">' + COLOR_NAMES[state.activeColor] + '</div></section>' +
         '<section class="cs-hand">' + (self ? self.hand.map(function(card) { return renderCard(card, canAct && canPlay(card, top, state.activeColor)); }).join('') : '<p>觀戰中</p>') + '</section>' +
-        '<div class="cs-controls"><div class="cs-hint">' + escapeHtml(state.history[state.history.length - 1].name + '：' + state.history[state.history.length - 1].text) + '</div>' +
-          (settled
-            ? '<button class="cs-btn secondary" id="cs-back"><i class="fa-solid fa-arrow-left" aria-hidden="true"></i><span>返回</span></button>' +
-              (isRoomMode() ? '' : '<button class="cs-btn" id="cs-new"><i class="fa-solid fa-rotate-right" aria-hidden="true"></i><span>再來一局</span></button>')
-            :
+        '<div class="cs-controls"><div class="cs-hint">' + escapeHtml(state.history[state.history.length - 1].name + '：' + state.history[state.history.length - 1].text) + '</div>' + colorPicker +
           '<button class="cs-btn secondary" id="cs-suggest"' + (canAct ? '' : ' disabled') + '><i class="fa-regular fa-lightbulb" aria-hidden="true"></i><span>推薦</span></button>' +
           '<button class="cs-btn secondary" id="cs-draw"' + (canAct ? '' : ' disabled') + '><i class="fa-solid fa-hand" aria-hidden="true"></i><span>抽牌</span></button>' +
-          '<button class="cs-btn" id="cs-play"' + (canAct && selectedSuggested ? '' : ' disabled') + '><i class="fa-solid fa-paper-plane" aria-hidden="true"></i><span>出牌</span></button>') + '</div>' +
+          '<button class="cs-btn" id="cs-play"' + (canAct && selectedSuggested ? '' : ' disabled') + '><i class="fa-solid fa-paper-plane" aria-hidden="true"></i><span>出牌</span></button>' + '</div>' +
       '</div>';
     bindControls();
     if (App.Lobby && App.Lobby.setTitle) App.Lobby.setTitle(canAct ? '輪到你 - 轉色牌' : '轉色牌');
@@ -440,6 +513,12 @@
     if (drawBtn) drawBtn.addEventListener('click', humanDraw);
     if (suggestBtn) suggestBtn.addEventListener('click', suggestPlay);
     if (playBtn) playBtn.addEventListener('click', function() { if (suggestedCardId) humanPlay(suggestedCardId); });
+    Array.prototype.forEach.call(container.querySelectorAll('[data-wild-color]'), function(button) {
+      button.addEventListener('click', function() {
+        selectedWildColor = button.getAttribute('data-wild-color') || 'red';
+        render();
+      });
+    });
     if (backBtn) backBtn.addEventListener('click', function() { App.GameManager.endGame(); });
     if (newBtn) newBtn.addEventListener('click', restartSingle);
   }
@@ -483,6 +562,7 @@
         opts.role = msg.role || opts.role;
         opts.isHost = !!msg.isHost;
         applyState(msg.gameState);
+        syncPlayerPresence(opts.players);
         scheduleAI();
         return;
       }

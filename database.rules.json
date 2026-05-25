@@ -58,7 +58,7 @@
               ".validate": "newData.isBoolean()"
             },
             "presence": {
-              ".validate": "newData.isString() && newData.val().matches(/^(lobby|playing|spectating)$/)"
+              ".validate": "newData.isString() && newData.val().matches(/^(lobby|playing|spectating|kicked)$/)"
             },
             "queueStatus": {
               ".validate": "newData.isString() && newData.val().matches(/^(none|queued)$/)"
@@ -80,6 +80,9 @@
             },
             "connectionVersion": {
               ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 999999"
+            },
+            "kickedAt": {
+              ".validate": "newData.isNumber()"
             },
             "$other": {
               ".validate": false
@@ -188,6 +191,56 @@
         "leaderboard": {
           "$playerId": {
             ".validate": true
+          }
+        },
+        "vote": {
+          ".validate": "newData.val() === null || newData.hasChildren(['voteId', 'type', 'title', 'initiatorId', 'status', 'createdAt', 'expireAt'])",
+          "voteId": {
+            ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 80"
+          },
+          "type": {
+            ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 40"
+          },
+          "title": {
+            ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 80"
+          },
+          "payload": {
+            ".validate": true
+          },
+          "initiatorId": {
+            ".validate": "newData.isString() && newData.val().matches(/^[A-Za-z0-9-]{8,80}$/)"
+          },
+          "initiatorName": {
+            ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 12"
+          },
+          "status": {
+            ".validate": "newData.isString() && newData.val().matches(/^(pending|accepted|rejected)$/)"
+          },
+          "createdAt": {
+            ".validate": "newData.isNumber()"
+          },
+          "expireAt": {
+            ".validate": "newData.isNumber()"
+          },
+          "resolvedAt": {
+            ".validate": "newData.isNumber()"
+          },
+          "votes": {
+            "$clientId": {
+              ".validate": "$clientId.matches(/^[A-Za-z0-9-]{8,80}$/) && newData.hasChildren(['agree', 'createdAt'])",
+              "agree": {
+                ".validate": "newData.isBoolean()"
+              },
+              "createdAt": {
+                ".validate": "newData.isNumber()"
+              },
+              "$other": {
+                ".validate": false
+              }
+            }
+          },
+          "$other": {
+            ".validate": false
           }
         },
         "$other": {

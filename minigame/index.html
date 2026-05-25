@@ -105,6 +105,7 @@
       <div class="room-strip-hide"><span>傳輸</span><strong id="room-transport-pill">Firebase</strong></div>
     </section>
     <p class="room-role-label" id="room-role-label">等待同步...</p>
+    <section class="room-vote-panel" id="room-vote-panel" hidden></section>
     <div class="room-main-grid">
       <section class="room-panel people-panel">
         <div class="room-section-head"><h2>成員</h2><span id="room-member-count">0</span></div>
@@ -187,6 +188,7 @@
       <strong>Chat</strong>
       <button class="btn-small btn-copy" onclick="App.Lobby.toggleGameChat(false)"><i class="fa-solid fa-xmark" aria-hidden="true"></i><span class="btn-label">關閉</span></button>
     </div>
+    <section class="room-vote-panel game-vote-panel" id="game-vote-panel" hidden></section>
     <div class="room-chat-list" id="game-chat-list"></div>
     <div class="room-chat-input-row">
       <input type="text" id="game-chat-input" class="text-input" maxlength="120" placeholder="輸入訊息..." autocomplete="off">

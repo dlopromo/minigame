@@ -380,7 +380,9 @@
   }
 
   function renderBoard(player) {
-    return '<div class="t2048-board">' + player.board.map(function(row) {
+    var moveClass = player.lastMove ? ' move-' + player.lastMove : '';
+    var gainClass = player.lastGain ? ' has-merge' : '';
+    return '<div class="t2048-board' + moveClass + gainClass + '">' + player.board.map(function(row) {
       return row.map(renderTile).join('');
     }).join('') + '</div>';
   }
@@ -399,6 +401,34 @@
     var player = selfPlayer();
     var canAct = canControlSelf();
     var canUndo = canAct && player && player.undoStack && player.undoStack.length;
+    if (state.status === 'settled') {
+      var ranked = state.players.slice().sort(function(a, b) {
+        return b.maxTile - a.maxTile || b.score - a.score || a.moves - b.moves;
+      });
+      var actions = '<button class="t2048-btn ghost" id="t2048-back">返回</button>' +
+        (!isRoomMode() ? '<button class="t2048-btn ghost" id="t2048-new">New</button>' : '');
+      container.innerHTML = '<div class="t2048-shell">' + App.Common.renderResultPanel({
+        eyebrow: '2048 Race 結算',
+        title: winnerText(),
+        subtitle: '最高 tile、分數、步數共同排序',
+        rows: ranked.map(function(item, index) {
+          return {
+            rank: '#' + (index + 1),
+            name: item.name,
+            person: item,
+            primary: item.score + ' 分',
+            secondary: '最高 ' + item.maxTile + ' · ' + item.moves + ' moves'
+          };
+        }),
+        history: state.history.slice().reverse().map(function(row) {
+          return { label: row.name, text: row.text };
+        }),
+        actionsHtml: actions
+      }) + '</div>';
+      bindControls();
+      if (App.Lobby && App.Lobby.setTitle) App.Lobby.setTitle('2048 Race 結算');
+      return;
+    }
     container.innerHTML =
       '<div class="t2048-shell">' +
         '<div class="t2048-topbar"><div class="t2048-title' + (canAct ? ' my-turn' : '') + '">' + (state.status === 'settled' ? '2048 Race 結算' : canAct ? '你的 2048 Race' : '2048 Race 觀戰') + '</div>' +
@@ -430,7 +460,9 @@
     });
     var undoBtn = container.querySelector('#t2048-undo');
     var newBtn = container.querySelector('#t2048-new');
+    var backBtn = container.querySelector('#t2048-back');
     if (undoBtn) undoBtn.addEventListener('click', humanUndo);
+    if (backBtn) backBtn.addEventListener('click', function() { App.GameManager.endGame(); });
     if (newBtn) newBtn.addEventListener('click', function() {
       clearLocalProgress();
       state = buildInitialState([{ id: 'human', name: opts.playerName || '你' }]);

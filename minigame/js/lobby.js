@@ -16,6 +16,7 @@ App.Lobby = (function() {
   var lastSeenChatCount = 0;
   var lastMentionNoticeKey = '';
   var lastHostNoticeEpoch = 0;
+  var processedVoteIds = {};
   var titleFlashTimer = null;
   var titleFlashBase = 'MiniGame';
   var titleFlashOn = false;
@@ -400,6 +401,83 @@ App.Lobby = (function() {
     }).join('');
   }
 
+  function onlineHumanIds() {
+    return getRoomMembers().filter(function(person) {
+      return person.online !== false && !person.isAI && !/^ai-/.test(person.id || '');
+    }).map(function(person) { return person.id; });
+  }
+
+  function voteDecision(vote) {
+    if (App.Signaling && App.Signaling._test && App.Signaling._test.voteDecision) {
+      return App.Signaling._test.voteDecision(vote, onlineHumanIds(), Date.now());
+    }
+    return { done: false, status: vote && vote.status };
+  }
+
+  function voteCounts(vote) {
+    var ids = onlineHumanIds();
+    var eligible = {};
+    ids.forEach(function(id) { eligible[id] = true; });
+    var agree = 0;
+    var reject = 0;
+    Object.keys((vote && vote.votes) || {}).forEach(function(id) {
+      if (ids.length && !eligible[id]) return;
+      if ((vote.votes[id] || {}).agree === true) agree++;
+      if ((vote.votes[id] || {}).agree === false) reject++;
+    });
+    return {
+      agree: agree,
+      reject: reject,
+      total: Math.max(1, ids.length),
+      needed: Math.floor(Math.max(1, ids.length) / 2) + 1
+    };
+  }
+
+  function renderVotePanel() {
+    renderVotePanelTarget('room-vote-panel', false);
+    renderVotePanelTarget('game-vote-panel', true);
+  }
+
+  function renderVotePanelTarget(targetId, inGame) {
+    var target = document.getElementById(targetId);
+    if (!target) return;
+    var vote = roomState && roomState.vote ? roomState.vote : null;
+    var active = vote && vote.status === 'pending';
+    var canStartReturnVote = roomState && roomState.status === 'playing' && !active;
+    if (!active && !canStartReturnVote) {
+      target.hidden = true;
+      target.innerHTML = '';
+      return;
+    }
+    target.hidden = false;
+    target.className = 'room-vote-panel ' + (inGame ? 'game-vote-panel ' : '') + (vote && vote.status ? vote.status : 'pending');
+    if (!active) {
+      target.innerHTML =
+        '<div class="room-vote-copy">' +
+          '<div class="room-vote-title">需要返回房間或重開？</div>' +
+          '<div class="room-vote-meta">會發起多人投票，避免誤關遊戲。</div>' +
+        '</div>' +
+        '<div class="room-vote-actions">' +
+          '<button class="btn-small btn-copy" onclick="App.Lobby.startRoomVote(&quot;return_lobby&quot;)"><i class="fa-solid fa-check-to-slot" aria-hidden="true"></i><span class="btn-label">發起投票</span></button>' +
+        '</div>';
+      return;
+    }
+    var counts = voteCounts(vote);
+    var own = vote.votes && vote.votes[selfId] ? vote.votes[selfId].agree : null;
+    var seconds = Math.max(0, Math.ceil((Number(vote.expireAt || 0) - Date.now()) / 1000));
+    target.innerHTML =
+      '<div class="room-vote-copy">' +
+        '<div class="room-vote-title">' + App.Common.escapeHtml(vote.title || '房間投票') + '</div>' +
+        '<div class="room-vote-meta">' + App.Common.escapeHtml(vote.initiatorName || '玩家') + ' 發起 · ' + seconds + 's · 需要 ' + counts.needed + ' 票</div>' +
+      '</div>' +
+      '<div class="room-vote-actions">' +
+        '<span class="room-vote-count">同意 ' + counts.agree + '/' + counts.total + '</span>' +
+        '<span class="room-vote-count">反對 ' + counts.reject + '</span>' +
+        '<button class="btn-small btn-copy" ' + (own === true ? 'disabled' : '') + ' onclick="App.Lobby.castRoomVote(true)">同意</button>' +
+        '<button class="btn-small btn-danger" ' + (own === false ? 'disabled' : '') + ' onclick="App.Lobby.castRoomVote(false)">反對</button>' +
+      '</div>';
+  }
+
   function renderRoomLobby() {
     if (!roomState) return;
     roomRole = getSelfRole();
@@ -427,6 +505,7 @@ App.Lobby = (function() {
     setText('room-queue-count', String(queue.length));
     renderRoomChatPanelState();
     renderRoomChat();
+    renderVotePanel();
     renderRoomDebug();
     var actions = document.getElementById('room-host-actions');
     if (actions) actions.style.display = isHost ? 'block' : 'none';
@@ -455,6 +534,7 @@ App.Lobby = (function() {
     renderChatTarget('game-chat-list', messages);
     updateChatBadge(messages.length);
     notifyMention(messages);
+    renderVotePanel();
     renderRoomChatPanelState();
   }
 
@@ -710,6 +790,67 @@ App.Lobby = (function() {
     });
   }
 
+  function maybeResolveVote(state) {
+    if (!isHost || !state || !state.vote || state.vote.status !== 'pending') return;
+    var decision = voteDecision(state.vote);
+    if (!decision.done || !App.Signaling.finishVote) return;
+    App.Signaling.finishVote(state.vote.voteId, decision.status).catch(function(e) {
+      App.Common.showToast('投票結算失敗：' + e.message, 'error');
+    });
+  }
+
+  function maybeApplyResolvedVote(state) {
+    if (!isHost || !state || !state.vote || state.vote.status === 'pending') return;
+    var vote = state.vote;
+    if (!vote.voteId || processedVoteIds[vote.voteId]) return;
+    processedVoteIds[vote.voteId] = true;
+    if (vote.status === 'rejected') {
+      setTimeout(function() {
+        if (App.Signaling.clearVote) App.Signaling.clearVote(vote.voteId).catch(function() {});
+      }, 900);
+      return;
+    }
+    if (vote.type === 'return_lobby') {
+      endRoomRound('vote_return_lobby', vote).catch(function(e) {
+        App.Common.showToast('返回房間失敗：' + e.message, 'error');
+      });
+    } else {
+      if (App.Signaling.clearVote) App.Signaling.clearVote(vote.voteId).catch(function() {});
+    }
+  }
+
+  function endRoomRound(reason, vote) {
+    if (!roomState || !App.Signaling) return Promise.resolve();
+    var updates = {
+      status: 'lobby',
+      gameId: '',
+      mode: '',
+      activeGameId: '',
+      activeMode: '',
+      roundId: '',
+      gameStart: null,
+      gameState: null,
+      currentRound: null,
+      gameActions: null,
+      vote: null
+    };
+    getRoomMembers().forEach(function(person) {
+      updates['members/' + person.id + '/presence'] = 'lobby';
+    });
+    var history = roomState.roundId ? App.Signaling.appendHistory({
+      gameId: roomState.gameId || '',
+      gameName: roomState.gameId || '遊戲',
+      mode: roomState.mode || '',
+      roundId: roomState.roundId,
+      status: 'interrupted',
+      reason: reason || 'returned_to_lobby',
+      voteId: vote && vote.voteId ? vote.voteId : ''
+    }) : Promise.resolve();
+    return history.then(function() {
+      return App.Signaling.updateRoom(updates);
+    });
+  }
+
   function handleRoomState(state) {
     if (!state) {
       App.Common.showToast('房間已關閉', 'error');
@@ -720,6 +861,8 @@ App.Lobby = (function() {
     roomState = state;
     maybeClaimHost(state);
     var becameHost = refreshHostFlag(state);
+    maybeResolveVote(state);
+    maybeApplyResolvedVote(state);
     if (gameActive && state.status !== 'playing') {
       App.GameManager.endGame();
       return;
@@ -785,6 +928,7 @@ App.Lobby = (function() {
       isHost = !!room.isHost;
       selfId = room.selfId;
       roomActionIds = {};
+      processedVoteIds = {};
       saveRoomSession(room);
       if (isHost) watchRoomAsHost();
       else watchRoomAsGuest();
@@ -819,6 +963,7 @@ App.Lobby = (function() {
       selfId = room.selfId;
       roomRole = room.role;
       roomActionIds = {};
+      processedVoteIds = {};
       saveRoomSession(room);
       if (isHost) watchRoomAsHost();
       else watchRoomAsGuest();
@@ -965,6 +1110,7 @@ App.Lobby = (function() {
       hostId: selfId,
       players: seating.players,
       spectators: seating.spectators,
+      waitingQueue: seating.waitingQueue || [],
       rolesByClientId: roles,
       initialState: initialState
     };
@@ -1000,6 +1146,7 @@ App.Lobby = (function() {
             roundId: roomStart.roundId,
             players: seating.players,
             spectators: seating.spectators,
+            waitingQueue: seating.waitingQueue || [],
             startedAt: Date.now()
           },
           gameState: null,
@@ -1141,6 +1288,7 @@ App.Lobby = (function() {
     selfId = '';
     roomRole = 'member';
     roomActionIds = {};
+    processedVoteIds = {};
     launchedRoomGameKey = '';
     lastHostNoticeEpoch = 0;
     setTitle('');
@@ -1205,6 +1353,30 @@ App.Lobby = (function() {
       App.Common.showToast('同步動作失敗：' + e.message, 'error');
     });
     return true;
+  }
+
+  function startRoomVote(type) {
+    if (playContext !== 'room' || !roomState || !App.Signaling || !App.Signaling.startVote) return;
+    var titleMap = {
+      return_lobby: '返回 Party Room'
+    };
+    var payload = {
+      gameId: roomState.gameId || '',
+      mode: roomState.mode || '',
+      roundId: roomState.roundId || ''
+    };
+    App.Signaling.startVote(type || 'return_lobby', payload, titleMap[type] || '房間投票', 30000).then(function() {
+      App.Common.showToast('投票已發起', 'success');
+    }).catch(function(e) {
+      App.Common.showToast(e.message || '未能發起投票', 'error');
+    });
+  }
+
+  function castRoomVote(agree) {
+    if (playContext !== 'room' || !roomState || !App.Signaling || !App.Signaling.castVote) return;
+    App.Signaling.castVote(!!agree).catch(function(e) {
+      App.Common.showToast('投票失敗：' + e.message, 'error');
+    });
   }
 
   function toggleQueue() {
@@ -1288,6 +1460,7 @@ App.Lobby = (function() {
       playerName = ticket.username;
       roomRole = room.role;
       roomActionIds = {};
+      processedVoteIds = {};
       launchedRoomGameKey = '';
       saveRoomSession(room);
       if (isHost) watchRoomAsHost();
@@ -1316,6 +1489,8 @@ App.Lobby = (function() {
     sendRoomChat: sendRoomChat,
     sendGameChat: sendGameChat,
     toggleGameChat: toggleGameChat,
+    startRoomVote: startRoomVote,
+    castRoomVote: castRoomVote,
     backFromGameSelect: backFromGameSelect,
     renderRoomLobby: renderRoomLobby,
     goHome: goHome,

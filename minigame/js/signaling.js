@@ -220,6 +220,7 @@ App.Signaling = (function() {
     data.currentRound = data.currentRound || null;
     data.history = data.history || {};
     data.leaderboard = data.leaderboard || {};
+    data.vote = data.vote || null;
     data.hostEpoch = Number(data.hostEpoch || 0);
     return data;
   }
@@ -646,6 +647,87 @@ App.Signaling = (function() {
     });
   }
 
+  function voteDecision(vote, eligibleIds, now) {
+    if (!vote || vote.status !== 'pending') return { done: false, status: vote && vote.status };
+    eligibleIds = (eligibleIds || []).filter(Boolean);
+    var eligible = {};
+    eligibleIds.forEach(function(id) { eligible[id] = true; });
+    var total = Math.max(1, eligibleIds.length);
+    var needed = Math.floor(total / 2) + 1;
+    var agree = 0;
+    var reject = 0;
+    Object.keys(vote.votes || {}).forEach(function(id) {
+      if (eligibleIds.length && !eligible[id]) return;
+      if ((vote.votes[id] || {}).agree === true) agree++;
+      if ((vote.votes[id] || {}).agree === false) reject++;
+    });
+    if (agree >= needed) return { done: true, status: 'accepted', agree: agree, reject: reject, needed: needed };
+    if (reject >= needed) return { done: true, status: 'rejected', agree: agree, reject: reject, needed: needed };
+    if (Number(vote.expireAt || 0) && Number(vote.expireAt || 0) <= (now || Date.now())) {
+      return { done: true, status: agree > reject ? 'accepted' : 'rejected', agree: agree, reject: reject, needed: needed };
+    }
+    return { done: false, status: 'pending', agree: agree, reject: reject, needed: needed };
+  }
+
+  function startVote(type, payload, title, durationMs) {
+    if (!roomCode || !selfId) return Promise.resolve(false);
+    durationMs = Number(durationMs || 30000);
+    return ref('rooms/' + roomCode).transaction(function(current) {
+      if (!current || !current.members || !current.members[selfId]) return current;
+      var now = Date.now();
+      var active = current.vote && current.vote.status === 'pending' && Number(current.vote.expireAt || 0) > now;
+      if (active) return;
+      var member = current.members[selfId] || {};
+      current.vote = {
+        voteId: now.toString(36) + '-' + Math.random().toString(36).slice(2, 8),
+        type: String(type || 'generic').slice(0, 40),
+        title: String(title || '房間投票').slice(0, 80),
+        payload: payload || {},
+        initiatorId: selfId,
+        initiatorName: member.name || '玩家',
+        status: 'pending',
+        createdAt: now,
+        expireAt: now + durationMs,
+        votes: {}
+      };
+      current.vote.votes[selfId] = { agree: true, createdAt: now };
+      current.updatedAt = firebase.database.ServerValue.TIMESTAMP;
+      return current;
+    }).then(function(result) {
+      if (!result.committed) throw new Error('已有投票進行中');
+      return true;
+    });
+  }
+
+  function castVote(agree) {
+    if (!roomCode || !selfId) return Promise.resolve();
+    return ref('rooms/' + roomCode + '/vote/votes/' + selfId).set({
+      agree: !!agree,
+      createdAt: Date.now()
+    });
+  }
+
+  function finishVote(voteId, status) {
+    if (!roomCode || !voteId) return Promise.resolve(false);
+    return ref('rooms/' + roomCode + '/vote').transaction(function(vote) {
+      if (!vote || vote.voteId !== voteId || vote.status !== 'pending') return vote;
+      vote.status = status === 'accepted' ? 'accepted' : 'rejected';
+      vote.resolvedAt = Date.now();
+      return vote;
+    }).then(function(result) {
+      return !!result.committed;
+    });
+  }
+
+  function clearVote(voteId) {
+    if (!roomCode) return Promise.resolve();
+    return ref('rooms/' + roomCode + '/vote').transaction(function(vote) {
+      if (!vote) return vote;
+      if (voteId && vote.voteId !== voteId) return vote;
+      return null;
+    });
+  }
+
   function sendGameAction(action) {
     if (!roomCode || !action) return Promise.resolve();
     action.from = selfId;
@@ -696,6 +778,10 @@ App.Signaling = (function() {
     appendHistory: appendHistory,
     updateLeaderboard: updateLeaderboard,
     addLeaderboardResults: addLeaderboardResults,
+    startVote: startVote,
+    castVote: castVote,
+    finishVote: finishVote,
+    clearVote: clearVote,
     updateProfile: updateProfile,
     sendGameAction: sendGameAction,
     clearGameAction: clearGameAction,
@@ -709,7 +795,8 @@ App.Signaling = (function() {
       hasDuplicateName: hasDuplicateName,
       isStaleMember: isStaleMember,
       markStaleMembers: markStaleMembers,
-      selectHostCandidate: selectHostCandidate
+      selectHostCandidate: selectHostCandidate,
+      voteDecision: voteDecision
     },
     getRoomCode: getRoomCode,
     getSelfId: getSelfId,

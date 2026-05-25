@@ -102,6 +102,25 @@ function testStaleNameReclaim() {
   const candidate = App.Signaling._test.selectHostCandidate(hostMembers);
   assert.strictEqual(candidate.id, 'b');
   assert.strictEqual(Object.prototype.hasOwnProperty.call(hostMembers.b, 'id'), false);
+  const vote = {
+    status: 'pending',
+    expireAt: now + 30000,
+    votes: {
+      a: { agree: true },
+      b: { agree: true },
+      c: { agree: false }
+    }
+  };
+  const decision = App.Signaling._test.voteDecision(vote, ['a', 'b', 'c'], now);
+  assert.strictEqual(decision.done, true);
+  assert.strictEqual(decision.status, 'accepted');
+  const expired = App.Signaling._test.voteDecision({
+    status: 'pending',
+    expireAt: now - 1,
+    votes: { a: { agree: true }, b: { agree: false } }
+  }, ['a', 'b', 'c'], now);
+  assert.strictEqual(expired.done, true);
+  assert.strictEqual(expired.status, 'rejected');
 }
 
 function testBlackjackRules() {
