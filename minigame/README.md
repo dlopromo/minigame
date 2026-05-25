@@ -107,6 +107,12 @@ Detailed chat contract:
 docs/CHATROOM_SPEC.md
 ```
 
+Current MVP completion status:
+
+```text
+docs/MVP_STATUS.md
+```
+
 Party Rooms use Firebase as the room and round authority. Firebase works over
 WAN, so friends do not need to be on the same LAN.
 Guess Color, 鋤大DEE, 鬥地主, 21點, 2048 Race, 轉色牌, 冚棉胎, and 9Upper room play are Firebase-first: non-host clients write actions to `gameActions`, the host applies them, and `gameState` becomes the source of truth for board/turn/result updates.

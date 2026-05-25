@@ -159,6 +159,7 @@ function test2048Rules() {
   sameJson(moved.board[1], [8, 0, 0, 0]);
   assert.strictEqual(moved.score, 12);
   assert.strictEqual(moved.moved, true);
+  sameJson(moved.merges, [{ x: 0, y: 0 }, { x: 0, y: 1 }]);
   const blocked = [
     [2, 4, 2, 4],
     [4, 2, 4, 2],

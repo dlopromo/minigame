@@ -4,16 +4,16 @@
 
 Current MVP:
 
-- spawn pop animation for visible tiles
-- subtle slide-in motion on board repaint
+- spawn pop animation only for the newly added tile
+- merge pulse only for cells produced by a merge
+- subtle directional motion on board repaint
 - original 2048-inspired color scale
 - high values use a compact `v-super` style
+- reduced-motion mode disables tile animation
 
 Do not write animation frame data to Firebase.
 
 Future target:
 
 - position-based tile movement using previous board coordinates
-- merge pulse only for merged tiles
 - score popup on `lastGain`
-- optional reduced-motion mode

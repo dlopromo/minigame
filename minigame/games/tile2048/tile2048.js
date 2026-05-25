@@ -42,10 +42,11 @@
 
   function addTile(board, rng) {
     var cells = openCells(board);
-    if (!cells.length) return false;
+    if (!cells.length) return null;
     var cell = cells[Math.floor(rng() * cells.length)];
-    board[cell.y][cell.x] = rng() < 0.9 ? 2 : 4;
-    return true;
+    var value = rng() < 0.9 ? 2 : 4;
+    board[cell.y][cell.x] = value;
+    return { x: cell.x, y: cell.y, value: value };
   }
 
   function initialBoard(seed) {
@@ -60,8 +61,10 @@
     var values = line.filter(Boolean);
     var result = [];
     var score = 0;
+    var merges = [];
     for (var i = 0; i < values.length; i++) {
       if (values[i] === values[i + 1]) {
+        merges.push(result.length);
         result.push(values[i] * 2);
         score += values[i] * 2;
         i++;
@@ -70,7 +73,7 @@
       }
     }
     while (result.length < SIZE) result.push(0);
-    return { line: result, score: score };
+    return { line: result, score: score, merges: merges };
   }
 
   function sameBoard(a, b) {
@@ -80,6 +83,7 @@
   function moveBoard(board, dir) {
     var next = emptyBoard();
     var score = 0;
+    var merges = [];
     for (var i = 0; i < SIZE; i++) {
       var line = [];
       for (var j = 0; j < SIZE; j++) {
@@ -90,6 +94,12 @@
       }
       var packed = compressLine(line);
       score += packed.score;
+      packed.merges.forEach(function(mergeIndex) {
+        if (dir === 'left') merges.push({ x: mergeIndex, y: i });
+        if (dir === 'right') merges.push({ x: SIZE - 1 - mergeIndex, y: i });
+        if (dir === 'up') merges.push({ x: i, y: mergeIndex });
+        if (dir === 'down') merges.push({ x: i, y: SIZE - 1 - mergeIndex });
+      });
       for (var k = 0; k < SIZE; k++) {
         if (dir === 'left') next[i][k] = packed.line[k];
         if (dir === 'right') next[i][SIZE - 1 - k] = packed.line[k];
@@ -97,7 +107,7 @@
         if (dir === 'down') next[SIZE - 1 - k][i] = packed.line[k];
       }
     }
-    return { board: next, score: score, moved: !sameBoard(board, next) };
+    return { board: next, score: score, merges: merges, moved: !sameBoard(board, next) };
   }
 
   function maxTile(board) {
@@ -132,6 +142,8 @@
       undoStack: [],
       lastMove: '',
       lastGain: 0,
+      lastSpawn: null,
+      lastMerged: [],
       status: 'playing',
       finishedAt: 0
     };
@@ -194,6 +206,8 @@
       player.maxTile = player.maxTile || maxTile(player.board || emptyBoard());
       player.lastMove = player.lastMove || '';
       player.lastGain = player.lastGain || 0;
+      player.lastSpawn = player.lastSpawn || null;
+      player.lastMerged = Array.isArray(player.lastMerged) ? player.lastMerged : [];
       player.status = player.status || 'playing';
     });
   }
@@ -274,7 +288,9 @@
       board: clone(player.board),
       score: player.score,
       moves: player.moves,
-      maxTile: player.maxTile
+      maxTile: player.maxTile,
+      lastSpawn: player.lastSpawn,
+      lastMerged: player.lastMerged
     });
     if (player.undoStack.length > 50) player.undoStack = player.undoStack.slice(player.undoStack.length - 50);
     player.board = result.board;
@@ -282,8 +298,9 @@
     player.moves += 1;
     player.lastMove = dir;
     player.lastGain = result.score;
+    player.lastMerged = result.merges || [];
     var rng = lcg((state.seed || 1) + player.moves * 7919 + player.id.length * 17 + player.score);
-    addTile(player.board, rng);
+    player.lastSpawn = addTile(player.board, rng);
     player.maxTile = maxTile(player.board);
     settleIfNeeded(player);
     commit();
@@ -298,6 +315,8 @@
     player.score = previous.score;
     player.moves = previous.moves;
     player.maxTile = previous.maxTile;
+    player.lastSpawn = previous.lastSpawn || null;
+    player.lastMerged = previous.lastMerged || [];
     player.lastMove = 'undo';
     player.lastGain = 0;
     record(player.name, 'Reverse 返回上一手');
@@ -381,15 +400,28 @@
     return 'v-super';
   }
 
-  function renderTile(value) {
-    return '<span class="t2048-tile ' + tileClass(value) + '" data-value="' + value + '">' + (value || '') + '</span>';
+  function isCoordMatch(coord, x, y) {
+    return !!coord && coord.x === x && coord.y === y;
+  }
+
+  function hasCoord(list, x, y) {
+    return (list || []).some(function(coord) { return isCoordMatch(coord, x, y); });
+  }
+
+  function renderTile(value, x, y, player) {
+    var classes = ['t2048-tile', tileClass(value)];
+    if (value && isCoordMatch(player.lastSpawn, x, y)) classes.push('is-new');
+    if (value && hasCoord(player.lastMerged, x, y)) classes.push('is-merged');
+    return '<span class="' + classes.join(' ') + '" data-value="' + value + '">' + (value || '') + '</span>';
   }
 
   function renderBoard(player) {
     var moveClass = player.lastMove ? ' move-' + player.lastMove : '';
     var gainClass = player.lastGain ? ' has-merge' : '';
-    return '<div class="t2048-board' + moveClass + gainClass + '">' + player.board.map(function(row) {
-      return row.map(renderTile).join('');
+    return '<div class="t2048-board' + moveClass + gainClass + '">' + player.board.map(function(row, y) {
+      return row.map(function(value, x) {
+        return renderTile(value, x, y, player);
+      }).join('');
     }).join('') + '</div>';
   }
 

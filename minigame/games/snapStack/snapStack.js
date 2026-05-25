@@ -206,10 +206,11 @@
     }
   }
 
-  function renderCard(card, index) {
+  function renderCard(card, index, total) {
     if (!card) return '<div class="ss-empty">等待翻牌</div>';
     var red = card.suit === 'D' || card.suit === 'H';
-    return '<span class="ss-card' + (red ? ' red' : '') + '" style="--i:' + index + '"><b>' + escapeHtml(card.rank) + '</b><em>' + SUIT_SYMBOLS[card.suit] + '</em></span>';
+    var latest = index === total - 1;
+    return '<span class="ss-card' + (red ? ' red' : '') + (latest ? ' latest' : '') + '" style="--i:' + index + '"><b>' + escapeHtml(card.rank) + '</b><em>' + SUIT_SYMBOLS[card.suit] + '</em></span>';
   }
   function renderPlayer(player) {
     var active = activePlayer() && activePlayer().id === player.id;
@@ -249,7 +250,7 @@
       '<div class="ss-shell">' +
         '<div class="ss-topbar"><div class="ss-title' + (canFlip() || (state.snapOpen && canSlap()) ? ' my-turn' : '') + '">' + titleText() + '</div><div class="ss-actions">' + (isRoomMode() ? '<button class="ss-icon game-chat-trigger" onclick="App.Lobby.toggleGameChat()" aria-label="Chat"><i class="fa-regular fa-comments" aria-hidden="true"></i><span class="chat-badge game-chat-unread"></span></button>' : '') + '<button class="ss-icon" onclick="App.GameManager.endGame()" aria-label="離開遊戲"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button></div></div>' +
         '<section class="ss-scoreboard">' + state.players.map(renderPlayer).join('') + '</section>' +
-        '<section class="ss-table"><div class="ss-pile">' + (recent.length ? recent.map(renderCard).join('') : renderCard(null, 0)) + '</div><div class="ss-deck">' + state.deck.length + ' 張</div></section>' +
+        '<section class="ss-table' + (state.snapOpen ? ' snap-open' : '') + '"><div class="ss-pile">' + (recent.length ? recent.map(function(card, index) { return renderCard(card, index, recent.length); }).join('') : renderCard(null, 0, 0)) + '</div><div class="ss-deck">' + state.deck.length + ' 張</div></section>' +
         '<div class="ss-controls"><div class="ss-hint">' + escapeHtml(state.history[state.history.length - 1].name + '：' + state.history[state.history.length - 1].text) + '</div>' +
           '<button class="ss-btn secondary" id="ss-flip"' + (canFlip() ? '' : ' disabled') + '><i class="fa-solid fa-clone" aria-hidden="true"></i><span>翻牌</span></button><button class="ss-btn" id="ss-slap"' + (canSlap() ? '' : ' disabled') + '><i class="fa-solid fa-hand" aria-hidden="true"></i><span>冚</span></button>' +
         '</div>' +
