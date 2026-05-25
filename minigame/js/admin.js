@@ -178,6 +178,7 @@ var App = window.App || {};
     var members = people(room.members);
     var players = room.gameStart && room.gameStart.players ? room.gameStart.players : [];
     var history = people(room.history).sort(function(a, b) { return (b.createdAt || 0) - (a.createdAt || 0); });
+    var chat = people(room.chat).sort(function(a, b) { return (b.createdAt || 0) - (a.createdAt || 0); });
     var leaderboard = people(room.leaderboard);
     var host = room.members && room.members[room.hostId] ? room.members[room.hostId].name : room.hostId;
     if (title) title.textContent = '房間 ' + selectedCode;
@@ -204,6 +205,8 @@ var App = window.App || {};
       renderPlayersBlock(players, room.members || {}) +
       '<h3 class="admin-subtitle">排行榜</h3>' +
       renderLeaderboard(leaderboard) +
+      '<h3 class="admin-subtitle">Chatroom</h3>' +
+      renderChat(chat) +
       '<h3 class="admin-subtitle">歷史紀錄</h3>' +
       renderHistory(history);
     bindAdminActions();
@@ -249,6 +252,16 @@ var App = window.App || {};
     return '<div class="room-list">' + history.slice(0, 30).map(function(item) {
       return '<div class="room-person"><div><div class="room-person-name">' + escapeHtml(item.gameName || item.gameId || '遊戲') + ' · ' + escapeHtml(item.status || '') + '</div>' +
         '<div class="room-person-meta">' + escapeHtml(item.winnerName || item.winner || '未有勝者') + ' · ' + escapeHtml(formatTime(item.createdAt)) + '</div></div></div>';
+    }).join('') + '</div>';
+  }
+
+  function renderChat(messages) {
+    if (!messages.length) return '<p class="room-list-empty">未有 Chat 訊息</p>';
+    return '<div class="room-list">' + messages.slice(0, 40).map(function(item) {
+      var kind = item.kind || 'player';
+      var label = kind === 'system' ? '系統' : kind === 'game' ? '遊戲' : (item.name || '玩家');
+      return '<div class="room-person"><div><div class="room-person-name">' + escapeHtml(label) + ' · ' + escapeHtml(item.eventType || 'chat') + '</div>' +
+        '<div class="room-person-meta">' + escapeHtml(item.text || '') + ' · ' + escapeHtml(formatTime(item.createdAt)) + '</div></div></div>';
     }).join('') + '</div>';
   }
 

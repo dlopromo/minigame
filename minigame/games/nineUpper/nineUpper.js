@@ -406,6 +406,34 @@
   }
   function render() {
     if (!container || !state) return;
+    if (state.status === 'settled') {
+      var ranked = state.players.slice().sort(function(a, b) {
+        return b.score - a.score || String(a.name).localeCompare(String(b.name));
+      });
+      var actions = '<button class="nu-btn secondary" id="nu-back">返回</button>' +
+        (isRoomMode() ? '' : '<button class="nu-btn" id="nu-new">再來一局</button>');
+      container.innerHTML = '<div class="nu-shell">' + App.Common.renderResultPanel({
+        eyebrow: '9Upper 結算',
+        title: winnerText(),
+        subtitle: '總分最高者勝出',
+        rows: ranked.map(function(player, index) {
+          return {
+            rank: '#' + (index + 1),
+            name: player.name,
+            person: player,
+            primary: player.score + ' 分',
+            secondary: player.ai ? 'AI' : '玩家'
+          };
+        }),
+        history: state.history.slice().reverse().map(function(row) {
+          return { label: row.name, text: row.text };
+        }),
+        actionsHtml: actions
+      }) + '</div>';
+      bindControls();
+      if (App.Lobby && App.Lobby.setTitle) App.Lobby.setTitle('9Upper 結算');
+      return;
+    }
     container.innerHTML =
       '<div class="nu-shell">' +
         '<div class="nu-topbar"><div class="nu-title">' + (state.status === 'settled' ? winnerText() : '9Upper · Round ' + state.round + '/' + state.maxRounds) + '</div><div class="nu-actions">' + (isRoomMode() ? '<button class="nu-icon game-chat-trigger" onclick="App.Lobby.toggleGameChat()" aria-label="Chat"><i class="fa-regular fa-comments" aria-hidden="true"></i><span class="chat-badge game-chat-unread"></span></button>' : '') + '<button class="nu-icon" onclick="App.GameManager.endGame()" aria-label="離開遊戲"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button></div></div>' +

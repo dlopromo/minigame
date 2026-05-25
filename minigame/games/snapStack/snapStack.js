@@ -218,6 +218,32 @@
   }
   function render() {
     if (!container || !state) return;
+    if (state.status === 'settled') {
+      var ranked = state.players.slice().sort(function(a, b) { return b.score - a.score || String(a.name).localeCompare(String(b.name)); });
+      var actions = '<button class="ss-btn secondary" id="ss-back"><i class="fa-solid fa-arrow-left" aria-hidden="true"></i><span>返回</span></button>' +
+        (isRoomMode() ? '' : '<button class="ss-btn" id="ss-new"><i class="fa-solid fa-rotate-right" aria-hidden="true"></i><span>再來一局</span></button>');
+      container.innerHTML = '<div class="ss-shell">' + App.Common.renderResultPanel({
+        eyebrow: '冚棉胎結算',
+        title: titleText(),
+        subtitle: '得分最高者勝出',
+        rows: ranked.map(function(player, index) {
+          return {
+            rank: '#' + (index + 1),
+            name: player.name,
+            person: player,
+            primary: player.score + ' 分',
+            secondary: player.ai ? 'AI' : '玩家'
+          };
+        }),
+        history: state.history.slice().reverse().map(function(row) {
+          return { label: row.name, text: row.text };
+        }),
+        actionsHtml: actions
+      }) + '</div>';
+      bindControls();
+      if (App.Lobby && App.Lobby.setTitle) App.Lobby.setTitle('冚棉胎結算');
+      return;
+    }
     var recent = state.pile.slice(-8);
     container.innerHTML =
       '<div class="ss-shell">' +
@@ -225,10 +251,7 @@
         '<section class="ss-scoreboard">' + state.players.map(renderPlayer).join('') + '</section>' +
         '<section class="ss-table"><div class="ss-pile">' + (recent.length ? recent.map(renderCard).join('') : renderCard(null, 0)) + '</div><div class="ss-deck">' + state.deck.length + ' 張</div></section>' +
         '<div class="ss-controls"><div class="ss-hint">' + escapeHtml(state.history[state.history.length - 1].name + '：' + state.history[state.history.length - 1].text) + '</div>' +
-          (state.status === 'settled'
-            ? '<button class="ss-btn secondary" id="ss-back"><i class="fa-solid fa-arrow-left" aria-hidden="true"></i><span>返回</span></button>' +
-              (isRoomMode() ? '' : '<button class="ss-btn" id="ss-new"><i class="fa-solid fa-rotate-right" aria-hidden="true"></i><span>再來一局</span></button>')
-            : '<button class="ss-btn secondary" id="ss-flip"' + (canFlip() ? '' : ' disabled') + '><i class="fa-solid fa-clone" aria-hidden="true"></i><span>翻牌</span></button><button class="ss-btn" id="ss-slap"' + (canSlap() ? '' : ' disabled') + '><i class="fa-solid fa-hand" aria-hidden="true"></i><span>冚</span></button>') +
+          '<button class="ss-btn secondary" id="ss-flip"' + (canFlip() ? '' : ' disabled') + '><i class="fa-solid fa-clone" aria-hidden="true"></i><span>翻牌</span></button><button class="ss-btn" id="ss-slap"' + (canSlap() ? '' : ' disabled') + '><i class="fa-solid fa-hand" aria-hidden="true"></i><span>冚</span></button>' +
         '</div>' +
       '</div>';
     bindControls();
