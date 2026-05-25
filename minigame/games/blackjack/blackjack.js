@@ -523,6 +523,35 @@
       var playersHtml = state.players.map(renderPlayer).join('');
       var isSettled = state.status === 'settled';
       var hintHtml = escapeHtml(isSettled ? resultHint() : canAct ? handValue(player.hand) + ' 點，請選擇操作' : latestHint());
+      if (isSettled) {
+        var actions = '<button class="bj-btn secondary" id="bj-back"><i class="fa-solid fa-arrow-left" aria-hidden="true"></i><span>返回</span></button>' +
+          '<button class="bj-btn" id="bj-new-round"' + (canStartNewRound() ? '' : ' disabled') + '><i class="fa-solid fa-rotate-right" aria-hidden="true"></i><span>' + (isRoomMode() && !opts.isHost ? '等待房主' : '再來一局') + '</span></button>';
+        container.textContent = '';
+        container.insertAdjacentHTML('beforeend',
+          '<div class="bj-shell">' + App.Common.renderResultPanel({
+            eyebrow: '21點結算',
+            title: blackjackResultTitle(),
+            subtitle: resultHint(),
+            rows: state.players.map(function(rowPlayer, index) {
+              rowPlayer.stats = cloneStats(rowPlayer.stats);
+              return {
+                rank: '#' + (index + 1),
+                name: rowPlayer.name,
+                person: rowPlayer,
+                primary: statusText(rowPlayer) + ' ' + formatPayout(rowPlayer.payout),
+                secondary: formatPoints(rowPlayer.stats.points) + ' 分 · ' + rowPlayer.stats.wins + '勝'
+              };
+            }),
+            history: state.history.slice().reverse().map(function(row) {
+              return { label: row.name, text: row.text };
+            }),
+            actionsHtml: actions
+          }) + '</div>'
+        );
+        bindControls();
+        if (App.Lobby && App.Lobby.setTitle) App.Lobby.setTitle('21點結算');
+        return;
+      }
       var html =
         '<div class="bj-shell">' +
           '<div class="bj-topbar">' +
@@ -539,10 +568,7 @@
           '</div>' +
           '<div class="bj-controlbar">' +
             '<div class="bj-hint">' + hintHtml + '</div>' +
-            (isSettled
-              ? '<button class="bj-btn secondary" id="bj-back"><i class="fa-solid fa-arrow-left" aria-hidden="true"></i><span>返回</span></button>' +
-                '<button class="bj-btn" id="bj-new-round"' + (canStartNewRound() ? '' : ' disabled') + '><i class="fa-solid fa-rotate-right" aria-hidden="true"></i><span>再來一局</span></button>'
-              : '<button class="bj-btn secondary" id="bj-suggest"' + (canAct ? '' : ' disabled') + '><i class="fa-regular fa-lightbulb" aria-hidden="true"></i><span>推薦</span></button>' +
+            ('<button class="bj-btn secondary" id="bj-suggest"' + (canAct ? '' : ' disabled') + '><i class="fa-regular fa-lightbulb" aria-hidden="true"></i><span>推薦</span></button>' +
                 '<button class="bj-btn secondary' + (suggestedAction === 'hit' ? ' recommended' : '') + '" id="bj-hit"' + (canAct ? '' : ' disabled') + '><i class="fa-solid fa-plus" aria-hidden="true"></i><span>抽牌</span></button>' +
                 '<button class="bj-btn' + (suggestedAction === 'stand' ? ' recommended' : '') + '" id="bj-stand"' + (canAct ? '' : ' disabled') + '><i class="fa-solid fa-hand" aria-hidden="true"></i><span>停牌</span></button>') +
           '</div>' +
@@ -600,6 +626,14 @@
   function resultHint() {
     var dealerValue = handValue(state.dealer.hand);
     return '第 ' + state.roundNumber + ' 局完成 · 莊家 ' + dealerValue + ' 點';
+  }
+
+  function blackjackResultTitle() {
+    var self = selfPlayer();
+    if (!self) return '21點完成';
+    if (self.outcome === 'win' || self.outcome === 'blackjack') return '你贏了';
+    if (self.outcome === 'push') return '和局';
+    return '莊家勝出';
   }
 
   function latestHint() {

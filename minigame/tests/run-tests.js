@@ -240,6 +240,38 @@ function testNineUpperRules() {
   assert.strictEqual(cycled.playedQuestionIds.length, 1);
 }
 
+function testGameRegistryAndChatContract() {
+  const gameFiles = [
+    'games/guessColor/guessColor.js',
+    'games/bigDee/bigDee.js',
+    'games/douDizhu/douDizhu.js',
+    'games/blackjack/blackjack.js',
+    'games/tile2048/tile2048.js',
+    'games/colorShift/colorShift.js',
+    'games/snapStack/snapStack.js',
+    'games/nineUpper/nineUpper.js'
+  ];
+  const App = loadBrowserScripts(gameFiles);
+  const games = Object.values(App.GameManager.games);
+  assert.strictEqual(games.length, gameFiles.length);
+  games.forEach(game => {
+    assert.strictEqual(game.supportsSingle, true, `${game.id} must support single mode`);
+    assert.strictEqual(game.supportsMultiplayer, true, `${game.id} must support room mode`);
+    assert.strictEqual(game.allowSpectators, true, `${game.id} must allow spectators`);
+    assert.strictEqual(typeof game.maxPlayers, 'number', `${game.id} must declare maxPlayers`);
+    assert.strictEqual(typeof game.minRoomPlayers, 'number', `${game.id} must declare minRoomPlayers`);
+    assert.strictEqual(typeof game.buildRoomStart, 'function', `${game.id} must expose buildRoomStart`);
+  });
+  gameFiles.forEach(file => {
+    const source = fs.readFileSync(path.join(root, file), 'utf8');
+    assert.match(source, /logRoomEvent/, `${file} must write public room game events to Chatroom`);
+  });
+  const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
+  assert.match(html, /id="room-chat-list"/);
+  assert.match(html, /id="game-chat-list"/);
+  assert.match(html, /id="global-game-chat-button"/);
+}
+
 testRoomSeating();
 testStaleNameReclaim();
 testBlackjackRules();
@@ -247,4 +279,5 @@ test2048Rules();
 testColorShiftRules();
 testSnapStackRules();
 testNineUpperRules();
+testGameRegistryAndChatContract();
 console.log('All minigame MVP tests passed');
