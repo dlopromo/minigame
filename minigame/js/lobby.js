@@ -455,11 +455,14 @@ App.Lobby = (function() {
     if (!active) {
       target.innerHTML =
         '<div class="room-vote-copy">' +
-          '<div class="room-vote-title">需要返回房間或重開？</div>' +
-          '<div class="room-vote-meta">會發起多人投票，避免誤關遊戲。</div>' +
+          '<div class="room-vote-title">需要處理目前遊戲？</div>' +
+          '<div class="room-vote-meta">多人房間會先投票，避免誤關或誤重開。</div>' +
         '</div>' +
         '<div class="room-vote-actions">' +
-          '<button class="btn-small btn-copy" onclick="App.Lobby.startRoomVote(&quot;return_lobby&quot;)"><i class="fa-solid fa-check-to-slot" aria-hidden="true"></i><span class="btn-label">發起投票</span></button>' +
+          '<button class="btn-small btn-copy" onclick="App.Lobby.requestRoomAction(&quot;return_lobby&quot;)"><i class="fa-solid fa-arrow-left" aria-hidden="true"></i><span class="btn-label">返回房間</span></button>' +
+          '<button class="btn-small btn-copy" onclick="App.Lobby.requestRoomAction(&quot;restart_round&quot;)"><i class="fa-solid fa-rotate-right" aria-hidden="true"></i><span class="btn-label">重開</span></button>' +
+          '<button class="btn-small btn-copy" onclick="App.Lobby.requestRoomAction(&quot;change_game&quot;)"><i class="fa-solid fa-gamepad" aria-hidden="true"></i><span class="btn-label">換遊戲</span></button>' +
+          '<button class="btn-small btn-danger" onclick="App.Lobby.requestRoomAction(&quot;close_room&quot;)"><i class="fa-solid fa-lock" aria-hidden="true"></i><span class="btn-label">關房</span></button>' +
         '</div>';
       return;
     }
@@ -827,13 +830,10 @@ App.Lobby = (function() {
       }, 900);
       return;
     }
-    if (vote.type === 'return_lobby') {
-      endRoomRound('vote_return_lobby', vote).catch(function(e) {
-        App.Common.showToast('返回房間失敗：' + e.message, 'error');
-      });
-    } else {
+    applyRoomVoteAction(vote.type, vote.payload || {}, vote).catch(function(e) {
+      App.Common.showToast('投票動作失敗：' + e.message, 'error');
       if (App.Signaling.clearVote) App.Signaling.clearVote(vote.voteId).catch(function() {});
-    }
+    });
   }
 
   function endRoomRound(reason, vote) {
@@ -882,7 +882,7 @@ App.Lobby = (function() {
     maybeResolveVote(state);
     maybeApplyResolvedVote(state);
     if (gameActive && (state.status === 'lobby' || state.status === 'closed')) {
-      App.GameManager.endGame();
+      App.GameManager.endGame({ skipConfirm: true });
       return;
     }
     notifyRoomUpdateToGame();
@@ -1186,7 +1186,7 @@ App.Lobby = (function() {
     var start = roomState.gameStart || {};
     var gameId = start.gameId || roomState.gameId || roomState.activeGameId;
     var mode = start.mode || roomState.mode || roomState.activeMode || 'room';
-    startRoomRound(gameId, mode);
+    requestRoomAction('restart_round', { gameId: gameId, mode: mode });
   }
 
   function roomResultActionsHtml() {
@@ -1425,13 +1425,19 @@ App.Lobby = (function() {
   function startRoomVote(type) {
     if (playContext !== 'room' || !roomState || !App.Signaling || !App.Signaling.startVote) return;
     var titleMap = {
-      return_lobby: '返回 Party Room'
+      return_lobby: '返回 Party Room',
+      restart_round: '開新一局',
+      change_game: '更換遊戲',
+      close_room: '關閉房間',
+      force_settle: '強制結算'
     };
     var payload = {
       gameId: roomState.gameId || '',
       mode: roomState.mode || '',
       roundId: roomState.roundId || ''
     };
+    var extra = arguments.length > 1 && arguments[1] ? arguments[1] : {};
+    Object.keys(extra).forEach(function(key) { payload[key] = extra[key]; });
     App.Signaling.startVote(type || 'return_lobby', payload, titleMap[type] || '房間投票', 30000).then(function() {
       App.Common.showToast('投票已發起', 'success');
       logRoomEvent('system', getSelfName() + ' 發起投票：' + (titleMap[type] || '房間投票'), 'vote_start');
@@ -1447,6 +1453,54 @@ App.Lobby = (function() {
     }).catch(function(e) {
       App.Common.showToast('投票失敗：' + e.message, 'error');
     });
+  }
+
+  function requestRoomAction(type, payload) {
+    if (playContext !== 'room' || !roomState) return;
+    if (!isHost && ['restart_round', 'change_game', 'close_room', 'force_settle'].indexOf(type) >= 0) {
+      App.Common.showToast('只有房主可以發起這個動作', 'error');
+      return;
+    }
+    var needsVote = onlineHumanIds().length > 1 && roomState.status === 'playing';
+    if (needsVote) {
+      startRoomVote(type, payload || {});
+      return;
+    }
+    applyRoomVoteAction(type, payload || {}, null).catch(function(e) {
+      App.Common.showToast('房間動作失敗：' + e.message, 'error');
+    });
+  }
+
+  function applyRoomVoteAction(type, payload, vote) {
+    payload = payload || {};
+    if (type === 'return_lobby') {
+      return endRoomRound(vote ? 'vote_return_lobby' : 'return_lobby', vote);
+    }
+    if (type === 'force_settle') {
+      return endRoomRound(vote ? 'vote_force_settle' : 'force_settle', vote);
+    }
+    if (type === 'restart_round') {
+      var gameId = payload.gameId || (roomState && (roomState.gameId || roomState.activeGameId)) || '';
+      var mode = payload.mode || (roomState && (roomState.mode || roomState.activeMode)) || 'room';
+      if (!gameId) return Promise.reject(new Error('沒有可重開的遊戲'));
+      if (vote && App.Signaling.clearVote) App.Signaling.clearVote(vote.voteId).catch(function() {});
+      return startRoomRound(gameId, mode);
+    }
+    if (type === 'change_game') {
+      return endRoomRound(vote ? 'vote_change_game' : 'change_game', vote).then(function() {
+        showGameSelect('room');
+      });
+    }
+    if (type === 'close_room') {
+      logRoomEvent('system', '房間已關閉', 'room_closed');
+      return App.Signaling.updateRoom({
+        status: 'closed',
+        closedAt: Date.now(),
+        vote: null
+      });
+    }
+    if (vote && App.Signaling.clearVote) return App.Signaling.clearVote(vote.voteId);
+    return Promise.resolve();
   }
 
   function toggleQueue() {
@@ -1564,6 +1618,7 @@ App.Lobby = (function() {
     sendGameChat: sendGameChat,
     toggleGameChat: toggleGameChat,
     startRoomVote: startRoomVote,
+    requestRoomAction: requestRoomAction,
     castRoomVote: castRoomVote,
     backFromGameSelect: backFromGameSelect,
     renderRoomLobby: renderRoomLobby,

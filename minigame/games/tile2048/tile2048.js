@@ -535,7 +535,7 @@
         actionsHtml: actions
       }) + '</div>';
       bindControls();
-      if (App.Lobby && App.Lobby.setTitle) App.Lobby.setTitle('2048 Race 結算');
+      if (App.Lobby && App.Lobby.setTitle) App.Lobby.setTitle('2048 結算');
       return;
     }
     container.innerHTML =

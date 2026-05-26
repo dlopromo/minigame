@@ -11,6 +11,7 @@
 - Chatroom: room-level standard feature, shared by lobby, game screen, and result screens.
 - Game action log: public actions are written to room chat; hidden state is not written.
 - Tests: `minigame/tests/run-tests.js` covers rules, room seating, stale member reclaim, registry contract, and chat contract.
+- UI shell: `css/redesign.css` is the final app-wide visual layer. It unifies Home, Party Room, game selection, result panels, card tables, action buttons, chat drawer, and office-friendly interaction states without changing game state schemas.
 
 ## Completed MVP Items
 
@@ -81,15 +82,28 @@
     - `sicBo` adds 大小 with `$1000` starting bankroll and `$50-$500` bets.
     - Both games support local play, Firebase Party Room play, spectators, room chat logs, room history, and room leaderboard deltas.
 
+14. UI/UX redesign pass
+    - `redesign.css` provides the current Office Party design system.
+    - Home, Party Room, Choose Game, result panel, Chat drawer, and all current game shells inherit the unified spacing, panel, button, and focus styles.
+    - Card games share the muted tabletop skin, lifted selected-card layer, enlarged central play area, and softer action highlighting.
+    - Repeated hand-entry animation was reduced for Big Dee, Dou Dizhu, and Blackjack to avoid full-screen flicker.
+    - Common helpers now exist in `App.Common`: `renderGameChrome`, `renderInfoDrawer`, `renderActionBar`, and `renderPlayerBadge`.
+
+15. Vote / confirm MVP
+    - Party Room dangerous in-game actions use the shared vote flow when more than one online human is present.
+    - Covered actions: return to room, restart round, change game, close room, and force-settle/interruption.
+    - Single-human or local flows still use direct action plus confirmation where relevant.
+
 ## Known Non-Blocking Gaps
 
 - Full Firebase multi-browser E2E still requires manual browser testing against a real Firebase project.
-- Admin hardening is still limited. A production build should use Firebase Auth/custom claims or a stronger deployment-level gate.
+- Admin inspection and repair tools exist, but production-grade hardening still depends on Firebase Auth/custom claims or a deployment-level gate.
 - Visual QA should be repeated in an actual browser for:
   - `402x874`
   - `402x740`
   - `820x1180`
   - `1440x900`
+- Current runtime note: when the Browser plugin reports no available browser session and no local Playwright/Chrome runtime is installed, visual QA is limited to HTTP/static smoke checks plus the manual checklist in `docs/VISUAL_QA_CHECKLIST.md`.
 - Replay and analytics are intentionally out of MVP scope.
 
 ## Verification Commands

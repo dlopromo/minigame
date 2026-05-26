@@ -62,6 +62,8 @@ App.Common = {
     document.querySelectorAll('.screen').forEach(function(s) { s.classList.remove('active'); });
     var el = document.getElementById('screen-' + id);
     if (el) el.classList.add('active');
+    document.body.setAttribute('data-screen', id);
+    if (id === 'home' && !this.focusModeActive) document.title = 'MiniGame';
   },
 
   escapeHtml: function(value) {
@@ -86,6 +88,60 @@ App.Common = {
     var icon = this.getPlayerIcon(person.playerIcon);
     return '<span class="room-avatar ' + (extraClass || '') + '" style="--player-color:' + color.value + '" title="' +
       this.escapeHtml(icon.name + ' / ' + color.name) + '">' + this.escapeHtml(icon.value) + '</span>';
+  },
+
+  renderPlayerBadge: function(person, extraClass) {
+    person = person || {};
+    var color = this.getPlayerColor(person.playerColor);
+    var name = person.name || person.displayName || '玩家';
+    return '<span class="app-player-badge ' + (extraClass || '') + '" style="--player-color:' + color.value + '">' +
+      this.renderPlayerAvatar(person) +
+      '<span>' + this.escapeHtml(name) + '</span>' +
+    '</span>';
+  },
+
+  renderGameChrome: function(options) {
+    options = options || {};
+    var titleClass = options.myTurn ? ' my-turn' : '';
+    var chatButton = options.roomMode
+      ? '<button class="app-icon-btn game-chat-trigger" type="button" onclick="App.Lobby.toggleGameChat()" aria-label="Chat"><i class="fa-regular fa-comments" aria-hidden="true"></i><span class="chat-badge game-chat-unread"></span></button>'
+      : '';
+    var infoButton = options.infoId
+      ? '<button class="app-icon-btn" type="button" onclick="document.getElementById(\'' + this.escapeHtml(options.infoId) + '\')?.classList.toggle(\'open\')" aria-label="資訊"><i class="fa-solid fa-circle-info" aria-hidden="true"></i></button>'
+      : '';
+    return '<div class="app-game-topbar">' +
+      '<div class="app-game-title' + titleClass + '">' + this.escapeHtml(options.title || 'MiniGame') + '</div>' +
+      '<div class="app-game-tools">' + (options.toolsHtml || '') + chatButton + infoButton +
+        '<button class="app-icon-btn" type="button" onclick="App.GameManager.endGame()" aria-label="離開遊戲"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button>' +
+      '</div>' +
+    '</div>';
+  },
+
+  renderInfoDrawer: function(options) {
+    options = options || {};
+    var sections = (options.sections || []).map(function(section) {
+      return '<section class="app-info-section">' +
+        '<h3>' + App.Common.escapeHtml(section.title || '') + '</h3>' +
+        '<div>' + (section.html || '') + '</div>' +
+      '</section>';
+    }).join('');
+    return '<aside class="app-info-drawer" id="' + this.escapeHtml(options.id || 'game-info-drawer') + '">' +
+      '<div class="app-info-head"><strong>' + this.escapeHtml(options.title || '資訊') + '</strong>' +
+        '<button class="app-icon-btn" type="button" onclick="this.closest(\'.app-info-drawer\').classList.remove(\'open\')" aria-label="關閉"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button></div>' +
+      '<div class="app-info-body">' + sections + '</div>' +
+    '</aside>';
+  },
+
+  renderActionBar: function(actions) {
+    return '<div class="app-action-bar">' + (actions || []).map(function(action) {
+      var cls = action.primary ? ' primary' : action.warn ? ' warn' : '';
+      return '<button class="app-action-btn' + cls + '" type="button" ' +
+        (action.id ? 'id="' + App.Common.escapeHtml(action.id) + '" ' : '') +
+        (action.disabled ? 'disabled ' : '') +
+        (action.onClick ? 'onclick="' + App.Common.escapeHtml(action.onClick) + '" ' : '') +
+        '>' + (action.icon ? '<i class="' + App.Common.escapeHtml(action.icon) + '" aria-hidden="true"></i>' : '') +
+        '<span>' + App.Common.escapeHtml(action.label || '') + '</span></button>';
+    }).join('') + '</div>';
   },
 
   renderResultPanel: function(options) {
