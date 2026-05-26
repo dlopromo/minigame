@@ -53,9 +53,33 @@ GitHub Pages deploys should set one repository secret:
 FIREBASE_CONFIG_JSON
 ```
 
+The value should be the Firebase Web App config JSON, for example:
+
+```json
+{
+  "apiKey": "YOUR_API_KEY",
+  "authDomain": "YOUR_PROJECT.firebaseapp.com",
+  "databaseURL": "https://YOUR_PROJECT-default-rtdb.asia-southeast1.firebasedatabase.app",
+  "projectId": "YOUR_PROJECT",
+  "storageBucket": "YOUR_PROJECT.firebasestorage.app",
+  "messagingSenderId": "YOUR_SENDER_ID",
+  "appId": "YOUR_APP_ID"
+}
+```
+
 The Pages workflow writes that secret into `minigame/js/firebaseConfig.generated.js`
 at deploy time. The committed `minigame/js/firebaseConfig.js` is a safe empty
 stub, which avoids GitHub secret scanning blocking the repo.
+
+If the app still says Firebase is not configured after deployment, check:
+
+- GitHub Pages source should be **GitHub Actions**, not direct branch deploy.
+- The latest `Deploy GitHub Pages` workflow run must be successful.
+- `FIREBASE_CONFIG_JSON` must be available as a repository secret, or as a
+  `github-pages` environment secret if your environment requires it.
+- The deployed site should load `minigame/js/firebaseConfig.generated.js`; a
+  404 for that file means the workflow did not generate or publish the runtime
+  config.
 
 Required Firebase services:
 

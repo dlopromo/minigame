@@ -22,7 +22,7 @@ App.Signaling = (function() {
 
   function initFirebase() {
     if (!isConfigured()) {
-      return Promise.reject(new Error('Firebase 尚未設定，請先填寫 js/firebaseConfig.js'));
+      return Promise.reject(new Error('Firebase 尚未設定，請設定 FIREBASE_CONFIG_JSON secret 或本機 firebaseConfig.local.js'));
     }
     if (!app) {
       app = firebase.apps && firebase.apps.length ? firebase.app() : firebase.initializeApp(App.FirebaseConfig);

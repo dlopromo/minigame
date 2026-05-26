@@ -28,11 +28,19 @@ jobs:
         env:
           FIREBASE_CONFIG_JSON: ${{ secrets.FIREBASE_CONFIG_JSON }}
         run: |
-          test -n "$FIREBASE_CONFIG_JSON"
+          if [ -z "$FIREBASE_CONFIG_JSON" ]; then
+            echo "::error title=Missing FIREBASE_CONFIG_JSON secret::Add a repository or github-pages environment secret named FIREBASE_CONFIG_JSON. It must contain the Firebase web config JSON with apiKey, authDomain, projectId, appId, and databaseURL."
+            exit 1
+          fi
           node - <<'NODE'
           const fs = require('fs');
           const raw = process.env.FIREBASE_CONFIG_JSON || '';
-          const config = JSON.parse(raw);
+          let config;
+          try {
+            config = JSON.parse(raw);
+          } catch (error) {
+            throw new Error(`FIREBASE_CONFIG_JSON must be valid JSON: ${error.message}`);
+          }
           const required = ['apiKey','authDomain','projectId','appId','databaseURL'];
           for (const key of required) {
             if (!config[key]) throw new Error(`Missing Firebase config key: ${key}`);

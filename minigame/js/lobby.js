@@ -163,7 +163,7 @@ App.Lobby = (function() {
       note.className = 'room-config-note' + (!App.Signaling.isConfigured() ? ' error' : '');
       note.textContent = App.Signaling.isConfigured()
         ? 'Firebase 已設定，可使用短碼房間。'
-        : 'Firebase 尚未設定：請先填寫 js/firebaseConfig.js。';
+        : 'Firebase 尚未設定：GitHub Pages 請設定 FIREBASE_CONFIG_JSON secret；本機開發請建立 js/firebaseConfig.local.js。';
     }
     showScreen('room-connect');
   }
@@ -937,7 +937,7 @@ App.Lobby = (function() {
     playerName = requireUsername(input ? input.value : '');
     if (!playerName) return;
     if (!App.Signaling.isConfigured()) {
-      App.Common.showToast('Firebase 尚未設定，請先填寫 js/firebaseConfig.js', 'error');
+      App.Common.showToast('Firebase 尚未設定，請設定 FIREBASE_CONFIG_JSON secret 或本機 firebaseConfig.local.js', 'error');
       return;
     }
     try {
@@ -970,7 +970,7 @@ App.Lobby = (function() {
       return;
     }
     if (!App.Signaling.isConfigured()) {
-      App.Common.showToast('Firebase 尚未設定，請先填寫 js/firebaseConfig.js', 'error');
+      App.Common.showToast('Firebase 尚未設定，請設定 FIREBASE_CONFIG_JSON secret 或本機 firebaseConfig.local.js', 'error');
       return;
     }
     try {
