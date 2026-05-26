@@ -76,9 +76,11 @@ App.GameManager = (function() {
       activeGame.destroy();
     }
     activeGame = null;
-    if (onGameEnd) {
+    if (onGameEnd && !options.noCallback) {
       if (App.Common) App.Common.suppressNextDangerConfirm = true;
       onGameEnd();
+      onGameEnd = null;
+    } else if (options.noCallback) {
       onGameEnd = null;
     }
     return true;

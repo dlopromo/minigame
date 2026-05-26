@@ -481,6 +481,7 @@ App.Lobby = (function() {
 
   function renderRoomLobby() {
     if (!roomState) return;
+    setTitle('房間 ' + (roomState.code || App.Signaling.getRoomCode() || ''));
     roomRole = getSelfRole();
     var codeLabel = document.getElementById('room-code-label');
     if (codeLabel) codeLabel.textContent = roomState.code || App.Signaling.getRoomCode() || '----';
@@ -880,7 +881,7 @@ App.Lobby = (function() {
     var becameHost = refreshHostFlag(state);
     maybeResolveVote(state);
     maybeApplyResolvedVote(state);
-    if (gameActive && state.status !== 'playing') {
+    if (gameActive && (state.status === 'lobby' || state.status === 'closed')) {
       App.GameManager.endGame();
       return;
     }
@@ -1135,6 +1136,73 @@ App.Lobby = (function() {
     };
   }
 
+  function startRoomRound(gameId, mode) {
+    if (playContext !== 'room' || !isHost || !roomState || !gameId) return Promise.resolve(false);
+    var game = App.GameManager.getGame(gameId);
+    var roomStart = null;
+    return App.Signaling.updateRoom({ status: 'starting' }).then(function() {
+      return rebalanceRoomForGame(gameId);
+    }).then(function(seating) {
+      roomStart = buildRoomStart(gameId, mode || 'room', seating);
+      return App.Signaling.updateRoom({
+        status: 'playing',
+        gameId: gameId,
+        mode: mode || 'room',
+        activeGameId: gameId,
+        activeMode: mode || 'room',
+        roundId: roomStart.roundId,
+        gameStart: roomStart,
+        currentRound: {
+          gameId: gameId,
+          mode: mode || 'room',
+          roundId: roomStart.roundId,
+          players: seating.players,
+          spectators: seating.spectators,
+          waitingQueue: seating.waitingQueue || [],
+          startedAt: Date.now()
+        },
+        gameState: null,
+        gameActions: null
+      });
+    }).then(function() {
+      var gameName = game && game.name ? game.name : gameId;
+      logRoomEvent('system', '新一局開始：' + gameName + '（' + (mode || 'room') + '）', 'game_start');
+      var payload = makeGameStartPayload(roomStart);
+      if (gameActive) App.GameManager.endGame({ skipConfirm: true, noCallback: true });
+      launchRoomGame(gameId, mode || 'room', payload);
+      return true;
+    }).catch(function(e) {
+      App.Common.showToast('開始新一局失敗：' + e.message, 'error');
+      return App.Signaling.updateRoom({ status: 'lobby' }).then(function() { return false; });
+    });
+  }
+
+  function restartRoomGame() {
+    if (!roomState) return;
+    if (!isHost) {
+      App.Common.showToast('只有房主可以直接開新一局', 'error');
+      return;
+    }
+    var start = roomState.gameStart || {};
+    var gameId = start.gameId || roomState.gameId || roomState.activeGameId;
+    var mode = start.mode || roomState.mode || roomState.activeMode || 'room';
+    startRoomRound(gameId, mode);
+  }
+
+  function roomResultActionsHtml() {
+    if (playContext !== 'room' || !roomState) return '';
+    return '<button class="result-action secondary" type="button" onclick="App.Lobby.returnToRoomLobby()"><i class="fa-solid fa-arrow-left" aria-hidden="true"></i><span>返回房間</span></button>' +
+      '<button class="result-action" type="button" onclick="App.Lobby.restartRoomGame()" ' + (isHost ? '' : 'disabled') + '><i class="fa-solid fa-rotate-right" aria-hidden="true"></i><span>' + (isHost ? '開新一局' : '等待房主') + '</span></button>';
+  }
+
+  function returnToRoomLobby() {
+    if (gameActive) App.GameManager.endGame({ skipConfirm: true, noCallback: true });
+    gameActive = false;
+    setGlobalGameChatVisible(false);
+    setTitle('房間 ' + (roomState && roomState.code || App.Signaling.getRoomCode() || ''));
+    renderRoomLobby();
+  }
+
   function selectMultiplayerMode(mode) {
     if (!selectedGameId) return;
     if (playContext === 'room') {
@@ -1146,40 +1214,7 @@ App.Lobby = (function() {
         App.Common.showToast('這個玩法需要至少 ' + minRoomPlayers + ' 位玩家加入隊列', 'error');
         return;
       }
-      var roomStart = null;
-      App.Signaling.updateRoom({ status: 'starting' }).then(function() {
-        return rebalanceRoomForGame(selectedGameId);
-      }).then(function(seating) {
-        roomStart = buildRoomStart(selectedGameId, mode, seating);
-        return App.Signaling.updateRoom({
-          status: 'playing',
-          gameId: selectedGameId,
-          mode: mode,
-          activeGameId: selectedGameId,
-          activeMode: mode,
-          roundId: roomStart.roundId,
-          gameStart: roomStart,
-          currentRound: {
-            gameId: selectedGameId,
-            mode: mode,
-            roundId: roomStart.roundId,
-            players: seating.players,
-            spectators: seating.spectators,
-            waitingQueue: seating.waitingQueue || [],
-            startedAt: Date.now()
-          },
-          gameState: null,
-          gameActions: null
-        });
-      }).then(function() {
-        var gameName = game && game.name ? game.name : selectedGameId;
-        logRoomEvent('system', '遊戲開始：' + gameName + '（' + mode + '）', 'game_start');
-        var payload = makeGameStartPayload(roomStart);
-        if (!gameActive) launchRoomGame(selectedGameId, mode, payload);
-      }).catch(function(e) {
-        App.Common.showToast('開始遊戲失敗：' + e.message, 'error');
-        App.Signaling.updateRoom({ status: 'lobby' });
-      });
+      startRoomRound(selectedGameId, mode);
       return;
     }
   }
@@ -1264,6 +1299,11 @@ App.Lobby = (function() {
       setGlobalGameChatVisible(false);
       if (playContext === 'room') {
         if (isHost) {
+          var activeState = roomState && roomState.gameState && roomState.gameState.state;
+          if (activeState && activeState.status === 'settled') {
+            renderRoomLobby();
+            return;
+          }
           var updates = {
             status: 'lobby',
             gameId: '',
@@ -1281,6 +1321,7 @@ App.Lobby = (function() {
           });
           App.Signaling.updateRoom(updates);
         }
+        setTitle('房間 ' + (roomState && roomState.code || App.Signaling.getRoomCode() || ''));
         renderRoomLobby();
       } else {
         goHome();
@@ -1526,6 +1567,9 @@ App.Lobby = (function() {
     castRoomVote: castRoomVote,
     backFromGameSelect: backFromGameSelect,
     renderRoomLobby: renderRoomLobby,
+    restartRoomGame: restartRoomGame,
+    returnToRoomLobby: returnToRoomLobby,
+    roomResultActionsHtml: roomResultActionsHtml,
     goHome: goHome,
     sendRoomGameAction: sendRoomGameAction,
     logRoomEvent: logRoomEvent,

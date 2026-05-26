@@ -7,6 +7,7 @@
   var state = null;
   var aiTimer = null;
   var suggestedAction = '';
+  var lastAppliedStateKey = '';
   var PHASES = {
     DEALING: 'DEALING',
     PLAYER_TURN: 'PLAYER_TURN',
@@ -172,6 +173,18 @@
   function applyState(snapshot) {
     if (!snapshot || !snapshot.state) return;
     if (opts && opts.roundId && snapshot.roundId && snapshot.roundId !== opts.roundId) return;
+    var key = [snapshot.roundId || '', snapshot.updatedAt || '', JSON.stringify(snapshot.state && {
+      phase: snapshot.state.phase,
+      status: snapshot.state.status,
+      currentIndex: snapshot.state.currentIndex,
+      deck: snapshot.state.deck && snapshot.state.deck.length,
+      players: (snapshot.state.players || []).map(function(player) {
+        return [player.id, player.status, player.outcome, player.hand && player.hand.length, handValue(player.hand)].join(':');
+      }).join('|'),
+      dealer: snapshot.state.dealer && snapshot.state.dealer.hand && snapshot.state.dealer.hand.length
+    })].join('|');
+    if (key === lastAppliedStateKey) return;
+    lastAppliedStateKey = key;
     state = clone(snapshot.state);
     suggestedAction = '';
     normalizeState();
@@ -524,8 +537,10 @@
       var isSettled = state.status === 'settled';
       var hintHtml = escapeHtml(isSettled ? resultHint() : canAct ? handValue(player.hand) + ' 點，請選擇操作' : latestHint());
       if (isSettled) {
-        var actions = '<button class="bj-btn secondary" id="bj-back"><i class="fa-solid fa-arrow-left" aria-hidden="true"></i><span>返回</span></button>' +
-          '<button class="bj-btn" id="bj-new-round"' + (canStartNewRound() ? '' : ' disabled') + '><i class="fa-solid fa-rotate-right" aria-hidden="true"></i><span>' + (isRoomMode() && !opts.isHost ? '等待房主' : '再來一局') + '</span></button>';
+        var actions = isRoomMode()
+          ? ''
+          : '<button class="bj-btn secondary" id="bj-back"><i class="fa-solid fa-arrow-left" aria-hidden="true"></i><span>返回</span></button>' +
+            '<button class="bj-btn" id="bj-new-round"' + (canStartNewRound() ? '' : ' disabled') + '><i class="fa-solid fa-rotate-right" aria-hidden="true"></i><span>再來一局</span></button>';
         container.textContent = '';
         container.insertAdjacentHTML('beforeend',
           '<div class="bj-shell">' + App.Common.renderResultPanel({
@@ -720,6 +735,7 @@
       opts = null;
       state = null;
       suggestedAction = '';
+      lastAppliedStateKey = '';
     }
   });
 })();

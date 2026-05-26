@@ -1,2 +1,4 @@
 .DS_Store
 **/.DS_Store
+minigame/js/firebaseConfig.local.js
+minigame/js/firebaseConfig.generated.js

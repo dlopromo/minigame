@@ -84,6 +84,18 @@
     return COLORS.slice().sort(function(a, b) { return counts[b] - counts[a]; })[0] || 'red';
   }
 
+  function cardSortValue(card) {
+    var colorOrder = { red: 0, blue: 1, green: 2, yellow: 3, wild: 4 };
+    var typeOrder = { num: 0, skip: 10, reverse: 11, draw2: 12, wild: 13, wild4: 14 };
+    return (colorOrder[card.color] || 0) * 100 + (typeOrder[card.type] || 0) + (card.type === 'num' ? Number(card.value || 0) : 0);
+  }
+
+  function sortHand(hand) {
+    return (hand || []).sort(function(a, b) {
+      return cardSortValue(a) - cardSortValue(b) || String(a.id).localeCompare(String(b.id));
+    });
+  }
+
   function makePlayers(seats) {
     return (seats && seats.length ? seats : [
       { id: 'human', name: opts && opts.playerName || '你' },
@@ -101,6 +113,7 @@
     var deck = makeDeck();
     players.forEach(function(player) {
       for (var i = 0; i < 7; i++) player.hand.push(deck.pop());
+      sortHand(player.hand);
     });
     var first = deck.pop();
     while (first.color === 'wild') {
@@ -221,6 +234,7 @@
       var target = state.players[nextIndex(state.currentIndex, 1)];
       var count = card.type === 'draw2' ? 2 : 4;
       for (var i = 0; i < count; i++) target.hand.push(drawCard());
+      sortHand(target.hand);
       record(target.name, '抽 ' + count + ' 張');
       skip = 2;
     }
@@ -259,6 +273,7 @@
     var player = activePlayer();
     if (!player || player.id !== playerId) return;
     player.hand.push(drawCard());
+    sortHand(player.hand);
     suggestedCardId = '';
     record(player.name, '抽 1 張');
     advance(1);
@@ -489,7 +504,7 @@
         '<div class="cs-actions">' + (isRoomMode() ? '<button class="cs-icon game-chat-trigger" onclick="App.Lobby.toggleGameChat()" aria-label="Chat"><i class="fa-regular fa-comments" aria-hidden="true"></i><span class="chat-badge game-chat-unread"></span></button>' : '') + '<button class="cs-icon" onclick="App.GameManager.endGame()" aria-label="離開遊戲"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button></div></div>' +
         '<section class="cs-opponents">' + opponents.map(renderOpponent).join('') + '</section>' +
         '<section class="cs-table"><div class="cs-pile">' + renderCard(topCard(), false) + '</div><div class="cs-color ' + state.activeColor + '">' + COLOR_NAMES[state.activeColor] + '</div></section>' +
-        '<section class="cs-hand">' + (self ? self.hand.map(function(card) { return renderCard(card, canAct && canPlay(card, top, state.activeColor)); }).join('') : '<p>觀戰中</p>') + '</section>' +
+        '<section class="cs-hand">' + (self ? sortHand(self.hand).map(function(card) { return renderCard(card, canAct && canPlay(card, top, state.activeColor)); }).join('') : '<p>觀戰中</p>') + '</section>' +
         '<div class="cs-controls"><div class="cs-hint">' + escapeHtml(state.history[state.history.length - 1].name + '：' + state.history[state.history.length - 1].text) + '</div>' + colorPicker +
           '<button class="cs-btn secondary" id="cs-suggest"' + (canAct ? '' : ' disabled') + '><i class="fa-regular fa-lightbulb" aria-hidden="true"></i><span>推薦</span></button>' +
           '<button class="cs-btn secondary" id="cs-draw"' + (canAct ? '' : ' disabled') + '><i class="fa-solid fa-hand" aria-hidden="true"></i><span>抽牌</span></button>' +

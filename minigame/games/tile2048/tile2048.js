@@ -149,6 +149,22 @@
     };
   }
 
+  function makeBoardState(seed) {
+    return {
+      board: initialBoard(seed),
+      score: 0,
+      moves: 0,
+      maxTile: 2,
+      undoStack: [],
+      lastMove: '',
+      lastGain: 0,
+      lastSpawn: null,
+      lastMerged: [],
+      status: 'playing',
+      finishedAt: 0
+    };
+  }
+
   function buildInitialState(seats, seed) {
     var baseSeed = seed || Date.now();
     var players = (seats && seats.length ? seats : [{ id: 'human', name: opts && opts.playerName || '你' }]).slice(0, 8).map(function(seat) {
@@ -157,10 +173,12 @@
     return {
       seed: baseSeed,
       players: players,
+      currentIndex: 0,
+      shared: makeBoardState(baseSeed),
       status: 'playing',
       winnerId: '',
       resultSaved: false,
-      history: [{ name: '系統', text: '2048 Race 開始' }],
+      history: [{ name: '系統', text: '2048 開始' }],
       startedAt: Date.now(),
       finishedAt: 0
     };
@@ -210,6 +228,15 @@
       player.lastMerged = Array.isArray(player.lastMerged) ? player.lastMerged : [];
       player.status = player.status || 'playing';
     });
+    state.currentIndex = Number(state.currentIndex || 0);
+    if (!state.shared) state.shared = makeBoardState(state.seed || Date.now());
+    state.shared.undoStack = Array.isArray(state.shared.undoStack) ? state.shared.undoStack : [];
+    state.shared.maxTile = state.shared.maxTile || maxTile(state.shared.board || emptyBoard());
+    state.shared.lastMove = state.shared.lastMove || '';
+    state.shared.lastGain = state.shared.lastGain || 0;
+    state.shared.lastSpawn = state.shared.lastSpawn || null;
+    state.shared.lastMerged = Array.isArray(state.shared.lastMerged) ? state.shared.lastMerged : [];
+    state.shared.status = state.shared.status || 'playing';
   }
 
   function publishState() {
@@ -251,20 +278,32 @@
     App.Lobby.logRoomEvent('game', name + '：' + text, 'game_action');
   }
 
-  function settleIfNeeded(player) {
-    if (!canMove(player.board)) {
-      player.status = 'gameover';
-      player.finishedAt = Date.now();
-      record(player.name, '無法再移動');
+  function activeRoomPlayer() {
+    if (!state || !state.players || !state.players.length) return null;
+    return state.players[state.currentIndex % state.players.length] || null;
+  }
+
+  function nextRoomTurn() {
+    if (!state || !state.players || !state.players.length) return;
+    state.currentIndex = (state.currentIndex + 1) % state.players.length;
+  }
+
+  function settleIfNeeded(player, boardState) {
+    var target = boardState || player;
+    if (!canMove(target.board)) {
+      target.status = 'gameover';
+      target.finishedAt = Date.now();
+      record(player && player.name ? player.name : '系統', '無法再移動');
     }
-    if (state.players.every(function(p) { return p.status !== 'playing'; })) {
-      var winner = state.players.slice().sort(function(a, b) {
+    var allDone = isRoomMode() ? state.shared.status !== 'playing' : state.players.every(function(p) { return p.status !== 'playing'; });
+    if (allDone) {
+      var winner = isRoomMode() ? activeRoomPlayer() : state.players.slice().sort(function(a, b) {
         return b.maxTile - a.maxTile || b.score - a.score || a.finishedAt - b.finishedAt;
       })[0];
       state.status = 'settled';
       state.winnerId = winner ? winner.id : '';
       state.finishedAt = Date.now();
-      record('系統', '全部完成，最高分者勝');
+      record('系統', isRoomMode() ? '合作盤完成' : '全部完成，最高分者勝');
       saveRoomResult();
       if (!isRoomMode()) clearLocalProgress();
     }
@@ -282,43 +321,72 @@
     if (state.status !== 'playing') return;
     var player = state.players.filter(function(item) { return item.id === playerId; })[0];
     if (!player || player.status !== 'playing') return;
-    var result = moveBoard(player.board, dir);
+    if (isRoomMode() && (!activeRoomPlayer() || activeRoomPlayer().id !== player.id)) return;
+    var boardState = isRoomMode() ? state.shared : player;
+    var result = moveBoard(boardState.board, dir);
     if (!result.moved) return;
-    player.undoStack.push({
-      board: clone(player.board),
-      score: player.score,
-      moves: player.moves,
-      maxTile: player.maxTile,
-      lastSpawn: player.lastSpawn,
-      lastMerged: player.lastMerged
+    boardState.undoStack.push({
+      board: clone(boardState.board),
+      score: boardState.score,
+      moves: boardState.moves,
+      maxTile: boardState.maxTile,
+      lastSpawn: boardState.lastSpawn,
+      lastMerged: boardState.lastMerged,
+      currentIndex: state.currentIndex
     });
-    if (player.undoStack.length > 50) player.undoStack = player.undoStack.slice(player.undoStack.length - 50);
-    player.board = result.board;
-    player.score += result.score;
-    player.moves += 1;
-    player.lastMove = dir;
-    player.lastGain = result.score;
-    player.lastMerged = result.merges || [];
-    var rng = lcg((state.seed || 1) + player.moves * 7919 + player.id.length * 17 + player.score);
-    player.lastSpawn = addTile(player.board, rng);
-    player.maxTile = maxTile(player.board);
-    settleIfNeeded(player);
+    if (boardState.undoStack.length > 50) boardState.undoStack = boardState.undoStack.slice(boardState.undoStack.length - 50);
+    boardState.board = result.board;
+    boardState.score += result.score;
+    boardState.moves += 1;
+    boardState.lastMove = dir;
+    boardState.lastGain = result.score;
+    boardState.lastMerged = result.merges || [];
+    var rng = lcg((state.seed || 1) + boardState.moves * 7919 + player.id.length * 17 + boardState.score);
+    boardState.lastSpawn = addTile(boardState.board, rng);
+    boardState.maxTile = maxTile(boardState.board);
+    if (!isRoomMode()) {
+      player.board = boardState.board;
+      player.score = boardState.score;
+      player.moves = boardState.moves;
+      player.lastMove = boardState.lastMove;
+      player.lastGain = boardState.lastGain;
+      player.lastSpawn = boardState.lastSpawn;
+      player.lastMerged = boardState.lastMerged;
+      player.maxTile = boardState.maxTile;
+    } else {
+      record(player.name, '移動 ' + ({ up: '上', down: '下', left: '左', right: '右' }[dir] || dir) + (result.score ? ' +' + result.score : ''));
+      nextRoomTurn();
+    }
+    settleIfNeeded(player, boardState);
     commit();
   }
 
   function undo(playerId) {
     if (state.status !== 'playing') return;
     var player = state.players.filter(function(item) { return item.id === playerId; })[0];
-    if (!player || player.status !== 'playing' || !player.undoStack || !player.undoStack.length) return;
-    var previous = player.undoStack.pop();
-    player.board = previous.board;
-    player.score = previous.score;
-    player.moves = previous.moves;
-    player.maxTile = previous.maxTile;
-    player.lastSpawn = previous.lastSpawn || null;
-    player.lastMerged = previous.lastMerged || [];
-    player.lastMove = 'undo';
-    player.lastGain = 0;
+    var boardState = isRoomMode() ? state.shared : player;
+    if (!player || player.status !== 'playing' || !boardState.undoStack || !boardState.undoStack.length) return;
+    if (isRoomMode() && (!activeRoomPlayer() || activeRoomPlayer().id !== player.id)) return;
+    var previous = boardState.undoStack.pop();
+    boardState.board = previous.board;
+    boardState.score = previous.score;
+    boardState.moves = previous.moves;
+    boardState.maxTile = previous.maxTile;
+    boardState.lastSpawn = previous.lastSpawn || null;
+    boardState.lastMerged = previous.lastMerged || [];
+    boardState.lastMove = 'undo';
+    boardState.lastGain = 0;
+    if (isRoomMode()) state.currentIndex = Number(previous.currentIndex || state.currentIndex || 0);
+    else {
+      player.board = boardState.board;
+      player.score = boardState.score;
+      player.moves = boardState.moves;
+      player.maxTile = boardState.maxTile;
+      player.lastSpawn = boardState.lastSpawn;
+      player.lastMerged = boardState.lastMerged;
+      player.lastMove = boardState.lastMove;
+      player.lastGain = boardState.lastGain;
+    }
     record(player.name, 'Reverse 返回上一手');
     commit();
   }
@@ -330,7 +398,8 @@
 
   function canControlSelf() {
     var player = selfPlayer();
-    return !!player && !isSpectator() && player.status === 'playing' && state.status === 'playing';
+    if (!player || isSpectator() || player.status !== 'playing' || state.status !== 'playing') return false;
+    return !isRoomMode() || (activeRoomPlayer() && activeRoomPlayer().id === player.id);
   }
 
   function sendRoomAction(dir) {
@@ -381,15 +450,15 @@
         gameId: 'tile2048',
         mode: opts.mode || 'room',
         roundId: opts.roundId || '',
-        summary: '2048 Race 完成',
+        summary: isRoomMode() ? '2048 合作完成' : '2048 完成',
         results: state.players.map(function(player) {
-          return { id: player.id, name: player.name, score: player.score, maxTile: player.maxTile, moves: player.moves };
+          return { id: player.id, name: player.name, score: isRoomMode() ? state.shared.score : player.score, maxTile: isRoomMode() ? state.shared.maxTile : player.maxTile, moves: isRoomMode() ? state.shared.moves : player.moves };
         })
       });
     }
     if (App.Signaling.addLeaderboardResults) {
       App.Signaling.addLeaderboardResults(state.players.map(function(player) {
-        return { id: player.id, name: player.name, playerColor: player.playerColor || '', playerIcon: player.playerIcon || '', score: player.score, win: player.id === state.winnerId };
+        return { id: player.id, name: player.name, playerColor: player.playerColor || '', playerIcon: player.playerIcon || '', score: isRoomMode() ? state.shared.score : player.score, win: isRoomMode() ? true : player.id === state.winnerId };
       }));
     }
   }
@@ -427,10 +496,11 @@
 
   function renderPlayer(player) {
     var isSelf = selfPlayer() && selfPlayer().id === player.id;
-    return '<article class="t2048-player' + (isSelf ? ' self' : '') + '">' +
+    var active = isRoomMode() && activeRoomPlayer() && activeRoomPlayer().id === player.id;
+    return '<article class="t2048-player' + (isSelf ? ' self' : '') + (active ? ' active' : '') + '">' +
       '<div class="t2048-head"><strong>' + escapeHtml(player.name) + '</strong><span>' + player.score + ' 分 · ' + player.maxTile + '</span></div>' +
-      renderBoard(player) +
-      '<div class="t2048-meta">' + (player.status === 'playing' ? player.moves + ' moves' + (player.lastGain ? ' · +' + player.lastGain : '') : '完成') + '</div>' +
+      (isRoomMode() ? '<div class="t2048-meta">' + (active ? '輪到此玩家' : '等待') + '</div>' : renderBoard(player)) +
+      '<div class="t2048-meta">' + (isRoomMode() ? (player.ai ? 'AI' : '玩家') : player.status === 'playing' ? player.moves + ' moves' + (player.lastGain ? ' · +' + player.lastGain : '') : '完成') + '</div>' +
     '</article>';
   }
 
@@ -438,7 +508,8 @@
     if (!container || !state) return;
     var player = selfPlayer();
     var canAct = canControlSelf();
-    var canUndo = canAct && player && player.undoStack && player.undoStack.length;
+    var boardState = isRoomMode() ? state.shared : player;
+    var canUndo = canAct && boardState && boardState.undoStack && boardState.undoStack.length;
     if (state.status === 'settled') {
       var ranked = state.players.slice().sort(function(a, b) {
         return b.maxTile - a.maxTile || b.score - a.score || a.moves - b.moves;
@@ -446,16 +517,16 @@
       var actions = '<button class="t2048-btn ghost" id="t2048-back">返回</button>' +
         (!isRoomMode() ? '<button class="t2048-btn ghost" id="t2048-new">New</button>' : '');
       container.innerHTML = '<div class="t2048-shell">' + App.Common.renderResultPanel({
-        eyebrow: '2048 Race 結算',
+        eyebrow: isRoomMode() ? '2048 合作結算' : '2048 結算',
         title: winnerText(),
-        subtitle: '最高 tile、分數、步數共同排序',
+        subtitle: isRoomMode() ? '合作盤分數、最高 tile 與步數' : '最高 tile、分數、步數共同排序',
         rows: ranked.map(function(item, index) {
           return {
             rank: '#' + (index + 1),
             name: item.name,
             person: item,
-            primary: item.score + ' 分',
-            secondary: '最高 ' + item.maxTile + ' · ' + item.moves + ' moves'
+            primary: isRoomMode() ? state.shared.score + ' 分' : item.score + ' 分',
+            secondary: isRoomMode() ? '合作最高 ' + state.shared.maxTile + ' · ' + state.shared.moves + ' moves' : '最高 ' + item.maxTile + ' · ' + item.moves + ' moves'
           };
         }),
         history: state.history.slice().reverse().map(function(row) {
@@ -469,11 +540,13 @@
     }
     container.innerHTML =
       '<div class="t2048-shell">' +
-        '<div class="t2048-topbar"><div class="t2048-title' + (canAct ? ' my-turn' : '') + '">' + (state.status === 'settled' ? '2048 Race 結算' : canAct ? '你的 2048 Race' : '2048 Race 觀戰') + '</div>' +
+        '<div class="t2048-topbar"><div class="t2048-title' + (canAct ? ' my-turn' : '') + '">' + (state.status === 'settled' ? '2048 結算' : canAct ? (isRoomMode() ? '輪到你移動合作盤' : '你的 2048') : (isRoomMode() ? '2048 合作觀戰' : '2048')) + '</div>' +
         '<div class="t2048-actions">' + (isRoomMode() ? '<button class="t2048-icon game-chat-trigger" onclick="App.Lobby.toggleGameChat()" aria-label="Chat"><i class="fa-regular fa-comments" aria-hidden="true"></i><span class="chat-badge game-chat-unread"></span></button>' : '') + '<button class="t2048-icon" onclick="App.GameManager.endGame()" aria-label="離開遊戲"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button></div></div>' +
-        '<section class="t2048-grid">' + state.players.map(renderPlayer).join('') + '</section>' +
+        '<section class="t2048-grid">' + (isRoomMode()
+          ? '<article class="t2048-player t2048-shared-board"><div class="t2048-head"><strong>合作盤</strong><span>' + state.shared.score + ' 分 · ' + state.shared.maxTile + '</span></div>' + renderBoard(state.shared) + '<div class="t2048-meta">' + state.shared.moves + ' moves' + (state.shared.lastGain ? ' · +' + state.shared.lastGain : '') + '</div></article><div class="t2048-roster">' + state.players.map(renderPlayer).join('') + '</div>'
+          : state.players.map(renderPlayer).join('')) + '</section>' +
         '<div class="t2048-controls">' +
-          '<div class="t2048-hint">' + escapeHtml(state.status === 'settled' ? winnerText() : player ? player.score + ' 分 · 最高 ' + player.maxTile : '觀戰中') + '</div>' +
+          '<div class="t2048-hint">' + escapeHtml(state.status === 'settled' ? winnerText() : isRoomMode() ? '合作盤 ' + state.shared.score + ' 分 · 最高 ' + state.shared.maxTile + ' · ' + (activeRoomPlayer() ? activeRoomPlayer().name + ' 行動' : '') : player ? player.score + ' 分 · 最高 ' + player.maxTile : '觀戰中') + '</div>' +
           ['up','left','down','right'].map(function(dir) {
             var label = { up: '↑', left: '←', down: '↓', right: '→' }[dir];
             return '<button class="t2048-btn" data-dir="' + dir + '"' + (canAct ? '' : ' disabled') + '>' + label + '</button>';
@@ -483,12 +556,12 @@
         '</div>' +
       '</div>';
     bindControls();
-    if (App.Lobby && App.Lobby.setTitle) App.Lobby.setTitle(canAct ? '輪到你 - 2048' : '2048 Race');
+    if (App.Lobby && App.Lobby.setTitle) App.Lobby.setTitle(canAct ? '輪到你 - 2048' : (isRoomMode() ? '2048 合作' : '2048'));
   }
 
   function winnerText() {
     var winner = state.players.filter(function(player) { return player.id === state.winnerId; })[0];
-    return winner ? winner.name + ' 勝出 · ' + winner.score + ' 分' : '已完成';
+    return isRoomMode() ? '合作完成 · ' + state.shared.score + ' 分' : winner ? winner.name + ' 勝出 · ' + winner.score + ' 分' : '已完成';
   }
 
   function bindControls() {
@@ -545,9 +618,9 @@
 
   App.GameManager.register({
     id: 'tile2048',
-    name: '2048 Race',
+    name: '2048',
     icon: '2048',
-    description: '同局種子競速，鬥高分與最高 tile',
+    description: '單人無上限；房間模式合作輪流一步',
     supportsSingle: true,
     supportsMultiplayer: true,
     minPlayers: 1,

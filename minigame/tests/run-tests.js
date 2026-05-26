@@ -241,6 +241,34 @@ function testNineUpperRules() {
   assert.strictEqual(cycled.playedQuestionIds.length, 1);
 }
 
+function testBaccaratRules() {
+  const App = loadBrowserScripts(['games/baccarat/baccarat.js']);
+  const rules = App.BaccaratRules;
+  assert.strictEqual(rules.cardPoint({ rank: 'A' }), 1);
+  assert.strictEqual(rules.cardPoint({ rank: 'K' }), 0);
+  assert.strictEqual(rules.handPoint([{ rank: '9' }, { rank: '8' }]), 7);
+  const initial = rules.buildInitialState([
+    { id: 'p1', name: 'P1' },
+    { id: 'p2', name: 'P2' }
+  ]);
+  assert.strictEqual(initial.players.length, 2);
+  assert.strictEqual(initial.players[0].balance, 1000);
+  assert.strictEqual(initial.phase, 'betting');
+}
+
+function testSicBoRules() {
+  const App = loadBrowserScripts(['games/sicBo/sicBo.js']);
+  const rules = App.SicBoRules;
+  assert.strictEqual(rules.diceTotal([1, 2, 3]), 6);
+  assert.strictEqual(rules.isTriple([3, 3, 3]), true);
+  assert.strictEqual(rules.outcomeForDice([2, 3, 4]), 'small');
+  assert.strictEqual(rules.outcomeForDice([4, 5, 6]), 'big');
+  assert.strictEqual(rules.outcomeForDice([6, 6, 6]), 'triple');
+  const initial = rules.buildInitialState([{ id: 'p1', name: 'P1' }]);
+  assert.strictEqual(initial.players[0].balance, 1000);
+  assert.strictEqual(initial.phase, 'betting');
+}
+
 function testGameRegistryAndChatContract() {
   const gameFiles = [
     'games/guessColor/guessColor.js',
@@ -250,7 +278,9 @@ function testGameRegistryAndChatContract() {
     'games/tile2048/tile2048.js',
     'games/colorShift/colorShift.js',
     'games/snapStack/snapStack.js',
-    'games/nineUpper/nineUpper.js'
+    'games/nineUpper/nineUpper.js',
+    'games/baccarat/baccarat.js',
+    'games/sicBo/sicBo.js'
   ];
   const App = loadBrowserScripts(gameFiles);
   const games = Object.values(App.GameManager.games);
@@ -280,5 +310,7 @@ test2048Rules();
 testColorShiftRules();
 testSnapStackRules();
 testNineUpperRules();
+testBaccaratRules();
+testSicBoRules();
 testGameRegistryAndChatContract();
 console.log('All minigame MVP tests passed');

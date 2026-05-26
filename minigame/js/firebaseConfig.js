@@ -1,18 +1,15 @@
 var App = window.App || {};
 
-App.FirebaseConfig = {
-  // Fill these values from Firebase Console > Project settings > Web app.
-  // Keep this file small and public-safe; Firebase web config is not a secret.
-  apiKey: "AIzaSyANIbQT2Ws-Acxy1aasYFTvKQkWfAtEBG4",
-  authDomain: "dlopromo-minigame.firebaseapp.com",
-  projectId: "dlopromo-minigame",
-  storageBucket: "dlopromo-minigame.firebasestorage.app",
-  messagingSenderId: "734959647301",
-  appId: "1:734959647301:web:37cb7b9cb1fd52d9ae812c",
-  databaseURL: "https://dlopromo-minigame-default-rtdb.asia-southeast1.firebasedatabase.app/",
-  // Optional local admin page gate only. Do not rely on this as real security;
-  // protect admin writes with Firebase Auth/Database Rules before public use.
-  // adminPin: "change-me",
+App.FirebaseConfig = App.FirebaseConfig || {
+  // Runtime values are loaded from firebaseConfig.generated.js on GitHub Pages
+  // or firebaseConfig.local.js during local development.
+  apiKey: "",
+  authDomain: "",
+  projectId: "",
+  storageBucket: "",
+  messagingSenderId: "",
+  appId: "",
+  databaseURL: ""
 };
 
 window.App = App;

@@ -52,6 +52,7 @@
    - Local progress persists.
    - Reverse keeps up to 50 snapshots.
    - There is no max tile cap.
+   - Room mode uses one shared cooperative board and rotates one move per queued player.
    - Tile animation distinguishes movement, new tile spawn, and merge pulse.
 
 9. Color Shift / UNO-like flow
@@ -74,6 +75,11 @@
 
 12. Admin MVP
     - Admin page can inspect rooms, members, game state summary, history, leaderboard, and recent chat.
+
+13. Betting game MVP
+    - `baccarat` adds 百家樂 with `$1000` starting bankroll and `$100-$500` bets.
+    - `sicBo` adds 大小 with `$1000` starting bankroll and `$50-$500` bets.
+    - Both games support local play, Firebase Party Room play, spectators, room chat logs, room history, and room leaderboard deltas.
 
 ## Known Non-Blocking Gaps
 

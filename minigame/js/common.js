@@ -102,6 +102,8 @@ App.Common = {
     var history = (options.history || []).slice(0, 8).map(function(item) {
       return '<div class="game-result-history-row"><span>' + App.Common.escapeHtml(item.label || item.player || '') + '</span><span>' + App.Common.escapeHtml(item.text || '') + '</span></div>';
     }).join('');
+    var roomActions = App.Lobby && App.Lobby.roomResultActionsHtml ? App.Lobby.roomResultActionsHtml() : '';
+    var actionsHtml = (options.actionsHtml || '') + roomActions;
     return '<section class="game-result-panel">' +
       '<div class="game-result-hero">' +
         '<span>' + App.Common.escapeHtml(options.eyebrow || 'Result') + '</span>' +
@@ -110,7 +112,7 @@ App.Common = {
       '</div>' +
       '<div class="game-result-list">' + rows + '</div>' +
       (history ? '<div class="game-result-history">' + history + '</div>' : '') +
-      (options.actionsHtml ? '<div class="game-result-actions">' + options.actionsHtml + '</div>' : '') +
+      (actionsHtml ? '<div class="game-result-actions">' + actionsHtml + '</div>' : '') +
     '</section>';
   },
 

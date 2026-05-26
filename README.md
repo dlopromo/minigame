@@ -7,7 +7,7 @@ A lightweight GitHub Pages mini-game collection for quick office-break play with
 Open:
 
 ```text
-https://dlopromo.github.io/minigame/
+https://dlopromo.github.io/
 ```
 
 Current games:
@@ -20,6 +20,8 @@ Current games:
 - 轉色牌: an UNO-like color/number/action card MVP.
 - 冚棉胎: a casual snap/slap reaction card MVP.
 - 9Upper: a bluff-answer voting party MVP.
+- 百家樂: a player-vs-AI-banker betting MVP with $1000 starting balance and $100-$500 bets.
+- 大小: a player-vs-AI-dealer dice betting MVP with $1000 starting balance and $50-$500 bets.
 
 Current modes:
 
@@ -36,11 +38,24 @@ legal seats are filled by AI only when the game declares `aiFill: true`.
 
 Short-code rooms use Firebase Realtime Database plus Anonymous Auth.
 
-Required config lives in:
+Runtime config is intentionally not committed with real Firebase values. Local
+development can use:
 
 ```text
-minigame/js/firebaseConfig.js
+minigame/js/firebaseConfig.local.js
 ```
+
+Use `minigame/js/firebaseConfig.local.example.js` as the template.
+
+GitHub Pages deploys should set one repository secret:
+
+```text
+FIREBASE_CONFIG_JSON
+```
+
+The Pages workflow writes that secret into `minigame/js/firebaseConfig.generated.js`
+at deploy time. The committed `minigame/js/firebaseConfig.js` is a safe empty
+stub, which avoids GitHub secret scanning blocking the repo.
 
 Required Firebase services:
 
@@ -111,6 +126,9 @@ Then open:
 http://127.0.0.1:4174/minigame/index.html
 ```
 
+The repo root also contains `index.html` with a `<base href="minigame/">`, so
+GitHub Pages can serve the app from the project root.
+
 Useful checks:
 
 ```bash
@@ -124,6 +142,8 @@ node --check minigame/games/tile2048/tile2048.js
 node --check minigame/games/colorShift/colorShift.js
 node --check minigame/games/snapStack/snapStack.js
 node --check minigame/games/nineUpper/nineUpper.js
+node --check minigame/games/baccarat/baccarat.js
+node --check minigame/games/sicBo/sicBo.js
 ```
 
 ## Roadmap

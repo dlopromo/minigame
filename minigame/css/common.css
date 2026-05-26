@@ -140,6 +140,12 @@ h2{font-size:1.2rem;margin-bottom:12px}
 .game-result-history-row{display:grid;grid-template-columns:auto minmax(0,1fr);gap:8px;font-size:.72rem;color:#667085}
 .game-result-history-row span:last-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .game-result-actions{display:flex;gap:8px;justify-content:center;flex-wrap:wrap}
+.result-action{
+  border:0;border-radius:10px;padding:10px 13px;font-size:.86rem;font-weight:850;cursor:pointer;
+  background:#2f3a45;color:#fff;display:inline-flex;align-items:center;justify-content:center;gap:6px;
+}
+.result-action.secondary{background:#e8edf3;color:#344054}
+.result-action:disabled{opacity:.42;cursor:not-allowed}
 .spinner{
   display:inline-block;width:16px;height:16px;
   border:2px solid #ccc;border-top-color:#333;

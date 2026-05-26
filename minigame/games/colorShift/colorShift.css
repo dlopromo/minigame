@@ -13,7 +13,7 @@
 .cs-color.red{background:#fdecec;color:#a73535}.cs-color.blue{background:#eaf1fb;color:#285f9d}.cs-color.green{background:#e8f5ee;color:#17634a}.cs-color.yellow{background:#fff7d9;color:#8a6500}
 .cs-hand{display:flex;align-items:flex-end;gap:4px;overflow-x:hidden;overflow-y:visible;background:#fff;border:1px solid #dfe5ee;border-radius:14px;padding:20px 8px 8px;margin-top:-8px}
 .cs-card{width:52px;height:76px;border:1px solid #c8d3df;border-radius:10px;background:#fff;box-shadow:0 3px 9px rgba(31,41,51,.13);display:grid;grid-template-rows:auto 1fr;place-items:center;padding:5px 4px;font-weight:900;cursor:pointer;color:#1f2937;flex:0 0 auto;touch-action:manipulation;transition:transform .18s cubic-bezier(.2,.8,.2,1),box-shadow .18s ease,border-color .18s ease}
-.cs-card span{font-size:1rem;display:flex;align-items:center;justify-content:center;gap:3px}.cs-card b{font-size:.62rem}.cs-card.playable{transform:translateY(-16px) scale(1.03);border-color:#1f6fb2;box-shadow:0 14px 24px rgba(31,111,178,.3),0 0 0 4px rgba(31,111,178,.16)}
+.cs-card span{font-size:1rem;display:flex;align-items:center;justify-content:center;gap:3px}.cs-card b{font-size:.62rem}.cs-card.playable{border-color:#1f6fb2;box-shadow:0 3px 9px rgba(31,41,51,.13),0 0 0 3px rgba(31,111,178,.1)}
 .cs-card.suggested{transform:translateY(-25px) scale(1.08);border-color:#1f6fb2;background:#f7fbff;box-shadow:0 20px 34px rgba(31,111,178,.36),0 0 0 5px rgba(31,111,178,.18)}
 .cs-card:active{transform:translateY(-14px) scale(1.05);box-shadow:0 16px 28px rgba(31,41,51,.22)}
 .cs-card.playable:active{transform:translateY(-22px) scale(1.07)}
