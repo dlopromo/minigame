@@ -42,10 +42,10 @@ Runtime config is intentionally not committed with real Firebase values. Local
 development can use:
 
 ```text
-minigame/js/firebaseConfig.local.js
+js/firebaseConfig.local.js
 ```
 
-Use `minigame/js/firebaseConfig.local.example.js` as the template.
+Use `js/firebaseConfig.local.example.js` as the template.
 
 GitHub Pages deploys should set one repository secret:
 
@@ -67,8 +67,8 @@ The value should be the Firebase Web App config JSON, for example:
 }
 ```
 
-The Pages workflow writes that secret into `minigame/js/firebaseConfig.generated.js`
-at deploy time. The committed `minigame/js/firebaseConfig.js` is a safe empty
+The Pages workflow writes that secret into `js/firebaseConfig.generated.js`
+at deploy time. The committed `js/firebaseConfig.js` is a safe empty
 stub, which avoids GitHub secret scanning blocking the repo.
 
 If the app still says Firebase is not configured after deployment, check:
@@ -77,7 +77,7 @@ If the app still says Firebase is not configured after deployment, check:
 - The latest `Deploy GitHub Pages` workflow run must be successful.
 - `FIREBASE_CONFIG_JSON` must be available as a repository secret, or as a
   `github-pages` environment secret if your environment requires it.
-- The deployed site should load `minigame/js/firebaseConfig.generated.js`; a
+- The deployed site should load `js/firebaseConfig.generated.js`; a
   404 for that file means the workflow did not generate or publish the runtime
   config.
 
@@ -124,14 +124,14 @@ available.
 - Room lobby includes a compact Room Info panel for status, Firebase transport, host, round, queue, and fallback action count.
 - If a player disconnects mid-round, their seat is temporarily AI-controlled; the same browser can re-enter the room code and resume that seat.
 - If the host disconnects, the earliest joined online member can claim host authority through a Firebase transaction.
-- `minigame/admin.html` provides a lightweight room monitor for rooms, players, AI takeover, history, and leaderboard data.
+- `admin.html` provides a lightweight room monitor for rooms, players, AI takeover, history, and leaderboard data.
 
 See the detailed room contract in:
 
 ```text
-minigame/docs/ROOM_SPEC.md
-minigame/docs/PLATFORM_SPEC.md
-minigame/docs/CHATROOM_SPEC.md
+docs/ROOM_SPEC.md
+docs/PLATFORM_SPEC.md
+docs/CHATROOM_SPEC.md
 ```
 
 ## Development
@@ -147,27 +147,28 @@ python3 -m http.server 4174
 Then open:
 
 ```text
-http://127.0.0.1:4174/minigame/index.html
+http://127.0.0.1:4174/index.html
 ```
 
-The repo root also contains `index.html` with a `<base href="minigame/">`, so
-GitHub Pages can serve the app from the project root.
+The app now lives directly at the repository root. `index.html`, `admin.html`,
+`css/`, `js/`, `games/`, `docs/`, and `tests/` are all top-level paths so
+GitHub Pages serves the same structure locally and in production.
 
 Useful checks:
 
 ```bash
-node minigame/tests/run-tests.js
-node --check minigame/js/firebaseConfig.js
-node --check minigame/js/signaling.js
-node --check minigame/js/lobby.js
-node --check minigame/games/guessColor/guessColor.js
-node --check minigame/games/blackjack/blackjack.js
-node --check minigame/games/tile2048/tile2048.js
-node --check minigame/games/colorShift/colorShift.js
-node --check minigame/games/snapStack/snapStack.js
-node --check minigame/games/nineUpper/nineUpper.js
-node --check minigame/games/baccarat/baccarat.js
-node --check minigame/games/sicBo/sicBo.js
+node tests/run-tests.js
+node --check js/firebaseConfig.js
+node --check js/signaling.js
+node --check js/lobby.js
+node --check games/guessColor/guessColor.js
+node --check games/blackjack/blackjack.js
+node --check games/tile2048/tile2048.js
+node --check games/colorShift/colorShift.js
+node --check games/snapStack/snapStack.js
+node --check games/nineUpper/nineUpper.js
+node --check games/baccarat/baccarat.js
+node --check games/sicBo/sicBo.js
 ```
 
 ## Roadmap

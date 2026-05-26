@@ -4,8 +4,8 @@ This document records the current implemented behavior so future agents can unde
 
 Related room lifecycle specs:
 
-- `minigame/docs/ROOM_SPEC.md`
-- `minigame/docs/ROOM_RESUME_SPEC.md`
+- `docs/ROOM_SPEC.md`
+- `docs/ROOM_RESUME_SPEC.md`
 
 ## Architecture
 
@@ -542,7 +542,7 @@ Frontend-only limitation:
   results, deck order, secret code, hidden role, or hidden state.
 - Guess Color records completion and simple win points.
 - 鋤大DEE and 鬥地主 record room score deltas.
-- `minigame/admin.html` is a lightweight monitor page for room state, AI takeover,
+- `admin.html` is a lightweight monitor page for room state, AI takeover,
   online players, history, and leaderboard data. It is not a hardened private
   admin backoffice.
 

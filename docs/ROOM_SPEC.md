@@ -312,7 +312,7 @@ Card-game actions:
   - Guess Color: win count and +1 score for winning/team completion.
   - 鋤大DEE: room score deltas from remaining cards and top-card penalties.
   - 鬥地主: room score deltas from bid and bomb/rocket multiplier.
-- `minigame/admin.html` is a friends-only Firebase monitor page. It lists rooms,
+- `admin.html` is a friends-only Firebase monitor page. It lists rooms,
   online/offline humans, active AI takeover state, leaderboard rows, and history.
   It uses Anonymous Auth and RTDB reads; it is not a hardened private backoffice.
 

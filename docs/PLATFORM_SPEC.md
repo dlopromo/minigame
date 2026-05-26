@@ -164,11 +164,11 @@ Shortcut handlers must ignore input fields, chat fields, and Focus Mode.
 For new or significantly changed games, create:
 
 ```text
-minigame/games/<game-id>/rules.md
-minigame/games/<game-id>/state-machine.md
-minigame/games/<game-id>/scoring.md
-minigame/games/<game-id>/animation.md
-minigame/games/<game-id>/edge-cases.md
+games/<game-id>/rules.md
+games/<game-id>/state-machine.md
+games/<game-id>/scoring.md
+games/<game-id>/animation.md
+games/<game-id>/edge-cases.md
 ```
 
 Existing games can be migrated incrementally, but any future bug fix touching core logic should update the corresponding Markdown.

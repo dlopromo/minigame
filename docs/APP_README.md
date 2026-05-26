@@ -1,6 +1,7 @@
 # MiniGame App README
 
-This folder contains the static mini-game app served by GitHub Pages.
+This document describes the static mini-game app served from the repository
+root by GitHub Pages.
 
 ## Architecture
 
@@ -22,26 +23,26 @@ This folder contains the static mini-game app served by GitHub Pages.
 - `games/<gameId>/<gameId>.js`: game logic and rendering.
 - `games/<gameId>/<gameId>.css`: game-specific styles.
 
-Related root Firebase files:
+Related Firebase files:
 
-- `../firebase.json`: points Firebase CLI at the RTDB rules file.
-- `../database.rules.json`: friends-only MVP validation for room codes, users, signaling, room start state, game state, and fallback game actions.
+- `firebase.json`: points Firebase CLI at the RTDB rules file.
+- `database.rules.json`: friends-only MVP validation for room codes, users, signaling, room start state, game state, and fallback game actions.
 
 ## Project Tree
 
 The app is kept as a standalone static GitHub Pages project:
 
 - Project settings: root `README.md`, `firebase.json`, `database.rules.json`, `.gitignore`.
-- Static app entry: `minigame/index.html`.
-- Shared styles: `minigame/css/`.
-- App shell and room flow: `minigame/js/lobby.js`, `minigame/js/gameManager.js`.
-- Firebase / RTDB layer: `minigame/js/firebaseConfig.js`, `minigame/js/signaling.js`.
-- Room helpers: `minigame/js/roomSession.js`, `minigame/js/roomSeating.js`.
-- Shared UI utilities: `minigame/js/common.js`.
-- Games: `minigame/games/<gameId>/`.
-- Admin monitor: `minigame/admin.html`, `minigame/js/admin.js`.
-- Tests: `minigame/tests/`.
-- Agent / technical docs: `minigame/docs/`.
+- Static app entry: `index.html`.
+- Shared styles: `css/`.
+- App shell and room flow: `js/lobby.js`, `js/gameManager.js`.
+- Firebase / RTDB layer: `js/firebaseConfig.js`, `js/signaling.js`.
+- Room helpers: `js/roomSession.js`, `js/roomSeating.js`.
+- Shared UI utilities: `js/common.js`.
+- Games: `games/<gameId>/`.
+- Admin monitor: `admin.html`, `js/admin.js`.
+- Tests: `tests/`.
+- Agent / technical docs: `docs/`.
 
 There is a single Guess Color implementation at `games/guessColor/`. No game owns a separate Chatroom implementation; room chat is centralized in Lobby + Signaling.
 
@@ -344,18 +345,18 @@ that snapshot.
 Static checks:
 
 ```bash
-node minigame/tests/run-tests.js
-node --check minigame/js/firebaseConfig.js
-node --check minigame/js/signaling.js
-node --check minigame/js/lobby.js
-node --check minigame/games/guessColor/guessColor.js
-node --check minigame/games/bigDee/bigDee.js
-node --check minigame/games/douDizhu/douDizhu.js
-node --check minigame/games/blackjack/blackjack.js
-node --check minigame/games/tile2048/tile2048.js
-node --check minigame/games/colorShift/colorShift.js
-node --check minigame/games/snapStack/snapStack.js
-node --check minigame/games/nineUpper/nineUpper.js
+node tests/run-tests.js
+node --check js/firebaseConfig.js
+node --check js/signaling.js
+node --check js/lobby.js
+node --check games/guessColor/guessColor.js
+node --check games/bigDee/bigDee.js
+node --check games/douDizhu/douDizhu.js
+node --check games/blackjack/blackjack.js
+node --check games/tile2048/tile2048.js
+node --check games/colorShift/colorShift.js
+node --check games/snapStack/snapStack.js
+node --check games/nineUpper/nineUpper.js
 node -e "JSON.parse(require('fs').readFileSync('firebase.json','utf8')); JSON.parse(require('fs').readFileSync('database.rules.json','utf8'));"
 ```
 
@@ -375,7 +376,7 @@ Manual checks:
   the game continues.
 - If the host refreshes/leaves while another browser is online, host authority
   migrates and the game continues.
-- `minigame/admin.html` shows rooms, online members, AI takeover state, history,
+- `admin.html` shows rooms, online members, AI takeover state, history,
   and leaderboard rows.
 
 ## Agent Notes

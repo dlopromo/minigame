@@ -10,7 +10,7 @@
 - Browser identity: stable client id stored in browser storage.
 - Chatroom: room-level standard feature, shared by lobby, game screen, and result screens.
 - Game action log: public actions are written to room chat; hidden state is not written.
-- Tests: `minigame/tests/run-tests.js` covers rules, room seating, stale member reclaim, registry contract, and chat contract.
+- Tests: `tests/run-tests.js` covers rules, room seating, stale member reclaim, registry contract, and chat contract.
 - UI shell: `css/redesign.css` is the final app-wide visual layer. It unifies Home, Party Room, game selection, result panels, card tables, action buttons, chat drawer, and office-friendly interaction states without changing game state schemas.
 
 ## Completed MVP Items
@@ -109,12 +109,12 @@
 ## Verification Commands
 
 ```bash
-node --check minigame/js/common.js
-node --check minigame/js/lobby.js
-node --check minigame/js/signaling.js
-node --check minigame/js/admin.js
-for f in minigame/games/*/*.js; do node --check "$f"; done
-node --check minigame/tests/run-tests.js
-node minigame/tests/run-tests.js
+node --check js/common.js
+node --check js/lobby.js
+node --check js/signaling.js
+node --check js/admin.js
+for f in games/*/*.js; do node --check "$f"; done
+node --check tests/run-tests.js
+node tests/run-tests.js
 git diff --check
 ```
