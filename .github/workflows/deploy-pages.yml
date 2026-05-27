@@ -47,9 +47,9 @@ jobs:
           }
           fs.writeFileSync(
             'js/firebaseConfig.generated.js',
-            'var App = window.App || {};\\n' +
-            'App.FirebaseConfig = ' + JSON.stringify(config, null, 2) + ';\\n' +
-            'window.App = App;\\n'
+            'var App = window.App || {};\n' +
+            'App.FirebaseConfig = ' + JSON.stringify(config, null, 2) + ';\n' +
+            'window.App = App;\n'
           );
           NODE
 
