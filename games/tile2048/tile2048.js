@@ -76,6 +76,32 @@
     return { line: result, score: score, merges: merges };
   }
 
+  function compressTiles(tiles) {
+    var result = [];
+    var score = 0;
+    var merges = [];
+    var movements = [];
+    for (var i = 0; i < tiles.length; i++) {
+      var tile = tiles[i];
+      var next = tiles[i + 1];
+      if (next && tile.value === next.value) {
+        var targetIndex = result.length;
+        var mergedValue = tile.value * 2;
+        result.push(mergedValue);
+        score += mergedValue;
+        merges.push(targetIndex);
+        movements.push({ fromIndex: tile.index, toIndex: targetIndex, value: tile.value, resultValue: mergedValue, merged: true });
+        movements.push({ fromIndex: next.index, toIndex: targetIndex, value: next.value, resultValue: mergedValue, merged: true });
+        i++;
+      } else {
+        result.push(tile.value);
+        movements.push({ fromIndex: tile.index, toIndex: result.length - 1, value: tile.value, resultValue: tile.value, merged: false });
+      }
+    }
+    while (result.length < SIZE) result.push(0);
+    return { line: result, score: score, merges: merges, movements: movements };
+  }
+
   function sameBoard(a, b) {
     return JSON.stringify(a) === JSON.stringify(b);
   }
@@ -84,21 +110,44 @@
     var next = emptyBoard();
     var score = 0;
     var merges = [];
+    var movements = [];
+    function coord(lineIndex, itemIndex) {
+      if (dir === 'left') return { x: itemIndex, y: lineIndex };
+      if (dir === 'right') return { x: SIZE - 1 - itemIndex, y: lineIndex };
+      if (dir === 'up') return { x: lineIndex, y: itemIndex };
+      return { x: lineIndex, y: SIZE - 1 - itemIndex };
+    }
     for (var i = 0; i < SIZE; i++) {
       var line = [];
+      var tiles = [];
       for (var j = 0; j < SIZE; j++) {
         if (dir === 'left') line.push(board[i][j]);
         if (dir === 'right') line.push(board[i][SIZE - 1 - j]);
         if (dir === 'up') line.push(board[j][i]);
         if (dir === 'down') line.push(board[SIZE - 1 - j][i]);
+        var value = line[line.length - 1];
+        if (value) tiles.push({ value: value, index: j });
       }
-      var packed = compressLine(line);
+      var packed = compressTiles(tiles);
       score += packed.score;
       packed.merges.forEach(function(mergeIndex) {
         if (dir === 'left') merges.push({ x: mergeIndex, y: i });
         if (dir === 'right') merges.push({ x: SIZE - 1 - mergeIndex, y: i });
         if (dir === 'up') merges.push({ x: i, y: mergeIndex });
         if (dir === 'down') merges.push({ x: i, y: SIZE - 1 - mergeIndex });
+      });
+      packed.movements.forEach(function(item) {
+        var from = coord(i, item.fromIndex);
+        var to = coord(i, item.toIndex);
+        movements.push({
+          from: from,
+          to: to,
+          dx: from.x - to.x,
+          dy: from.y - to.y,
+          value: item.value,
+          resultValue: item.resultValue,
+          merged: item.merged
+        });
       });
       for (var k = 0; k < SIZE; k++) {
         if (dir === 'left') next[i][k] = packed.line[k];
@@ -107,7 +156,7 @@
         if (dir === 'down') next[SIZE - 1 - k][i] = packed.line[k];
       }
     }
-    return { board: next, score: score, merges: merges, moved: !sameBoard(board, next) };
+    return { board: next, score: score, merges: merges, movements: movements, moved: !sameBoard(board, next) };
   }
 
   function maxTile(board) {
@@ -144,6 +193,7 @@
       lastGain: 0,
       lastSpawn: null,
       lastMerged: [],
+      lastMovements: [],
       status: 'playing',
       finishedAt: 0
     };
@@ -160,6 +210,7 @@
       lastGain: 0,
       lastSpawn: null,
       lastMerged: [],
+      lastMovements: [],
       status: 'playing',
       finishedAt: 0
     };
@@ -226,6 +277,7 @@
       player.lastGain = player.lastGain || 0;
       player.lastSpawn = player.lastSpawn || null;
       player.lastMerged = Array.isArray(player.lastMerged) ? player.lastMerged : [];
+      player.lastMovements = Array.isArray(player.lastMovements) ? player.lastMovements : [];
       player.status = player.status || 'playing';
     });
     state.currentIndex = Number(state.currentIndex || 0);
@@ -236,6 +288,7 @@
     state.shared.lastGain = state.shared.lastGain || 0;
     state.shared.lastSpawn = state.shared.lastSpawn || null;
     state.shared.lastMerged = Array.isArray(state.shared.lastMerged) ? state.shared.lastMerged : [];
+    state.shared.lastMovements = Array.isArray(state.shared.lastMovements) ? state.shared.lastMovements : [];
     state.shared.status = state.shared.status || 'playing';
   }
 
@@ -332,6 +385,7 @@
       maxTile: boardState.maxTile,
       lastSpawn: boardState.lastSpawn,
       lastMerged: boardState.lastMerged,
+      lastMovements: boardState.lastMovements,
       currentIndex: state.currentIndex
     });
     if (boardState.undoStack.length > 50) boardState.undoStack = boardState.undoStack.slice(boardState.undoStack.length - 50);
@@ -341,6 +395,7 @@
     boardState.lastMove = dir;
     boardState.lastGain = result.score;
     boardState.lastMerged = result.merges || [];
+    boardState.lastMovements = result.movements || [];
     var rng = lcg((state.seed || 1) + boardState.moves * 7919 + player.id.length * 17 + boardState.score);
     boardState.lastSpawn = addTile(boardState.board, rng);
     boardState.maxTile = maxTile(boardState.board);
@@ -352,6 +407,7 @@
       player.lastGain = boardState.lastGain;
       player.lastSpawn = boardState.lastSpawn;
       player.lastMerged = boardState.lastMerged;
+      player.lastMovements = boardState.lastMovements;
       player.maxTile = boardState.maxTile;
     } else {
       record(player.name, '移動 ' + ({ up: '上', down: '下', left: '左', right: '右' }[dir] || dir) + (result.score ? ' +' + result.score : ''));
@@ -374,6 +430,7 @@
     boardState.maxTile = previous.maxTile;
     boardState.lastSpawn = previous.lastSpawn || null;
     boardState.lastMerged = previous.lastMerged || [];
+    boardState.lastMovements = [];
     boardState.lastMove = 'undo';
     boardState.lastGain = 0;
     if (isRoomMode()) state.currentIndex = Number(previous.currentIndex || state.currentIndex || 0);
@@ -384,6 +441,7 @@
       player.maxTile = boardState.maxTile;
       player.lastSpawn = boardState.lastSpawn;
       player.lastMerged = boardState.lastMerged;
+      player.lastMovements = boardState.lastMovements;
       player.lastMove = boardState.lastMove;
       player.lastGain = boardState.lastGain;
     }
@@ -477,11 +535,29 @@
     return (list || []).some(function(coord) { return isCoordMatch(coord, x, y); });
   }
 
+  function movementForCoord(player, value, x, y) {
+    var moves = (player && player.lastMovements) || [];
+    var matches = moves.filter(function(item) {
+      return item && item.to && item.to.x === x && item.to.y === y && item.resultValue === value;
+    });
+    if (!matches.length) return null;
+    matches.sort(function(a, b) {
+      return (Math.abs(b.dx) + Math.abs(b.dy)) - (Math.abs(a.dx) + Math.abs(a.dy));
+    });
+    return matches[0];
+  }
+
   function renderTile(value, x, y, player) {
     var classes = ['t2048-tile', tileClass(value)];
     if (value && isCoordMatch(player.lastSpawn, x, y)) classes.push('is-new');
     if (value && hasCoord(player.lastMerged, x, y)) classes.push('is-merged');
-    return '<span class="' + classes.join(' ') + '" data-value="' + value + '">' + (value || '') + '</span>';
+    var style = '';
+    var movement = value ? movementForCoord(player, value, x, y) : null;
+    if (movement && (movement.dx || movement.dy)) {
+      classes.push('is-moving');
+      style = ' style="--from-x:' + movement.dx + ';--from-y:' + movement.dy + '"';
+    }
+    return '<span class="' + classes.join(' ') + '" data-value="' + value + '"' + style + '>' + (value || '') + '</span>';
   }
 
   function renderBoard(player) {
