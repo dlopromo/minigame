@@ -115,7 +115,8 @@ available.
 - Room chat and queue stay alive across game switches.
 - The same Chatroom stays visible in the room lobby, game screen, and in-room result flow.
 - Public room/game events are logged into Chatroom; hidden game information is not logged.
-- Users must join the queue to play; unqueued users are spectators.
+- Users must join the queue to play; unqueued users stay in the room lobby and
+  can choose `觀戰本局` when they want to watch the active round.
 - Room state in Firebase starts each round.
 - Firebase room/signaling state works over WAN.
 - Room play is Firebase-first: client actions go through `gameActions`, and `gameState` is the source of truth for turn and board updates.

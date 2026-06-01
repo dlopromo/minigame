@@ -259,7 +259,8 @@
 
   function applyState(snapshot) {
     if (!snapshot || !snapshot.state) return;
-    if (opts && opts.roundId && snapshot.roundId && snapshot.roundId !== opts.roundId) return;
+    var expectedRoundId = (opts && opts.roundId) || (opts && opts.gameState && opts.gameState.roundId) || '';
+    if (expectedRoundId && snapshot.roundId && snapshot.roundId !== expectedRoundId) return;
     state = clone(snapshot.state);
     normalizeState();
     render();
@@ -363,7 +364,7 @@
   }
 
   function commit() {
-    if (isHostAuthority()) {
+    if (isHostAuthority() || (opts && opts.localEcho)) {
       publishState();
       saveLocalProgress();
       render();
@@ -461,22 +462,34 @@
   }
 
   function sendRoomAction(dir) {
-    if (!isRoomMode() || !App.Signaling || !App.Signaling.sendGameAction) return;
+    if (!isRoomMode()) return;
+    var payload = { type: '2048_move', playerId: opts.selfId, dir: dir };
+    if (App.Lobby && typeof App.Lobby.sendRoomGameAction === 'function') {
+      App.Lobby.sendRoomGameAction(payload);
+      return;
+    }
+    if (!App.Signaling || !App.Signaling.sendGameAction) return;
     App.Signaling.sendGameAction({
       roundId: opts.roundId || '',
       gameId: 'tile2048',
       mode: opts.mode || 'room',
-      payload: { type: '2048_move', playerId: opts.selfId, dir: dir }
+      payload: payload
     });
   }
 
   function sendUndoAction() {
-    if (!isRoomMode() || !App.Signaling || !App.Signaling.sendGameAction) return;
+    if (!isRoomMode()) return;
+    var payload = { type: '2048_undo', playerId: opts.selfId };
+    if (App.Lobby && typeof App.Lobby.sendRoomGameAction === 'function') {
+      App.Lobby.sendRoomGameAction(payload);
+      return;
+    }
+    if (!App.Signaling || !App.Signaling.sendGameAction) return;
     App.Signaling.sendGameAction({
       roundId: opts.roundId || '',
       gameId: 'tile2048',
       mode: opts.mode || 'room',
-      payload: { type: '2048_undo', playerId: opts.selfId }
+      payload: payload
     });
   }
 
@@ -493,7 +506,7 @@
   }
 
   function handleRoomAction(msg) {
-    if (!isRoomMode() || !opts.isHost || !msg) return;
+    if (!isRoomMode() || !msg || (!opts.isHost && !msg.localEcho) || (opts.isHost && msg.localEcho)) return;
     if (msg.type === '2048_move') move(msg.playerId, msg.dir);
     if (msg.type === '2048_undo') undo(msg.playerId);
   }
@@ -617,7 +630,7 @@
     container.innerHTML =
       '<div class="t2048-shell">' +
         '<div class="t2048-topbar"><div class="t2048-title' + (canAct ? ' my-turn' : '') + '">' + (state.status === 'settled' ? '2048 結算' : canAct ? (isRoomMode() ? '輪到你移動合作盤' : '你的 2048') : (isRoomMode() ? '2048 合作觀戰' : '2048')) + '</div>' +
-        '<div class="t2048-actions">' + (isRoomMode() ? '<button class="t2048-icon game-chat-trigger" onclick="App.Lobby.toggleGameChat()" aria-label="Chat"><i class="fa-regular fa-comments" aria-hidden="true"></i><span class="chat-badge game-chat-unread"></span></button>' : '') + '<button class="t2048-icon" onclick="App.GameManager.endGame()" aria-label="離開遊戲"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button></div></div>' +
+        '<div class="t2048-actions">' + (isRoomMode() ? '<button class="t2048-icon game-chat-trigger" onclick="App.Lobby.toggleGameChat()" aria-label="Chat"><i class="fa-regular fa-comments" aria-hidden="true"></i><span class="chat-badge game-chat-unread"></span></button>' : '') + '<button class="t2048-icon" onclick="(App.Lobby && App.Lobby.handleGameCloseAction ? App.Lobby.handleGameCloseAction() : App.GameManager.endGame())" aria-label="離開遊戲"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button></div></div>' +
         '<section class="t2048-grid">' + (isRoomMode()
           ? '<article class="t2048-player t2048-shared-board"><div class="t2048-head"><strong>合作盤</strong><span>' + state.shared.score + ' 分 · ' + state.shared.maxTile + '</span></div>' + renderBoard(state.shared) + '<div class="t2048-meta">' + state.shared.moves + ' moves' + (state.shared.lastGain ? ' · +' + state.shared.lastGain : '') + '</div></article><div class="t2048-roster">' + state.players.map(renderPlayer).join('') + '</div>'
           : state.players.map(renderPlayer).join('')) + '</section>' +
@@ -649,7 +662,7 @@
     var newBtn = container.querySelector('#t2048-new');
     var backBtn = container.querySelector('#t2048-back');
     if (undoBtn) undoBtn.addEventListener('click', humanUndo);
-    if (backBtn) backBtn.addEventListener('click', function() { App.GameManager.endGame(); });
+    if (backBtn) backBtn.addEventListener('click', function() { if (App.Lobby && App.Lobby.handleGameCloseAction) App.Lobby.handleGameCloseAction(); else App.GameManager.endGame(); });
     if (newBtn) newBtn.addEventListener('click', function() {
       clearLocalProgress();
       state = buildInitialState([{ id: 'human', name: opts.playerName || '你' }]);
@@ -708,6 +721,9 @@
     buildRoomStart: function(roomOpts) {
       return { state: buildInitialState(roomOpts.players || [], Date.now()) };
     },
+    getStateSnapshot: function() {
+      return serializeState();
+    },
     init: function(gameContainer, gameOpts) {
       container = gameContainer;
       opts = gameOpts || {};
@@ -719,11 +735,26 @@
     handleMessage: function(msg) {
       if (!msg) return;
       if (msg.type === 'room_update') {
+      if (msg.gameState && opts.ignoreNextRoomSnapshot && (!opts.ignoreNextRoomSnapshotRoundId || msg.gameState.roundId === opts.ignoreNextRoomSnapshotRoundId)) {
+        opts.ignoreNextRoomSnapshot = false;
+        return;
+      }
         opts.players = msg.players || opts.players;
         opts.spectators = msg.spectators || opts.spectators;
         opts.role = msg.role || opts.role;
+        opts.selfId = msg.selfId || opts.selfId;
         opts.isHost = !!msg.isHost;
         applyState(msg.gameState);
+        return;
+      }
+      if (msg.localEcho) {
+        if (msg.stateSnapshot) {
+          opts.ignoreNextRoomSnapshot = true;
+          opts.ignoreNextRoomSnapshotRoundId = (msg.roundId || (opts && opts.roundId) || (opts && opts.gameState && opts.gameState.roundId) || '');
+        }
+        opts.localEcho = true;
+        handleRoomAction(msg);
+        opts.localEcho = false;
         return;
       }
       handleRoomAction(msg);

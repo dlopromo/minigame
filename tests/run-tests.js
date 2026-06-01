@@ -65,6 +65,27 @@ function testRoomSeating() {
   }, { minRoomPlayers: 1, maxPlayers: 4, aiFill: true });
   assert.strictEqual(aiSeating.players.length, 4);
   assert.strictEqual(aiSeating.players.filter(p => p.isAI).length, 3);
+
+  const spectatorPolicyRoom = {
+    members: {
+      host: { name: 'Host', online: true, joinedAt: 1, presence: 'playing' },
+      queued: { name: 'Queued', online: true, joinedAt: 2, presence: 'lobby' },
+      watcher: { name: 'Watcher', online: true, joinedAt: 3, presence: 'spectating' },
+      idle: { name: 'Idle', online: true, joinedAt: 4, presence: 'lobby' }
+    },
+    queue: {
+      host: { name: 'Host', queuedAt: 10 },
+      queued: { name: 'Queued', queuedAt: 20 }
+    }
+  };
+  const spectatorPolicy = App.RoomSeating.build(spectatorPolicyRoom, {
+    minRoomPlayers: 1,
+    maxPlayers: 1,
+    aiFill: false
+  });
+  sameJson(spectatorPolicy.players.map(p => p.id), ['host']);
+  sameJson(spectatorPolicy.spectators.map(p => p.id).sort(), ['queued', 'watcher']);
+  assert.strictEqual(spectatorPolicy.spectators.some(p => p.id === 'idle'), false);
 }
 
 function testStaleNameReclaim() {
@@ -292,6 +313,7 @@ function testGameRegistryAndChatContract() {
     assert.strictEqual(typeof game.maxPlayers, 'number', `${game.id} must declare maxPlayers`);
     assert.strictEqual(typeof game.minRoomPlayers, 'number', `${game.id} must declare minRoomPlayers`);
     assert.strictEqual(typeof game.buildRoomStart, 'function', `${game.id} must expose buildRoomStart`);
+    assert.strictEqual(typeof game.getStateSnapshot, 'function', `${game.id} must expose getStateSnapshot`);
   });
   gameFiles.forEach(file => {
     const source = fs.readFileSync(path.join(root, file), 'utf8');
@@ -301,6 +323,80 @@ function testGameRegistryAndChatContract() {
   assert.match(html, /id="room-chat-list"/);
   assert.match(html, /id="game-chat-list"/);
   assert.match(html, /id="global-game-chat-button"/);
+}
+
+function testRoomFlowGuards() {
+  const signaling = fs.readFileSync(path.join(root, 'js/signaling.js'), 'utf8');
+  const lobby = fs.readFileSync(path.join(root, 'js/lobby.js'), 'utf8');
+  const common = fs.readFileSync(path.join(root, 'js/common.js'), 'utf8');
+
+  // Re-entry must not auto-queue.
+  assert.match(signaling, /queueStatus:\s*'none'/);
+  // Re-entry should return to lobby presence.
+  assert.match(signaling, /presence:\s*'lobby'/);
+
+  // Host action queue guard: ignore actions without roundId.
+  assert.match(lobby, /if\s*\(!action\.roundId\)/);
+  // Host action queue guard: ignore actions from other rounds.
+  assert.match(lobby, /action\.roundId\s*!==\s*roomState\.roundId/);
+
+  // Room close in game should use room-aware action.
+  assert.match(common, /App\.Lobby\.handleGameCloseAction\(\)/);
+  assert.match(lobby, /function handleGameCloseAction\(/);
+  assert.match(lobby, /leftRoundIds\[roomState\.roundId\]\s*=\s*true/);
+  assert.match(lobby, /presenceUpdates\['members\/' \+ selfId \+ '\/presence'\]\s*=\s*'playing'/);
+  assert.match(lobby, /presence:\s*member\.presence \|\| person\.presence \|\| ''/);
+  assert.match(lobby, /function shouldRefreshRoomLobby\(/);
+  assert.match(lobby, /if\s*\(!gameActive && shouldRefreshRoomLobby\(\)\)\s*renderRoomLobby\(\)/);
+  assert.match(lobby, /!isHost && App\.GameManager && typeof App\.GameManager\.handleMessage === 'function'/);
+  assert.match(lobby, /return person\.online !== false && !person\.isAI/);
+  assert.match(lobby, /roomState\.gameStart && !active && roomState\.status !== 'closed'/);
+  assert.match(lobby, /發起重開/);
+  assert.match(fs.readFileSync(path.join(root, 'games/guessColor/guessColor.js'), 'utf8'), /msg\.localEcho/);
+  assert.match(fs.readFileSync(path.join(root, 'games/bigDee/bigDee.js'), 'utf8'), /msg\.localEcho/);
+  assert.match(fs.readFileSync(path.join(root, 'games/douDizhu/douDizhu.js'), 'utf8'), /msg\.localEcho/);
+  assert.match(fs.readFileSync(path.join(root, 'games/blackjack/blackjack.js'), 'utf8'), /msg\.localEcho/);
+  assert.match(fs.readFileSync(path.join(root, 'games/tile2048/tile2048.js'), 'utf8'), /msg\.localEcho/);
+  assert.match(fs.readFileSync(path.join(root, 'games/guessColor/guessColor.js'), 'utf8'), /presence && player\.presence !== 'playing'/);
+  assert.match(fs.readFileSync(path.join(root, 'games/guessColor/guessColor.js'), 'utf8'), /isSelfGuess/);
+  assert.match(fs.readFileSync(path.join(root, 'games/nineUpper/nineUpper.js'), 'utf8'), /msg\.localEcho/);
+  assert.match(fs.readFileSync(path.join(root, 'games/blackjack/blackjack.js'), 'utf8'), /App\.Lobby\.sendRoomGameAction/);
+  assert.match(fs.readFileSync(path.join(root, 'games/tile2048/tile2048.js'), 'utf8'), /App\.Lobby\.sendRoomGameAction/);
+  assert.match(fs.readFileSync(path.join(root, 'games/colorShift/colorShift.js'), 'utf8'), /App\.Lobby\.sendRoomGameAction/);
+  assert.match(fs.readFileSync(path.join(root, 'games/baccarat/baccarat.js'), 'utf8'), /App\.Lobby\.sendRoomGameAction/);
+  assert.match(fs.readFileSync(path.join(root, 'games/sicBo/sicBo.js'), 'utf8'), /App\.Lobby\.sendRoomGameAction/);
+  assert.match(fs.readFileSync(path.join(root, 'games/snapStack/snapStack.js'), 'utf8'), /App\.Lobby\.sendRoomGameAction/);
+  assert.match(fs.readFileSync(path.join(root, 'games/guessColor/guessColor.js'), 'utf8'), /App\.Lobby\.sendRoomGameAction/);
+  ['games/bigDee/bigDee.js', 'games/douDizhu/douDizhu.js', 'games/colorShift/colorShift.js', 'games/blackjack/blackjack.js', 'games/tile2048/tile2048.js', 'games/nineUpper/nineUpper.js', 'games/baccarat/baccarat.js', 'games/sicBo/sicBo.js', 'games/snapStack/snapStack.js'].forEach(file => {
+    assert.match(fs.readFileSync(path.join(root, file), 'utf8'), /getStateSnapshot/);
+  });
+  ['bigDee', 'douDizhu', 'blackjack', 'colorShift'].forEach((gameId) => {
+    const source = fs.readFileSync(path.join(root, `games/${gameId}/${gameId}.js`), 'utf8');
+    assert.match(source, /leftActiveRound/);
+    assert.match(source, /presence && remote\.presence !== 'playing'/);
+  });
+  assert.match(fs.readFileSync(path.join(root, 'games/blackjack/blackjack.js'), 'utf8'), /hideHand/);
+  assert.match(fs.readFileSync(path.join(root, 'games/snapStack/snapStack.js'), 'utf8'), /state\.pile = Array\.isArray\(state\.pile\) \? state\.pile : \[\]/);
+  // Room lobby should expose manual spectate toggle.
+  assert.match(lobby, /function toggleSpectate\(/);
+  // Back navigation in room context should avoid forced home redirect.
+  assert.match(lobby, /if\s*\(playContext === 'room'\)\s*\{/);
+  assert.match(lobby, /roomState\.gameStart && !active && roomState\.status !== 'closed'/);
+}
+
+function testGameManagerSnapshotHelper() {
+  const App = loadBrowserScripts(['js/gamemanager.js']);
+  const container = { innerHTML: '' };
+  App.GameManager.register({
+    id: 'demo',
+    init: function() {},
+    getStateSnapshot: function() {
+      return { gameId: 'demo', state: { turn: 1 } };
+    }
+  });
+  App.GameManager.startGame('demo', container, {}, function() {});
+  sameJson(App.GameManager.getActiveGameSnapshot(), { gameId: 'demo', state: { turn: 1 } });
+  App.GameManager.endGame({ skipConfirm: true, noCallback: true });
 }
 
 testRoomSeating();
@@ -313,4 +409,6 @@ testNineUpperRules();
 testBaccaratRules();
 testSicBoRules();
 testGameRegistryAndChatContract();
+testGameManagerSnapshotHelper();
+testRoomFlowGuards();
 console.log('All minigame MVP tests passed');

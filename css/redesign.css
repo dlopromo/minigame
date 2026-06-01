@@ -539,12 +539,47 @@ h1,h2,.home-title-row h1{letter-spacing:0;color:var(--app-text)}
   background:#aeb8ad;
   padding:7px;
   gap:7px;
+  --t2048-cell-gap:7px;
 }
 .t2048-tile{
   box-shadow:0 5px 12px rgba(32,44,58,.1);
+  will-change:transform,opacity;
+  transform-origin:center center;
 }
 .t2048-tile.v-super{
   background:linear-gradient(145deg,#40586a,#273846);
+}
+.t2048-tile.is-moving{
+  animation:t2048MoveIn .24s cubic-bezier(.2,.8,.2,1) both;
+}
+.t2048-tile.is-new{
+  animation:t2048Spawn .2s cubic-bezier(.2,.8,.2,1) both;
+}
+.t2048-tile.is-merged{
+  animation:t2048Merge .22s cubic-bezier(.2,.8,.2,1) both;
+}
+.t2048-board.move-left .t2048-tile.is-moving,
+.t2048-board.move-right .t2048-tile.is-moving,
+.t2048-board.move-up .t2048-tile.is-moving,
+.t2048-board.move-down .t2048-tile.is-moving{
+  transform:translate(calc(var(--from-x,0) * (100% + var(--t2048-cell-gap))), calc(var(--from-y,0) * (100% + var(--t2048-cell-gap))));
+}
+.t2048-board.has-merge .t2048-tile.is-merged{
+  box-shadow:0 10px 20px rgba(32,44,58,.18);
+}
+@keyframes t2048MoveIn{
+  from{transform:translate(calc(var(--from-x,0) * (100% + var(--t2048-cell-gap))), calc(var(--from-y,0) * (100% + var(--t2048-cell-gap)))); opacity:.3}
+  to{transform:translate(0,0); opacity:1}
+}
+@keyframes t2048Spawn{
+  0%{transform:scale(.55); opacity:.2}
+  70%{transform:scale(1.06); opacity:1}
+  100%{transform:scale(1); opacity:1}
+}
+@keyframes t2048Merge{
+  0%{transform:scale(.86); box-shadow:0 0 0 rgba(32,44,58,0)}
+  60%{transform:scale(1.08)}
+  100%{transform:scale(1); box-shadow:0 5px 12px rgba(32,44,58,.1)}
 }
 
 /* 9Upper: make it feel like a compact meeting tool */

@@ -64,6 +64,7 @@
   function setupGame() {
     if (opts && opts.initialState && opts.initialState.state) state = clone(opts.initialState.state);
     else state = buildInitialState();
+    normalizeState();
   }
 
   function restartSingle() {
@@ -77,9 +78,25 @@
   function serializeState() { return { gameId: 'snapStack', roundId: opts.roundId || '', state: clone(state) }; }
   function applyState(snapshot) {
     if (!snapshot || !snapshot.state) return;
-    if (opts && opts.roundId && snapshot.roundId && snapshot.roundId !== opts.roundId) return;
+    var expectedRoundId = (opts && opts.roundId) || (opts && opts.gameState && opts.gameState.roundId) || '';
+    if (expectedRoundId && snapshot.roundId && snapshot.roundId !== expectedRoundId) return;
     state = clone(snapshot.state);
+    normalizeState();
     render();
+  }
+  function normalizeState() {
+    if (!state) state = buildInitialState();
+    state.players = state.players || [];
+    state.deck = Array.isArray(state.deck) ? state.deck : [];
+    state.pile = Array.isArray(state.pile) ? state.pile : [];
+    state.currentIndex = Number(state.currentIndex || 0);
+    state.snapOpen = !!state.snapOpen;
+    state.status = state.status || 'playing';
+    state.winnerId = state.winnerId || '';
+    state.history = Array.isArray(state.history) ? state.history : [];
+    state.startedAt = state.startedAt || Date.now();
+    state.finishedAt = Number(state.finishedAt || 0);
+    state.resultSaved = !!state.resultSaved;
   }
   function publishState() {
     if (!isRoomMode() || !opts.isHost || !App.Signaling || !App.Signaling.setGameState) return;
@@ -98,7 +115,7 @@
   function activePlayer() { return state.players[state.currentIndex]; }
   function nextTurn() { state.currentIndex = (state.currentIndex + 1) % state.players.length; }
   function commit() {
-    if (isHostAuthority()) {
+    if (isHostAuthority() || (opts && opts.localEcho)) {
       publishState();
       render();
       scheduleAI();
@@ -161,7 +178,12 @@
   }
 
   function sendRoomAction(payload) {
-    if (!isRoomMode() || !App.Signaling || !App.Signaling.sendGameAction) return;
+    if (!isRoomMode()) return;
+    if (App.Lobby && typeof App.Lobby.sendRoomGameAction === 'function') {
+      App.Lobby.sendRoomGameAction(payload);
+      return;
+    }
+    if (!App.Signaling || !App.Signaling.sendGameAction) return;
     App.Signaling.sendGameAction({ roundId: opts.roundId || '', gameId: 'snapStack', mode: opts.mode || 'room', payload: payload });
   }
   function humanFlip() {
@@ -177,7 +199,7 @@
     else slap(self.id);
   }
   function handleRoomAction(msg) {
-    if (!isRoomMode() || !opts.isHost || !msg) return;
+    if (!isRoomMode() || !msg || (!opts.isHost && !msg.localEcho) || (opts.isHost && msg.localEcho)) return;
     if (msg.type === 'ss_flip') flip(msg.playerId);
     if (msg.type === 'ss_slap') slap(msg.playerId);
   }
@@ -248,7 +270,7 @@
     var recent = state.pile.slice(-8);
     container.innerHTML =
       '<div class="ss-shell">' +
-        '<div class="ss-topbar"><div class="ss-title' + (canFlip() || (state.snapOpen && canSlap()) ? ' my-turn' : '') + '">' + titleText() + '</div><div class="ss-actions">' + (isRoomMode() ? '<button class="ss-icon game-chat-trigger" onclick="App.Lobby.toggleGameChat()" aria-label="Chat"><i class="fa-regular fa-comments" aria-hidden="true"></i><span class="chat-badge game-chat-unread"></span></button>' : '') + '<button class="ss-icon" onclick="App.GameManager.endGame()" aria-label="離開遊戲"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button></div></div>' +
+        '<div class="ss-topbar"><div class="ss-title' + (canFlip() || (state.snapOpen && canSlap()) ? ' my-turn' : '') + '">' + titleText() + '</div><div class="ss-actions">' + (isRoomMode() ? '<button class="ss-icon game-chat-trigger" onclick="App.Lobby.toggleGameChat()" aria-label="Chat"><i class="fa-regular fa-comments" aria-hidden="true"></i><span class="chat-badge game-chat-unread"></span></button>' : '') + '<button class="ss-icon" onclick="(App.Lobby && App.Lobby.handleGameCloseAction ? App.Lobby.handleGameCloseAction() : App.GameManager.endGame())" aria-label="離開遊戲"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button></div></div>' +
         '<section class="ss-scoreboard">' + state.players.map(renderPlayer).join('') + '</section>' +
         '<section class="ss-table' + (state.snapOpen ? ' snap-open' : '') + '"><div class="ss-pile">' + (recent.length ? recent.map(function(card, index) { return renderCard(card, index, recent.length); }).join('') : renderCard(null, 0, 0)) + '</div><div class="ss-deck">' + state.deck.length + ' 張</div></section>' +
         '<div class="ss-controls"><div class="ss-hint">' + escapeHtml(state.history[state.history.length - 1].name + '：' + state.history[state.history.length - 1].text) + '</div>' +
@@ -273,7 +295,7 @@
     var newBtn = container.querySelector('#ss-new');
     if (flipBtn) flipBtn.addEventListener('click', humanFlip);
     if (slapBtn) slapBtn.addEventListener('click', humanSlap);
-    if (backBtn) backBtn.addEventListener('click', function() { App.GameManager.endGame(); });
+    if (backBtn) backBtn.addEventListener('click', function() { if (App.Lobby && App.Lobby.handleGameCloseAction) App.Lobby.handleGameCloseAction(); else App.GameManager.endGame(); });
     if (newBtn) newBtn.addEventListener('click', restartSingle);
   }
 
@@ -293,6 +315,9 @@
     aiFill: true,
     multiplayerModes: ['room'],
     buildRoomStart: function(roomOpts) { return { state: buildInitialState(roomOpts.players || []) }; },
+    getStateSnapshot: function() {
+      return serializeState();
+    },
     init: function(gameContainer, gameOpts) {
       container = gameContainer;
       opts = gameOpts || {};
@@ -305,12 +330,27 @@
     handleMessage: function(msg) {
       if (!msg) return;
       if (msg.type === 'room_update') {
+      if (msg.gameState && opts.ignoreNextRoomSnapshot && (!opts.ignoreNextRoomSnapshotRoundId || msg.gameState.roundId === opts.ignoreNextRoomSnapshotRoundId)) {
+        opts.ignoreNextRoomSnapshot = false;
+        return;
+      }
         opts.players = msg.players || opts.players;
         opts.spectators = msg.spectators || opts.spectators;
         opts.role = msg.role || opts.role;
+        opts.selfId = msg.selfId || opts.selfId;
         opts.isHost = !!msg.isHost;
         applyState(msg.gameState);
         scheduleAI();
+        return;
+      }
+      if (msg.localEcho) {
+        if (msg.stateSnapshot) {
+          opts.ignoreNextRoomSnapshot = true;
+          opts.ignoreNextRoomSnapshotRoundId = (msg.roundId || (opts && opts.roundId) || (opts && opts.gameState && opts.gameState.roundId) || '');
+        }
+        opts.localEcho = true;
+        handleRoomAction(msg);
+        opts.localEcho = false;
         return;
       }
       handleRoomAction(msg);

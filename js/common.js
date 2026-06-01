@@ -109,10 +109,13 @@ App.Common = {
     var infoButton = options.infoId
       ? '<button class="app-icon-btn" type="button" onclick="document.getElementById(\'' + this.escapeHtml(options.infoId) + '\')?.classList.toggle(\'open\')" aria-label="資訊"><i class="fa-solid fa-circle-info" aria-hidden="true"></i></button>'
       : '';
+    var closeAction = options.roomMode
+      ? 'App.Lobby.handleGameCloseAction()'
+      : 'App.GameManager.endGame()';
     return '<div class="app-game-topbar">' +
       '<div class="app-game-title' + titleClass + '">' + this.escapeHtml(options.title || 'MiniGame') + '</div>' +
       '<div class="app-game-tools">' + (options.toolsHtml || '') + chatButton + infoButton +
-        '<button class="app-icon-btn" type="button" onclick="App.GameManager.endGame()" aria-label="離開遊戲"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button>' +
+        '<button class="app-icon-btn" type="button" onclick="' + closeAction + '" aria-label="離開遊戲"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button>' +
       '</div>' +
     '</div>';
   },

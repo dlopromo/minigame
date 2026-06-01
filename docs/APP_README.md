@@ -137,7 +137,8 @@ Room lobby has a compact debug panel:
 
 Room seating is centralized in `App.RoomSeating.build(roomState, gameDef)`.
 Queued online users are seated by `queuedAt` up to `maxPlayers`; overflow users
-remain queued and spectate this round. AI seats are added only when
+remain queued and spectate this round. Explicit watchers also spectate this
+round. Unqueued users stay in the room lobby. AI seats are added only when
 `aiFill: true`.
 
 ## Big Dee MVP
@@ -150,7 +151,8 @@ remain queued and spectate this round. AI seats are added only when
 - `minRoomPlayers: 2`
 - `aiFill: true`
 - Four seats: real players first, then AI fill.
-- Extra room members become spectators/queue.
+- Queued extra room members become spectators/queue; unqueued members remain in
+  the room lobby.
 - 52 cards, 13 cards per player.
 - Holder of `3♦` starts, and the first play must include `3♦`.
 - Supported hands: single, pair, triple, and five-card hands.
@@ -172,7 +174,8 @@ remain queued and spectate this round. AI seats are added only when
 - `allowSpectators: true`
 - `aiFill: true`
 - Three seats: real players first, then AI fill.
-- Extra room members become spectators/queue.
+- Queued extra room members become spectators/queue; unqueued members remain in
+  the room lobby.
 - Uses 54 cards with small joker and big joker.
 - Bidding supports pass, 1, 2, and 3 points.
 - Highest bidder becomes landlord and receives the 3 bottom cards.
@@ -371,7 +374,8 @@ Manual checks:
 - Joiner enters room lobby and can chat.
 - Queue toggle updates the queue list.
 - Host starts Guess Color with queued users and joiner enters the game without waiting forever.
-- Extra or unqueued users remain spectators.
+- Queued overflow users and explicit watchers remain spectators; unqueued users
+  remain in the room lobby.
 - If a non-host player refreshes/leaves mid-card-game, host sees AI takeover and
   the game continues.
 - If the host refreshes/leaves while another browser is online, host authority

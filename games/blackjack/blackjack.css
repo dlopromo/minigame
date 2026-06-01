@@ -28,7 +28,7 @@
 .bj-score strong{font-size:.78rem;color:#344054;background:#eef2f6;border:1px solid #d9e1ea;border-radius:999px;padding:2px 7px}
 .bj-card{width:46px;height:64px;border:1px solid #c8d3df;border-radius:8px;background:#fff;box-shadow:0 3px 9px rgba(31,41,51,.13);display:grid;grid-template-rows:auto 1fr;padding:5px 4px;color:#1f2937;font-weight:850;flex:0 0 auto;animation:bjCardIn .22s ease-out both;transition:transform .18s cubic-bezier(.2,.8,.2,1),box-shadow .18s ease,border-color .18s ease}
 .bj-card.red{color:#b8322a}
-.bj-card.back{place-items:center;background:linear-gradient(135deg,#eef2f6 25%,transparent 25%) -4px 0/10px 10px,linear-gradient(225deg,#eef2f6 25%,transparent 25%) -4px 0/10px 10px,#d9e1ea;color:#475467}
+.bj-card.back{place-items:center;background:linear-gradient(145deg,#252d33 0%,#1d2327 100%);border-color:#3b444b;color:#edf2f5}
 @media(hover:hover) and (pointer:fine){
   .bj-card:not(.back):hover{transform:translateY(-6px) rotate(-.6deg);border-color:#8eb2d6;box-shadow:0 12px 22px rgba(31,41,51,.17)}
 }
@@ -92,11 +92,8 @@
 .bj-player{background:rgba(255,255,255,.86);border-color:rgba(255,255,255,.6);box-shadow:0 8px 18px rgba(0,0,0,.1)}
 .bj-player.active{border-color:#71d39a;background:rgba(232,250,240,.94);box-shadow:0 0 0 3px rgba(113,211,154,.2),0 12px 26px rgba(20,70,54,.16)}
 .bj-card.back{
-  border-color:#24302f;
-  background:
-    radial-gradient(circle at 68% 32%,rgba(241,196,15,.9) 0 16%,transparent 17%),
-    linear-gradient(135deg,rgba(255,255,255,.08) 25%,transparent 25%) 0 0/10px 10px,
-    #202725;
+  border-color:#3a4249;
+  background:linear-gradient(145deg,#252c31 0%,#1b2024 100%);
 }
 .bj-controlbar{background:rgba(255,255,255,.9);box-shadow:0 -8px 22px rgba(31,41,51,.08)}
 .bj-btn{border:1px solid rgba(47,58,69,.18);background:#26313a;box-shadow:0 8px 18px rgba(31,41,51,.1)}

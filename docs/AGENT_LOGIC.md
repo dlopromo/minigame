@@ -39,7 +39,8 @@ The home screen has two entry points:
   - Joiners enter the room code and a required username.
   - Lobby stores users under `members`.
   - Users press `加入隊列` to be seated in the next round.
-  - Unqueued and overflow users remain spectators.
+  - Overflow queued users and explicit watchers are spectators. Unqueued users
+    stay in the room lobby.
   - Room chat persists across games.
   - Host chooses game and mode, writes `gameStart` to Firebase, then launches the game.
 
@@ -52,13 +53,15 @@ Current Big Dee / 鋤大DEE mode:
 
 - `single`: local four-seat game, human player versus AI fill.
 - `room`: short-code room play, real players seated first, empty seats filled by
-  AI, extras as spectators/queue. Host applies actions and writes `gameState`.
+  AI, queued extras as spectators/queue, and unqueued extras in lobby. Host
+  applies actions and writes `gameState`.
 
 Current Dou Dizhu / 鬥地主 mode:
 
 - `single`: local three-seat game, human player versus AI fill.
 - `room`: short-code three-player room play, real players seated first, empty
-  seats filled by AI, extras as spectators/queue. Four-player 鬥地主 is out of
+  seats filled by AI, queued extras as spectators/queue, and unqueued extras in
+  lobby. Four-player 鬥地主 is out of
   scope. Host applies bids/plays/passes and writes `gameState`.
 
 ## Firebase Room Layers
@@ -102,7 +105,7 @@ Room roles:
 - `spectator`
   - Can watch with a full god view.
   - Cannot submit game actions.
-  - Joins as spectator when the game is full or already started.
+  - Joins as spectator only when explicitly watching or queued overflow.
 
 During an active Party Room game, lobby watchers forward Firebase room
 membership changes into the active game as a local `room_update` message. Games
@@ -385,7 +388,8 @@ Guess Color is a 4-slot color code game.
 Every existing and future game should preserve these room assumptions:
 
 - Declare `minPlayers`, `maxPlayers`, `allowSpectators`, and `aiFill`.
-- Extra room members above `maxPlayers` become spectators.
+- Queued extra room members above `maxPlayers` become spectators for that round;
+  unqueued members stay in the room lobby.
 - If the game can start below `maxPlayers`, fill empty seats with AI when `aiFill`
   is true.
 - Spectators are read-only and may receive full-state views for friends-only play.
@@ -565,7 +569,9 @@ The current design direction is Office Calm:
 - Host-generated answer is stored in `gameStart.initialState`.
   This is acceptable for friendly play but is not cheat-resistant.
 - Party Rooms support host migration while at least one real browser remains online.
-- Party Rooms support refresh resume: same room, same member id, queue survives, and active game state restores from Firebase.
+- Party Rooms support refresh resume: same room, same member id, lobby presence
+  is restored, queue/spectate must be chosen again, and active game state
+  restores from Firebase only for seated players or explicit spectators.
 - Firebase is the room/action/snapshot transport, but it is still not a cheat-proof authoritative game server.
 - Full multi-tab Firebase behavior should be manually tested with a real Firebase project before release.
 - `.DS_Store` may appear locally and should not be committed unless intentionally ignored or removed.

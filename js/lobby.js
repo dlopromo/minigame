@@ -11,6 +11,7 @@ App.Lobby = (function() {
   var roomRole = 'member';
   var roomActionIds = {};
   var launchedRoomGameKey = '';
+  var leftRoundIds = {};
   var chatDrawerOpen = false;
   var roomChatOpen = false;
   var globalGameChatVisible = false;
@@ -22,6 +23,7 @@ App.Lobby = (function() {
   var titleFlashBase = 'MiniGame';
   var titleFlashOn = false;
   var mentionState = { target: '', query: '', index: 0, people: [] };
+  var missingRoomSince = 0;
 
   var modeMeta = {
     coop: {
@@ -88,6 +90,15 @@ App.Lobby = (function() {
     App.Common.showScreen(id);
   }
 
+  function isScreenActive(id) {
+    var screen = document.getElementById('screen-' + id);
+    return !!(screen && screen.classList.contains('active'));
+  }
+
+  function shouldRefreshRoomLobby() {
+    return isScreenActive('room-lobby') || isScreenActive('waiting') || isScreenActive('room-connect');
+  }
+
   function setTitle(text) {
     var title = text ? text + ' - MiniGame' : 'MiniGame';
     titleFlashBase = title;
@@ -120,6 +131,14 @@ App.Lobby = (function() {
       return;
     }
     document.title = title || titleFlashBase || 'MiniGame';
+  }
+
+  function setRoomTitle(code) {
+    stopTitleFlash('房間 ' + (code || roomState && roomState.code || App.Signaling.getRoomCode() || ''));
+  }
+
+  function setHomeTitle() {
+    stopTitleFlash('MiniGame');
   }
 
   function saveRoomSession(room) {
@@ -179,7 +198,9 @@ App.Lobby = (function() {
   }
 
   function getRoomMembers() {
-    return getPeople(roomState && roomState.members);
+    return getPeople(roomState && roomState.members).filter(function(person) {
+      return person.online !== false && !person.isAI && !/^ai-/.test(person.id || '');
+    });
   }
 
   function getRoomQueue() {
@@ -200,7 +221,7 @@ App.Lobby = (function() {
         queueStatus: 'queued'
       };
     }).filter(function(person) {
-      return person.online !== false;
+      return person.online !== false && !person.isAI && !/^ai-/.test(person.id || '');
     }).sort(function(a, b) {
       return (a.queuedAt || 0) - (b.queuedAt || 0);
     });
@@ -231,8 +252,10 @@ App.Lobby = (function() {
         playerIcon: member.playerIcon || person.playerIcon || '',
         joinedAt: member.joinedAt || person.joinedAt || 0,
         lastSeenAt: member.lastSeenAt || person.lastSeenAt || 0,
+        presence: member.presence || person.presence || '',
+        queueStatus: member.queueStatus || person.queueStatus || 'none',
         connectionVersion: member.connectionVersion || person.connectionVersion || 0,
-        controlledByAI: !isAI && member.online === false
+        controlledByAI: !isAI && (member.online === false || (member.presence && member.presence !== 'playing' && person.role === 'player'))
       });
     });
   }
@@ -252,6 +275,16 @@ App.Lobby = (function() {
     if (roomState.gameStart && roomState.gameStart.rolesByClientId && roomState.gameStart.rolesByClientId[selfId]) {
       return roomState.gameStart.rolesByClientId[selfId];
     }
+    if (roomState.gameStart && roomState.gameStart.players && roomState.gameStart.players.some(function(person) {
+      return person && person.id === selfId;
+    })) {
+      return 'player';
+    }
+    if (roomState.gameStart && roomState.gameStart.spectators && roomState.gameStart.spectators.some(function(person) {
+      return person && person.id === selfId;
+    })) {
+      return 'spectator';
+    }
     if (roomState.members && roomState.members[selfId]) return roomState.members[selfId].role || 'member';
     return 'spectator';
   }
@@ -268,6 +301,11 @@ App.Lobby = (function() {
 
   function isSelfQueued() {
     return !!(roomState && roomState.queue && roomState.queue[selfId]);
+  }
+
+  function isSelfSpectating() {
+    var member = getSelfMember();
+    return !!(member && member.presence === 'spectating');
   }
 
   function renderRoomDebug() {
@@ -444,7 +482,7 @@ App.Lobby = (function() {
     if (!target) return;
     var vote = roomState && roomState.vote ? roomState.vote : null;
     var active = vote && vote.status === 'pending';
-    var canStartReturnVote = roomState && roomState.status === 'playing' && !active;
+    var canStartReturnVote = !!(roomState && roomState.gameStart && !active && roomState.status !== 'closed');
     if (!active && !canStartReturnVote) {
       target.hidden = true;
       target.innerHTML = '';
@@ -484,15 +522,15 @@ App.Lobby = (function() {
 
   function renderRoomLobby() {
     if (!roomState) return;
-    setTitle('房間 ' + (roomState.code || App.Signaling.getRoomCode() || ''));
+    setRoomTitle(roomState.code || App.Signaling.getRoomCode() || '');
     roomRole = getSelfRole();
     var codeLabel = document.getElementById('room-code-label');
     if (codeLabel) codeLabel.textContent = roomState.code || App.Signaling.getRoomCode() || '----';
     var roleLabel = document.getElementById('room-role-label');
     if (roleLabel) {
-      var roleText = roomRole === 'player' ? '玩家' : '觀戰';
+      var roleText = roomRole === 'player' ? '玩家' : '房間中';
       if (roomRole === 'host') roleText = '房主';
-      if (roomRole === 'member') roleText = isSelfQueued() ? '隊列中' : '觀戰';
+      if (roomRole === 'member') roleText = isSelfQueued() ? '隊列中' : (isSelfSpectating() ? '觀戰中' : '房間中');
       var statusText = roomState.status === 'playing'
         ? '遊戲進行中'
         : roomState.status === 'starting'
@@ -520,6 +558,13 @@ App.Lobby = (function() {
         ? '<i class="fa-solid fa-user-minus" aria-hidden="true"></i> 離開隊列'
         : '<i class="fa-solid fa-list-ol" aria-hidden="true"></i> 加入隊列';
       queueBtn.className = isSelfQueued() ? 'btn btn-secondary' : 'btn btn-primary';
+    }
+    var spectateBtn = document.getElementById('room-spectate-toggle');
+    if (spectateBtn) {
+      spectateBtn.innerHTML = isSelfSpectating()
+        ? '<i class="fa-solid fa-eye-slash" aria-hidden="true"></i> 取消觀戰'
+        : '<i class="fa-solid fa-eye" aria-hidden="true"></i> 觀戰本局';
+      spectateBtn.className = isSelfSpectating() ? 'btn btn-secondary' : 'btn btn-ghost';
     }
     showScreen('room-lobby');
   }
@@ -739,14 +784,20 @@ App.Lobby = (function() {
   function notifyRoomUpdateToGame() {
     if (!gameActive || playContext !== 'room') return;
     var start = roomState && roomState.gameStart ? roomState.gameStart : null;
+    var role = getSelfRole();
+    if ((!role || role === 'member') && start) {
+      if ((start.players || []).some(function(person) { return person && person.id === selfId; })) role = 'player';
+      else if ((start.spectators || []).some(function(person) { return person && person.id === selfId; })) role = 'spectator';
+    }
+    var gameState = roomState ? roomState.gameState : null;
     App.GameManager.handleMessage({
       type: 'room_update',
       roomId: roomState ? roomState.code : '',
       selfId: selfId,
-      role: getSelfRole(),
+      role: role,
       players: start && start.players ? enrichRoundPeople(start.players) : getRoomPlayers(),
       spectators: start && start.spectators ? enrichRoundPeople(start.spectators) : getRoomSpectators(),
-      gameState: roomState ? roomState.gameState : null,
+      gameState: gameState,
       isHost: isHost,
       hostId: roomState ? roomState.hostId : ''
     });
@@ -871,10 +922,17 @@ App.Lobby = (function() {
 
   function handleRoomState(state) {
     if (!state) {
+      if (playContext !== 'room') return;
+      if (!missingRoomSince) {
+        missingRoomSince = Date.now();
+        return;
+      }
+      if (Date.now() - missingRoomSince < 1600) return;
       App.Common.showToast('房間已關閉', 'error');
       goHome();
       return;
     }
+    missingRoomSince = 0;
     notifyHostNotice(state);
     roomState = state;
     maybeClaimHost(state);
@@ -882,24 +940,67 @@ App.Lobby = (function() {
     maybeResolveVote(state);
     maybeApplyResolvedVote(state);
     if (gameActive && (state.status === 'lobby' || state.status === 'closed')) {
-      App.GameManager.endGame({ skipConfirm: true });
+      App.GameManager.endGame({ skipConfirm: true, noCallback: true });
+      gameActive = false;
+      setGlobalGameChatVisible(false);
+      if (state.status === 'closed') {
+        App.Common.showToast('房間已關閉', 'error');
+        goHome();
+        return;
+      }
+      setTitle('房間 ' + (state.code || App.Signaling.getRoomCode() || ''));
+      renderRoomLobby();
       return;
     }
     notifyRoomUpdateToGame();
     renderRoomChat();
-    if (becameHost) processPendingRoomActions(state);
+    if (isHost) processPendingRoomActions(state);
     maybeLaunchRoomGameFromState();
-    if (!gameActive) renderRoomLobby();
+    if (!gameActive && shouldRefreshRoomLobby()) renderRoomLobby();
   }
 
   function handleRoomAction(actionId, action) {
     if (!isHost || roomActionIds[actionId] || !action || !action.payload) return;
-    if (roomState && action.roundId && action.roundId !== roomState.roundId) {
+    if (!action.roundId) {
+      if (App.Signaling.clearGameAction) App.Signaling.clearGameAction(actionId).catch(function() {});
+      return;
+    }
+    if (roomState && action.roundId !== roomState.roundId) {
       if (App.Signaling.clearGameAction) App.Signaling.clearGameAction(actionId).catch(function() {});
       return;
     }
     roomActionIds[actionId] = true;
     App.GameManager.handleMessage(action.payload);
+    if (action.payload.stateSnapshot && App.Signaling && App.Signaling.setGameState) {
+      var snapshot = action.payload.stateSnapshot;
+      var resolvedState = snapshot && snapshot.state ? snapshot : {
+        gameId: action.payload.gameId || roomState.gameId || '',
+        mode: action.payload.mode || roomState.mode || '',
+        roundId: action.roundId || roomState.roundId || '',
+        state: snapshot
+      };
+      if (resolvedState && resolvedState.state) {
+        App.Signaling.setGameState(resolvedState).catch(function(e) {
+          App.Common.showToast('同步遊戲狀態失敗：' + e.message, 'error');
+        });
+      }
+    }
+    if (!action.payload.stateSnapshot && App.GameManager && typeof App.GameManager.getActiveGameSnapshot === 'function' && App.Signaling && App.Signaling.setGameState) {
+      var currentSnapshot = App.GameManager.getActiveGameSnapshot();
+      if (currentSnapshot) {
+        var resolvedSnapshot = currentSnapshot && currentSnapshot.state ? currentSnapshot : {
+          gameId: action.payload.gameId || roomState.gameId || '',
+          mode: action.payload.mode || roomState.mode || '',
+          roundId: action.roundId || roomState.roundId || '',
+          state: currentSnapshot
+        };
+        if (resolvedSnapshot && resolvedSnapshot.state) {
+          App.Signaling.setGameState(resolvedSnapshot).catch(function(e) {
+            App.Common.showToast('同步遊戲狀態失敗：' + e.message, 'error');
+          });
+        }
+      }
+    }
     if (App.Signaling.clearGameAction) App.Signaling.clearGameAction(actionId).catch(function(e) {
       App.Common.showToast('清理同步佇列失敗：' + e.message, 'error');
     });
@@ -1086,7 +1187,9 @@ App.Lobby = (function() {
     seating.players.forEach(function(person) { if (!person.isAI) seatedIds[person.id] = true; });
     var updates = { players: null, spectators: null };
     members.forEach(function(person) {
-      updates['members/' + person.id + '/presence'] = seatedIds[person.id] ? 'playing' : 'spectating';
+      // Only queued/selected players enter the game scene automatically.
+      // Non-selected people stay in room lobby unless they explicitly queue.
+      updates['members/' + person.id + '/presence'] = seatedIds[person.id] ? 'playing' : 'lobby';
     });
     updates.maxPlayers = seating.maxPlayers;
     return App.Signaling.updateRoom(updates).then(function() {
@@ -1191,16 +1294,41 @@ App.Lobby = (function() {
 
   function roomResultActionsHtml() {
     if (playContext !== 'room' || !roomState) return '';
-    return '<button class="result-action secondary" type="button" onclick="App.Lobby.returnToRoomLobby()"><i class="fa-solid fa-arrow-left" aria-hidden="true"></i><span>返回房間</span></button>' +
-      '<button class="result-action" type="button" onclick="App.Lobby.restartRoomGame()" ' + (isHost ? '' : 'disabled') + '><i class="fa-solid fa-rotate-right" aria-hidden="true"></i><span>' + (isHost ? '開新一局' : '等待房主') + '</span></button>';
+    return '<button class="result-action secondary" type="button" onclick="App.Lobby.handleGameCloseAction()"><i class="fa-solid fa-arrow-left" aria-hidden="true"></i><span>返回房間</span></button>' +
+      '<button class="result-action" type="button" onclick="App.Lobby.restartRoomGame()"><i class="fa-solid fa-rotate-right" aria-hidden="true"></i><span>' + (isHost ? '開新一局' : '發起重開') + '</span></button>';
   }
 
   function returnToRoomLobby() {
+    if (roomState && roomState.roundId) {
+      leftRoundIds[roomState.roundId] = true;
+      if (selfId && App.Signaling && App.Signaling.updateRoom) {
+        var updates = {};
+        updates['members/' + selfId + '/presence'] = 'lobby';
+        updates['members/' + selfId + '/queueStatus'] = 'none';
+        updates['members/' + selfId + '/lastSeenAt'] = Date.now();
+        App.Signaling.updateRoom(updates).catch(function() {});
+      }
+    }
     if (gameActive) App.GameManager.endGame({ skipConfirm: true, noCallback: true });
     gameActive = false;
     setGlobalGameChatVisible(false);
-    setTitle('房間 ' + (roomState && roomState.code || App.Signaling.getRoomCode() || ''));
+    setRoomTitle(roomState && roomState.code || App.Signaling.getRoomCode() || '');
     renderRoomLobby();
+  }
+
+  function handleGameCloseAction() {
+    if (playContext !== 'room') {
+      App.GameManager.endGame();
+      return;
+    }
+    if (isHost) {
+      // Host exit from active game should sync immediately for all players.
+      endRoomRound('host_return_lobby').catch(function(e) {
+        App.Common.showToast('同步返回房間失敗：' + e.message, 'error');
+      });
+      return;
+    }
+    returnToRoomLobby();
   }
 
   function selectMultiplayerMode(mode) {
@@ -1286,7 +1414,14 @@ App.Lobby = (function() {
 
   function launchRoomGame(gameId, mode, roomPayload) {
     var payload = roomPayload || makeGameStartPayload(roomState && roomState.gameStart);
+    var launchedRoundId = payload.roundId || '';
     roomRole = payload.role || getSelfRole();
+    if (playContext === 'room' && selfId && roomRole === 'player' && App.Signaling && App.Signaling.updateRoom && !leftRoundIds[launchedRoundId]) {
+      var presenceUpdates = {};
+      presenceUpdates['members/' + selfId + '/presence'] = 'playing';
+      presenceUpdates['members/' + selfId + '/lastSeenAt'] = Date.now();
+      App.Signaling.updateRoom(presenceUpdates).catch(function() {});
+    }
     showScreen('game');
     setTitle('載入中...');
     var container = document.getElementById('game-container');
@@ -1299,8 +1434,20 @@ App.Lobby = (function() {
       setGlobalGameChatVisible(false);
       if (playContext === 'room') {
         if (isHost) {
+          var latestRoundId = roomState && roomState.roundId ? roomState.roundId : '';
+          var latestStatus = roomState && roomState.status ? roomState.status : '';
+          // Ignore stale end callbacks after room state has already switched rounds or lobby.
+          if (launchedRoundId && latestRoundId && launchedRoundId !== latestRoundId) {
+            setTitle('房間 ' + (roomState && roomState.code || App.Signaling.getRoomCode() || ''));
+            renderRoomLobby();
+            return;
+          }
           var activeState = roomState && roomState.gameState && roomState.gameState.state;
           if (activeState && activeState.status === 'settled') {
+            renderRoomLobby();
+            return;
+          }
+          if (latestStatus && latestStatus !== 'playing') {
             renderRoomLobby();
             return;
           }
@@ -1323,8 +1470,12 @@ App.Lobby = (function() {
         }
         setTitle('房間 ' + (roomState && roomState.code || App.Signaling.getRoomCode() || ''));
         renderRoomLobby();
-      } else {
+      } else if (playContext === 'single' || !playContext) {
         goHome();
+      } else {
+        // Defensive fallback: avoid unexpected home redirect when context is transitioning.
+        setTitle('');
+        showScreen('home');
       }
     });
   }
@@ -1332,6 +1483,17 @@ App.Lobby = (function() {
   function maybeLaunchRoomGameFromState() {
     if (!roomState || gameActive) return;
     if (roomState.status !== 'playing' || !roomState.gameStart || !roomState.gameStart.gameId || !roomState.gameStart.mode) return;
+    var roundId = roomState.gameStart.roundId || roomState.roundId || '';
+    if (roundId && leftRoundIds[roundId]) return;
+    var role = getSelfRole();
+    var start = roomState.gameStart;
+    var isParticipant = !!(start.players && start.players.some(function(person) { return person && person.id === selfId; })) ||
+      !!(start.spectators && start.spectators.some(function(person) { return person && person.id === selfId; }));
+    if (!isParticipant && role !== 'player' && role !== 'spectator') return;
+    if (!isParticipant && role === 'spectator') {
+      var me = getSelfMember();
+      if (me && me.presence !== 'spectating' && me.queueStatus !== 'queued') return;
+    }
     var key = roomState.gameStart.roundId || (roomState.gameStart.gameId + ':' + roomState.gameStart.mode + ':' + (roomState.updatedAt || ''));
     if (launchedRoomGameKey === key) return;
     launchRoomGame(roomState.gameStart.gameId, roomState.gameStart.mode, makeGameStartPayload(roomState.gameStart));
@@ -1354,11 +1516,12 @@ App.Lobby = (function() {
     selfId = '';
     roomRole = 'member';
     roomActionIds = {};
+    leftRoundIds = {};
     processedVoteIds = {};
     launchedRoomGameKey = '';
     lastHostNoticeEpoch = 0;
     setGlobalGameChatVisible(false);
-    setTitle('');
+    setHomeTitle();
     showScreen('home');
   }
 
@@ -1411,14 +1574,41 @@ App.Lobby = (function() {
   function sendRoomGameAction(payload) {
     if (playContext !== 'room' || !payload || !roomState || !roomState.roundId) return false;
     if (!App.Signaling || !App.Signaling.sendGameAction) return false;
-    App.Signaling.sendGameAction({
+    var action = {
       roundId: roomState.roundId,
       gameId: roomState.gameId || '',
       mode: roomState.mode || '',
       payload: payload
-    }).catch(function(e) {
+    };
+    App.Signaling.sendGameAction(action).catch(function(e) {
       App.Common.showToast('同步動作失敗：' + e.message, 'error');
     });
+    if (!isHost && App.GameManager && typeof App.GameManager.handleMessage === 'function' && !payload.skipLocalEcho) {
+      try {
+        App.GameManager.handleMessage(Object.assign({
+          localEcho: true,
+          roundId: roomState.roundId || '',
+          gameId: roomState.gameId || '',
+          mode: roomState.mode || ''
+        }, payload));
+      } catch (e) {
+        // Ignore optimistic local application errors; host snapshot will reconcile state.
+      }
+    }
+    if (!isHost && payload && payload.stateSnapshot && App.Signaling && App.Signaling.setGameState) {
+      var snapshot = payload.stateSnapshot;
+      var resolvedSnapshot = snapshot && snapshot.state ? snapshot : {
+        gameId: payload.gameId || roomState.gameId || '',
+        mode: payload.mode || roomState.mode || '',
+        roundId: roomState.roundId || '',
+        state: snapshot
+      };
+      if (resolvedSnapshot && resolvedSnapshot.state) {
+        App.Signaling.setGameState(resolvedSnapshot).catch(function(e) {
+          App.Common.showToast('同步遊戲狀態失敗：' + e.message, 'error');
+        });
+      }
+    }
     return true;
   }
 
@@ -1457,11 +1647,19 @@ App.Lobby = (function() {
 
   function requestRoomAction(type, payload) {
     if (playContext !== 'room' || !roomState) return;
-    if (!isHost && ['restart_round', 'change_game', 'close_room', 'force_settle'].indexOf(type) >= 0) {
+    if (!isHost && ['change_game', 'close_room', 'force_settle'].indexOf(type) >= 0) {
       App.Common.showToast('只有房主可以發起這個動作', 'error');
       return;
     }
-    var needsVote = onlineHumanIds().length > 1 && roomState.status === 'playing';
+    var multiHuman = onlineHumanIds().length > 1;
+    var voteActions = {
+      return_lobby: true,
+      restart_round: true,
+      change_game: true,
+      close_room: true,
+      force_settle: true
+    };
+    var needsVote = multiHuman && !!voteActions[type];
     if (needsVote) {
       startRoomVote(type, payload || {});
       return;
@@ -1510,6 +1708,24 @@ App.Lobby = (function() {
       logRoomEvent('system', getSelfName() + (next ? ' 加入隊列' : ' 離開隊列'), next ? 'queue_join' : 'queue_leave');
     }).catch(function(e) {
       App.Common.showToast('更新隊列失敗：' + e.message, 'error');
+    });
+  }
+
+  function toggleSpectate() {
+    if (playContext !== 'room' || !roomState || !selfId || !App.Signaling) return;
+    if (isSelfQueued()) {
+      App.Common.showToast('你已在隊列中，請先離開隊列再切換觀戰', 'error');
+      return;
+    }
+    var member = getSelfMember();
+    var next = !(member && member.presence === 'spectating');
+    var updates = {};
+    updates['members/' + selfId + '/presence'] = next ? 'spectating' : 'lobby';
+    updates['members/' + selfId + '/lastSeenAt'] = Date.now();
+    App.Signaling.updateRoom(updates).then(function() {
+      logRoomEvent('system', getSelfName() + (next ? ' 切換為觀戰' : ' 退出觀戰'), next ? 'spectate_on' : 'spectate_off');
+    }).catch(function(e) {
+      App.Common.showToast('更新觀戰狀態失敗：' + e.message, 'error');
     });
   }
 
@@ -1568,11 +1784,16 @@ App.Lobby = (function() {
   }
 
   function backFromGameSelect() {
-    if (playContext === 'room' && roomState) {
-      renderRoomLobby();
-    } else {
-      goHome();
+    if (playContext === 'room') {
+      // In room context, avoid accidental home redirect during transient room-state updates.
+      if (roomState) {
+        renderRoomLobby();
+      } else {
+        showScreen('room-lobby');
+      }
+      return;
     }
+    goHome();
   }
 
   function attemptRoomResume() {
@@ -1612,6 +1833,7 @@ App.Lobby = (function() {
     joinShortRoom: joinShortRoom,
     copyRoomCode: copyRoomCode,
     toggleQueue: toggleQueue,
+    toggleSpectate: toggleSpectate,
     toggleRoomChat: toggleRoomChat,
     updateRoomProfile: updateRoomProfile,
     sendRoomChat: sendRoomChat,
@@ -1624,6 +1846,7 @@ App.Lobby = (function() {
     renderRoomLobby: renderRoomLobby,
     restartRoomGame: restartRoomGame,
     returnToRoomLobby: returnToRoomLobby,
+    handleGameCloseAction: handleGameCloseAction,
     roomResultActionsHtml: roomResultActionsHtml,
     goHome: goHome,
     sendRoomGameAction: sendRoomGameAction,

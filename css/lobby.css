@@ -128,10 +128,12 @@
 }
 .room-person-name{
   font-size:clamp(.68rem,1.8vw,.8rem);font-weight:800;max-width:none;overflow:visible;text-overflow:clip;white-space:normal;line-height:1.15;
+  min-width:0;
 }
 .room-person-meta{display:none}
 .room-person.offline{opacity:.52}
 .room-person-badges{display:flex;align-items:center;justify-content:flex-end;gap:5px;flex-wrap:wrap}
+.room-person.with-avatar > div:nth-child(2){min-width:0}
 .room-badge{
   display:inline-flex;align-items:center;border-radius:999px;
   padding:2px 6px;font-size:.65rem;font-weight:800;background:#eef2f7;color:#425466;
@@ -141,17 +143,24 @@
 .room-badge.transport{background:#eef4ff;color:#175cd3}
 .room-badge.queue{background:#fff7ed;color:#c2410c}
 .room-badge.ai{background:#f4f3ff;color:#5925dc}
-.room-profile-card{grid-template-rows:auto auto auto auto}
+.room-profile-card{
+  grid-template-rows:auto auto auto auto;
+  align-content:start;
+  gap:6px;
+}
 .room-profile-summary{
-  display:grid;grid-template-columns:auto minmax(0,1fr);gap:8px;align-items:center;
-  padding:8px;border:1px solid #e2e8f0;border-radius:10px;background:#fff;font-weight:850;color:#344054;
+  display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:8px;align-items:center;
+  padding:8px 10px;border:1px solid #e2e8f0;border-radius:10px;background:#fff;font-weight:850;color:#344054;
 }
 .room-profile-summary .room-avatar{width:30px;height:30px;font-size:1rem}
 .room-profile-summary span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.room-profile-options{display:flex;gap:6px;flex-wrap:wrap;align-content:flex-start;min-height:0}
+.room-profile-options{
+  display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;align-content:flex-start;min-height:0
+}
 .room-profile-choice{
-  width:28px;height:28px;border-radius:999px;border:1px solid #d9e1ea;background:#fff;cursor:pointer;
+  width:100%;aspect-ratio:1;border-radius:12px;border:1px solid #d9e1ea;background:#fff;cursor:pointer;
   display:grid;place-items:center;font-size:.9rem;font-weight:850;color:#344054;
+  box-shadow:0 2px 8px rgba(31,41,51,.04);
 }
 .room-profile-choice.color{background:var(--choice-color);border-color:color-mix(in srgb,var(--choice-color) 74%,#8793a1)}
 .room-profile-choice.active{box-shadow:0 0 0 3px rgba(47,58,69,.12);outline:2px solid #2f3a45}
@@ -213,7 +222,7 @@
 }
 .mention-option:hover,.mention-option.active{background:#f1f5f9}
 .mention-option span:last-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.room-action-bar{display:grid;grid-template-columns:1fr 1fr auto;gap:8px;align-items:center}
+.room-action-bar{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;align-items:center}
 .game-chat-drawer{
   position:fixed;inset:0;display:none;align-items:stretch;justify-content:flex-end;
   background:rgba(20,28,40,.18);z-index:9000;padding:12px;
@@ -232,7 +241,7 @@
 }
 .chat-badge.has-unread{display:grid}
 .global-game-chat-button{
-  position:fixed;right:18px;bottom:18px;width:46px;height:46px;border-radius:999px;border:1px solid #d9e1ea;
+  position:fixed;left:18px;bottom:18px;width:46px;height:46px;border-radius:999px;border:1px solid #d9e1ea;
   background:#fff;color:#344054;display:grid;place-items:center;box-shadow:0 12px 30px rgba(31,41,51,.16);
   cursor:pointer;z-index:1200;font-size:1rem;
 }
@@ -261,7 +270,11 @@
   .room-strip-hide{display:none}
   .room-main-grid{grid-template-columns:1fr 1fr;grid-template-rows:auto auto auto;align-content:start;align-items:start;align-self:start}
   .room-chat-card,.room-profile-card,.room-leaderboard-card{grid-column:1/3}
-  .room-profile-card,.room-leaderboard-card{max-height:118px}
+  .room-profile-card{max-height:150px}
+  .room-profile-card .room-profile-summary{padding:7px 8px}
+  .room-profile-card .room-profile-summary span{font-size:.75rem}
+  .room-profile-card .room-profile-choice{font-size:.85rem;border-radius:10px}
+  .room-leaderboard-card{max-height:118px}
   .room-chat-card:not(.is-collapsed){height:min(42dvh,320px)}
   .room-chat-card.is-collapsed{grid-template-rows:auto}
   .room-chat-card.is-collapsed .room-chat-list,
@@ -271,11 +284,11 @@
   .room-person{padding:6px 7px}
   .room-person-name{font-size:.72rem;max-width:none}
   .room-chat-list{font-size:.78rem}
-  .room-action-bar{grid-template-columns:1fr 1fr auto}
+  .room-action-bar{grid-template-columns:repeat(2,minmax(0,1fr))}
   .room-action-bar .btn{padding:10px 8px;font-size:.83rem}
   .game-chat-drawer{padding:6px;align-items:flex-end}
   .game-chat-panel{height:min(58dvh,460px);width:100%;border-radius:14px 14px 10px 10px}
-  .global-game-chat-button{right:12px;bottom:12px;width:44px;height:44px}
+  .global-game-chat-button{left:12px;bottom:12px;width:44px;height:44px}
   .admin-layout{grid-template-columns:1fr}
   .admin-debug-panel{grid-template-columns:repeat(2,1fr)}
 }

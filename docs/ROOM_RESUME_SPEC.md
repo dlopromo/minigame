@@ -62,8 +62,9 @@ Watch room
 - `gameState.state` restores mutable round state.
 - Games must ignore snapshots for another `roundId`.
 - Host remains the only writer for shared card-game state.
-- Queue status survives refresh because it lives in `queue/{clientId}` and
-  `members/{clientId}.queueStatus`.
+- Re-entry marks the member as room-lobby presence with `queueStatus: none`.
+  Users must opt into queue or spectate again, which prevents stale browser
+  refreshes from silently taking a seat in the next round.
 
 ## Expected UX
 

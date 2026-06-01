@@ -117,18 +117,20 @@
 
   function serializeState() { return { gameId: 'sicBo', mode: opts.mode || 'room', roundId: opts.roundId || '', state: clone(state) }; }
   function publishState() {
-    if (!isRoomMode() || !opts.isHost || !App.Signaling || !App.Signaling.setGameState) return;
+    if (!isRoomMode() || !App.Signaling || !App.Signaling.setGameState) return;
+    if (!opts.isHost && !(opts && opts.localEcho)) return;
     App.Signaling.setGameState(serializeState());
   }
   function applyState(snapshot) {
     if (!snapshot || !snapshot.state) return;
-    if (opts && opts.roundId && snapshot.roundId && snapshot.roundId !== opts.roundId) return;
+    var expectedRoundId = (opts && opts.roundId) || (opts && opts.gameState && opts.gameState.roundId) || '';
+    if (expectedRoundId && snapshot.roundId && snapshot.roundId !== expectedRoundId) return;
     state = clone(snapshot.state);
     normalizeState();
     render();
   }
   function commit() {
-    if (!isHostAuthority()) return;
+    if (!isHostAuthority() && !(opts && opts.localEcho)) return;
     publishState();
     render();
   }
@@ -196,10 +198,20 @@
     state.finishedAt = Date.now();
     record('系統', '開出 ' + state.dice.join('-') + '，合計 ' + total + '，' + (state.outcome === 'triple' ? '圍骰通殺' : SIDES[state.outcome] + '勝'));
     saveRoomResult();
+    if (isRoomMode() && !opts.isHost) {
+      sendRoomAction({ type: 'sb_state_sync', stateSnapshot: serializeState(), playerId: opts.selfId });
+    } else if (isRoomMode()) {
+      publishState();
+    }
   }
 
   function sendRoomAction(payload) {
-    if (!isRoomMode() || !App.Signaling || !App.Signaling.sendGameAction) return;
+    if (!isRoomMode()) return;
+    if (App.Lobby && typeof App.Lobby.sendRoomGameAction === 'function') {
+      App.Lobby.sendRoomGameAction(payload);
+      return;
+    }
+    if (!App.Signaling || !App.Signaling.sendGameAction) return;
     App.Signaling.sendGameAction({ roundId: opts.roundId || '', gameId: 'sicBo', mode: opts.mode || 'room', payload: payload });
   }
 
@@ -207,13 +219,20 @@
     var player = selfPlayer();
     if (!player || isSpectator() || state.phase !== 'betting' || state.status !== 'playing') return;
     var amount = clampBet(selectedAmount, player);
-    if (isRoomMode() && !opts.isHost) sendRoomAction({ type: 'sb_bet', playerId: opts.selfId, side: selectedSide, amount: amount });
-    else placeBet(player.id, selectedSide, amount);
+    if (isRoomMode() && !opts.isHost) {
+      sendRoomAction({ type: 'sb_bet', playerId: opts.selfId, side: selectedSide, amount: amount });
+      sendRoomAction({ type: 'sb_state_sync', stateSnapshot: serializeState(), playerId: opts.selfId });
+    } else placeBet(player.id, selectedSide, amount);
   }
 
   function handleRoomAction(msg) {
-    if (!isRoomMode() || !opts.isHost || !msg) return;
+    if (!isRoomMode() || !msg || (!opts.isHost && !msg.localEcho) || (opts.isHost && msg.localEcho)) return;
     if (msg.type === 'sb_bet') placeBet(msg.playerId, msg.side, msg.amount);
+    if ((msg.type === 'sb_state' || msg.type === 'sb_state_sync') && msg.stateSnapshot && msg.stateSnapshot.state) {
+      state = clone(msg.stateSnapshot.state);
+      normalizeState();
+      render();
+    }
   }
 
   function saveRoomResult() {
@@ -285,7 +304,7 @@
     }
     container.innerHTML =
       '<div class="sb-shell">' +
-        '<div class="sb-topbar"><div class="sb-title">大小 · ' + (canBet ? '請下注' : '等待下注') + '</div><div class="sb-actions">' + (isRoomMode() ? '<button class="sb-icon game-chat-trigger" onclick="App.Lobby.toggleGameChat()" aria-label="Chat"><i class="fa-regular fa-comments"></i><span class="chat-badge game-chat-unread"></span></button>' : '') + '<button class="sb-icon" onclick="App.GameManager.endGame()" aria-label="離開"><i class="fa-solid fa-xmark"></i></button></div></div>' +
+        '<div class="sb-topbar"><div class="sb-title">大小 · ' + (canBet ? '請下注' : '等待下注') + '</div><div class="sb-actions">' + (isRoomMode() ? '<button class="sb-icon game-chat-trigger" onclick="App.Lobby.toggleGameChat()" aria-label="Chat"><i class="fa-regular fa-comments"></i><span class="chat-badge game-chat-unread"></span></button>' : '') + '<button class="sb-icon" onclick="(App.Lobby && App.Lobby.handleGameCloseAction ? App.Lobby.handleGameCloseAction() : App.GameManager.endGame())" aria-label="離開"><i class="fa-solid fa-xmark"></i></button></div></div>' +
         '<section class="sb-table"><div class="sb-dice-zone"><div class="sb-dice">' + (state.dice.length ? state.dice.map(function(value) { return '<span class="sb-die">' + value + '</span>'; }).join('') : '<span class="sb-die">?</span><span class="sb-die">?</span><span class="sb-die">?</span>') + '</div><div class="sb-result">結果：<strong>' + resultLabel() + '</strong></div></div><section class="sb-players">' + state.players.map(renderPlayer).join('') + '</section></section>' +
         '<div class="sb-controls"><div class="sb-hint">' + escapeHtml(state.history[state.history.length - 1].name + '：' + state.history[state.history.length - 1].text) + '</div>' +
           ['small','big'].map(function(side) { return '<button class="sb-btn secondary" data-side="' + side + '"' + (canBet ? '' : ' disabled') + '>' + SIDES[side] + '</button>'; }).join('') +
@@ -308,7 +327,7 @@
     var back = container.querySelector('#sb-back');
     var next = container.querySelector('#sb-new');
     if (bet) bet.addEventListener('click', humanBet);
-    if (back) back.addEventListener('click', function() { App.GameManager.endGame(); });
+    if (back) back.addEventListener('click', function() { if (App.Lobby && App.Lobby.handleGameCloseAction) App.Lobby.handleGameCloseAction(); else App.GameManager.endGame(); });
     if (next) next.addEventListener('click', startNewRound);
   }
 
@@ -333,6 +352,9 @@
     aiFill: false,
     multiplayerModes: ['room'],
     buildRoomStart: function(roomOpts) { return { state: buildInitialState(roomOpts.players || []) }; },
+    getStateSnapshot: function() {
+      return serializeState();
+    },
     init: function(gameContainer, gameOpts) {
       container = gameContainer;
       opts = gameOpts || {};
@@ -344,10 +366,26 @@
     handleMessage: function(msg) {
       if (!msg) return;
       if (msg.type === 'room_update') {
+      if (msg.gameState && opts.ignoreNextRoomSnapshot && (!opts.ignoreNextRoomSnapshotRoundId || msg.gameState.roundId === opts.ignoreNextRoomSnapshotRoundId)) {
+        opts.ignoreNextRoomSnapshot = false;
+        return;
+      }
         opts.players = msg.players || opts.players;
+        opts.spectators = msg.spectators || opts.spectators;
         opts.role = msg.role || opts.role;
+        opts.selfId = msg.selfId || opts.selfId;
         opts.isHost = !!msg.isHost;
         applyState(msg.gameState);
+        return;
+      }
+      if (msg.localEcho) {
+        if (msg.stateSnapshot) {
+          opts.ignoreNextRoomSnapshot = true;
+          opts.ignoreNextRoomSnapshotRoundId = (msg.roundId || (opts && opts.roundId) || (opts && opts.gameState && opts.gameState.roundId) || '');
+        }
+        opts.localEcho = true;
+        handleRoomAction(msg);
+        opts.localEcho = false;
         return;
       }
       handleRoomAction(msg);

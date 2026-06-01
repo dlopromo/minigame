@@ -159,7 +159,8 @@
 
   function applyState(snapshot) {
     if (!snapshot || !snapshot.state) return;
-    if (opts && opts.roundId && snapshot.roundId && snapshot.roundId !== opts.roundId) return;
+    var expectedRoundId = (opts && opts.roundId) || (opts && opts.gameState && opts.gameState.roundId) || '';
+    if (expectedRoundId && snapshot.roundId && snapshot.roundId !== expectedRoundId) return;
     state = clone(snapshot.state);
     suggestedCardId = '';
     render();
@@ -193,15 +194,16 @@
       var remote = byId[player.id];
       var nativeAI = /^ai-/.test(player.id || '');
       if (!remote || nativeAI) return;
-      var shouldAI = remote.online === false;
+      var leftActiveRound = !!(remote.presence && remote.presence !== 'playing');
+      var shouldAI = remote.online === false || leftActiveRound;
       if (!!player.ai !== shouldAI) {
         player.ai = shouldAI;
         player.isAI = shouldAI;
         changed = true;
-        record('系統', player.name + (shouldAI ? ' 斷線，AI 接管' : ' 已重連，恢復真人操作'));
-        App.Common.showToast(player.name + (shouldAI ? ' 斷線，AI 接管中' : ' 已重連'), shouldAI ? '' : 'success');
+        record('系統', player.name + (shouldAI ? ' 離開本局，AI 接管' : ' 已重連，恢復真人操作'));
+        App.Common.showToast(player.name + (shouldAI ? ' AI 接管中' : ' 已重連'), shouldAI ? '' : 'success');
       }
-      player.online = remote.online !== false;
+      player.online = remote.online !== false && !leftActiveRound;
       player.name = remote.name || player.name;
       player.playerColor = remote.playerColor || player.playerColor || '';
       player.playerIcon = remote.playerIcon || player.playerIcon || '';
@@ -281,7 +283,7 @@
   }
 
   function commit() {
-    if (isHostAuthority()) {
+    if (isHostAuthority() || (opts && opts.localEcho)) {
       publishState();
       render();
       scheduleAI();
@@ -299,13 +301,13 @@
   }
 
   function sendRoomAction(payload) {
-    if (!isRoomMode() || !App.Signaling || !App.Signaling.sendGameAction) return;
-    App.Signaling.sendGameAction({
-      roundId: opts.roundId || '',
-      gameId: 'colorShift',
-      mode: opts.mode || 'room',
-      payload: payload
-    });
+    if (!isRoomMode()) return;
+    if (App.Lobby && typeof App.Lobby.sendRoomGameAction === 'function') {
+      App.Lobby.sendRoomGameAction(payload);
+      return;
+    }
+    if (!App.Signaling || !App.Signaling.sendGameAction) return;
+    App.Signaling.sendGameAction({ roundId: opts.roundId || '', gameId: 'colorShift', mode: opts.mode || 'room', payload: payload });
   }
 
   function humanPlay(cardId) {
@@ -385,7 +387,7 @@
   }
 
   function handleRoomAction(msg) {
-    if (!isRoomMode() || !opts.isHost || !msg) return;
+    if (!isRoomMode() || !msg || (!opts.isHost && !msg.localEcho) || (opts.isHost && msg.localEcho)) return;
     if (msg.type === 'cs_play') playCard(msg.playerId, msg.cardId, msg.chosenColor);
     if (msg.type === 'cs_draw') draw(msg.playerId);
   }
@@ -501,7 +503,7 @@
     container.innerHTML =
       '<div class="cs-shell">' +
         '<div class="cs-topbar"><div class="cs-title' + (canAct ? ' my-turn' : '') + '">' + (state.status === 'settled' ? winnerText() : canAct ? '輪到你出牌' : activePlayer().name + ' 出牌中') + '</div>' +
-        '<div class="cs-actions">' + (isRoomMode() ? '<button class="cs-icon game-chat-trigger" onclick="App.Lobby.toggleGameChat()" aria-label="Chat"><i class="fa-regular fa-comments" aria-hidden="true"></i><span class="chat-badge game-chat-unread"></span></button>' : '') + '<button class="cs-icon" onclick="App.GameManager.endGame()" aria-label="離開遊戲"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button></div></div>' +
+        '<div class="cs-actions">' + (isRoomMode() ? '<button class="cs-icon game-chat-trigger" onclick="App.Lobby.toggleGameChat()" aria-label="Chat"><i class="fa-regular fa-comments" aria-hidden="true"></i><span class="chat-badge game-chat-unread"></span></button>' : '') + '<button class="cs-icon" onclick="(App.Lobby && App.Lobby.handleGameCloseAction ? App.Lobby.handleGameCloseAction() : App.GameManager.endGame())" aria-label="離開遊戲"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button></div></div>' +
         '<section class="cs-opponents">' + opponents.map(renderOpponent).join('') + '</section>' +
         '<section class="cs-table"><div class="cs-pile">' + renderCard(topCard(), false) + '</div><div class="cs-color ' + state.activeColor + '">' + COLOR_NAMES[state.activeColor] + '</div></section>' +
         '<section class="cs-hand">' + (self ? sortHand(self.hand).map(function(card) { return renderCard(card, canAct && canPlay(card, top, state.activeColor)); }).join('') : '<p>觀戰中</p>') + '</section>' +
@@ -540,7 +542,7 @@
         render();
       });
     });
-    if (backBtn) backBtn.addEventListener('click', function() { App.GameManager.endGame(); });
+    if (backBtn) backBtn.addEventListener('click', function() { if (App.Lobby && App.Lobby.handleGameCloseAction) App.Lobby.handleGameCloseAction(); else App.GameManager.endGame(); });
     if (newBtn) newBtn.addEventListener('click', restartSingle);
   }
 
@@ -566,6 +568,9 @@
     buildRoomStart: function(roomOpts) {
       return { state: buildInitialState(roomOpts.players || []) };
     },
+    getStateSnapshot: function() {
+      return serializeState();
+    },
     init: function(gameContainer, gameOpts) {
       container = gameContainer;
       opts = gameOpts || {};
@@ -578,13 +583,28 @@
     handleMessage: function(msg) {
       if (!msg) return;
       if (msg.type === 'room_update') {
+      if (msg.gameState && opts.ignoreNextRoomSnapshot && (!opts.ignoreNextRoomSnapshotRoundId || msg.gameState.roundId === opts.ignoreNextRoomSnapshotRoundId)) {
+        opts.ignoreNextRoomSnapshot = false;
+        return;
+      }
         opts.players = msg.players || opts.players;
         opts.spectators = msg.spectators || opts.spectators;
         opts.role = msg.role || opts.role;
+        opts.selfId = msg.selfId || opts.selfId;
         opts.isHost = !!msg.isHost;
         applyState(msg.gameState);
         syncPlayerPresence(opts.players);
         scheduleAI();
+        return;
+      }
+      if (msg.localEcho) {
+        if (msg.stateSnapshot) {
+          opts.ignoreNextRoomSnapshot = true;
+          opts.ignoreNextRoomSnapshotRoundId = (msg.roundId || (opts && opts.roundId) || (opts && opts.gameState && opts.gameState.roundId) || '');
+        }
+        opts.localEcho = true;
+        handleRoomAction(msg);
+        opts.localEcho = false;
         return;
       }
       handleRoomAction(msg);

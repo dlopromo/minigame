@@ -18,6 +18,7 @@
   var opts = null;
   var state = null;
   var aiTimer = null;
+  var answerDraft = '';
 
   function isRoomMode() { return opts && opts.roomId; }
   function isSpectator() { return opts && opts.role === 'spectator'; }
@@ -129,6 +130,7 @@
   function setupGame() {
     if (opts && opts.initialState && opts.initialState.state) state = clone(opts.initialState.state);
     else state = buildInitialState();
+    answerDraft = '';
     normalizeState();
   }
 
@@ -144,8 +146,10 @@
   function serializeState() { return { gameId: 'nineUpper', roundId: opts.roundId || '', state: clone(state) }; }
   function applyState(snapshot) {
     if (!snapshot || !snapshot.state) return;
-    if (opts && opts.roundId && snapshot.roundId && snapshot.roundId !== opts.roundId) return;
+    var expectedRoundId = (opts && opts.roundId) || (opts && opts.gameState && opts.gameState.roundId) || '';
+    if (expectedRoundId && snapshot.roundId && snapshot.roundId !== expectedRoundId) return;
     state = clone(snapshot.state);
+    if (state.phase !== 'submit') answerDraft = '';
     normalizeState();
     render();
   }
@@ -207,7 +211,7 @@
     App.Lobby.logRoomEvent('game', name + '：' + text, 'game_action');
   }
   function commit() {
-    if (isHostAuthority()) {
+    if (isHostAuthority() || (opts && opts.localEcho)) {
       publishState();
       render();
       scheduleAI();
@@ -221,6 +225,7 @@
     if (!player) return;
     text = String(text || '').trim().slice(0, 80);
     if (!text) return;
+    answerDraft = '';
     state.submissions[playerId] = { playerId: playerId, name: player.name, text: text };
     record(player.name, '已提交答案');
     if (state.players.every(function(p) { return state.submissions[p.id]; })) {
@@ -312,22 +317,41 @@
   function isHostPlayer() { return !isRoomMode() || opts.isHost; }
 
   function sendRoomAction(payload) {
-    if (!isRoomMode() || !App.Signaling || !App.Signaling.sendGameAction) return;
+    if (!isRoomMode()) return;
+    if (App.Lobby && typeof App.Lobby.sendRoomGameAction === 'function') {
+      App.Lobby.sendRoomGameAction(payload);
+      return;
+    }
+    if (!App.Signaling || !App.Signaling.sendGameAction) return;
     App.Signaling.sendGameAction({ roundId: opts.roundId || '', gameId: 'nineUpper', mode: opts.mode || 'room', payload: payload });
   }
+
+  function sendRoomActionWithSnapshot(payload) {
+    sendRoomAction(Object.assign({}, payload, { stateSnapshot: serializeState() }));
+  }
+
   function humanSubmit() {
     var input = container.querySelector('#nu-answer');
     var text = input ? input.value : '';
     var self = selfPlayer();
     if (!self || !canSubmit()) return;
-    if (isRoomMode() && !opts.isHost) sendRoomAction({ type: 'nu_submit', playerId: opts.selfId, text: text });
-    else submit(self.id, text);
+    answerDraft = String(text || '');
+    if (isRoomMode() && !opts.isHost) {
+      opts.localEcho = true;
+      submit(self.id, text);
+      opts.localEcho = false;
+      sendRoomActionWithSnapshot({ type: 'nu_submit', playerId: opts.selfId, text: text, skipLocalEcho: true });
+    } else submit(self.id, text);
   }
   function humanVote(targetId) {
     var self = selfPlayer();
     if (!self || !canVote()) return;
-    if (isRoomMode() && !opts.isHost) sendRoomAction({ type: 'nu_vote', playerId: opts.selfId, targetId: targetId });
-    else vote(self.id, targetId);
+    if (isRoomMode() && !opts.isHost) {
+      opts.localEcho = true;
+      vote(self.id, targetId);
+      opts.localEcho = false;
+      sendRoomActionWithSnapshot({ type: 'nu_vote', playerId: opts.selfId, targetId: targetId, skipLocalEcho: true });
+    } else vote(self.id, targetId);
   }
   function humanNext() {
     if (!isHostPlayer()) return;
@@ -335,7 +359,11 @@
     nextRound();
   }
   function handleRoomAction(msg) {
-    if (!isRoomMode() || !opts.isHost || !msg) return;
+    if (!isRoomMode() || !msg || (!opts.isHost && !msg.localEcho) || (opts.isHost && msg.localEcho)) return;
+    if (msg.stateSnapshot && msg.stateSnapshot.state) {
+      state = clone(msg.stateSnapshot.state);
+      normalizeState();
+    }
     if (msg.type === 'nu_submit') submit(msg.playerId, msg.text);
     if (msg.type === 'nu_vote') vote(msg.playerId, msg.targetId);
   }
@@ -380,8 +408,11 @@
   }
   function renderSubmit() {
     var self = selfPlayer();
+    var submitted = self && state.submissions[self.id];
     return '<section class="nu-main"><h2>' + escapeHtml(state.prompt) + '</h2>' +
-      (canSubmit() ? '<textarea id="nu-answer" maxlength="80" placeholder="寫一句夠 9upper 嘅答案..."></textarea><button class="nu-btn" id="nu-submit">提交</button>' : '<p>' + (self && state.submissions[self.id] ? '你已提交，等待其他人。' : '等待提交中...') + '</p>') +
+      (canSubmit()
+        ? '<textarea id="nu-answer" maxlength="80" placeholder="寫一句夠 9upper 嘅答案...">' + escapeHtml(answerDraft || '') + '</textarea><button class="nu-btn" id="nu-submit">提交</button>'
+        : '<p>' + (submitted ? '你已提交，等待其他人。' : '等待提交中...') + '</p>') +
     '</section>';
   }
   function renderVote() {
@@ -436,7 +467,7 @@
     }
     container.innerHTML =
       '<div class="nu-shell">' +
-        '<div class="nu-topbar"><div class="nu-title">' + (state.status === 'settled' ? winnerText() : '9Upper · Round ' + state.round + '/' + state.maxRounds) + '</div><div class="nu-actions">' + (isRoomMode() ? '<button class="nu-icon game-chat-trigger" onclick="App.Lobby.toggleGameChat()" aria-label="Chat"><i class="fa-regular fa-comments" aria-hidden="true"></i><span class="chat-badge game-chat-unread"></span></button>' : '') + '<button class="nu-icon" onclick="App.GameManager.endGame()" aria-label="離開遊戲"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button></div></div>' +
+        '<div class="nu-topbar"><div class="nu-title">' + (state.status === 'settled' ? winnerText() : '9Upper · Round ' + state.round + '/' + state.maxRounds) + '</div><div class="nu-actions">' + (isRoomMode() ? '<button class="nu-icon game-chat-trigger" onclick="App.Lobby.toggleGameChat()" aria-label="Chat"><i class="fa-regular fa-comments" aria-hidden="true"></i><span class="chat-badge game-chat-unread"></span></button>' : '') + '<button class="nu-icon" onclick="(App.Lobby && App.Lobby.handleGameCloseAction ? App.Lobby.handleGameCloseAction() : App.GameManager.endGame())" aria-label="離開遊戲"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button></div></div>' +
         '<section class="nu-score">' + state.players.map(renderScore).join('') + '</section>' +
         renderMain() +
         '<div class="nu-foot">' + escapeHtml(state.history[state.history.length - 1].name + '：' + state.history[state.history.length - 1].text) + '</div>' +
@@ -453,9 +484,15 @@
     var nextBtn = container.querySelector('#nu-next');
     var backBtn = container.querySelector('#nu-back');
     var newBtn = container.querySelector('#nu-new');
+    var input = container.querySelector('#nu-answer');
+    if (input) {
+      input.addEventListener('input', function() {
+        answerDraft = input.value || '';
+      });
+    }
     if (submitBtn) submitBtn.addEventListener('click', humanSubmit);
     if (nextBtn) nextBtn.addEventListener('click', humanNext);
-    if (backBtn) backBtn.addEventListener('click', function() { App.GameManager.endGame(); });
+    if (backBtn) backBtn.addEventListener('click', function() { if (App.Lobby && App.Lobby.handleGameCloseAction) App.Lobby.handleGameCloseAction(); else App.GameManager.endGame(); });
     if (newBtn) newBtn.addEventListener('click', restartSingle);
     Array.prototype.forEach.call(container.querySelectorAll('[data-vote-id]'), function(button) {
       button.addEventListener('click', function() { humanVote(button.getAttribute('data-vote-id')); });
@@ -483,6 +520,9 @@
     aiFill: true,
     multiplayerModes: ['room'],
     buildRoomStart: function(roomOpts) { return { state: buildInitialState(roomOpts.players || []) }; },
+    getStateSnapshot: function() {
+      return serializeState();
+    },
     init: function(gameContainer, gameOpts) {
       container = gameContainer;
       opts = gameOpts || {};
@@ -495,12 +535,27 @@
     handleMessage: function(msg) {
       if (!msg) return;
       if (msg.type === 'room_update') {
+      if (msg.gameState && opts.ignoreNextRoomSnapshot && (!opts.ignoreNextRoomSnapshotRoundId || msg.gameState.roundId === opts.ignoreNextRoomSnapshotRoundId)) {
+        opts.ignoreNextRoomSnapshot = false;
+        return;
+      }
         opts.players = msg.players || opts.players;
         opts.spectators = msg.spectators || opts.spectators;
         opts.role = msg.role || opts.role;
+        opts.selfId = msg.selfId || opts.selfId;
         opts.isHost = !!msg.isHost;
         applyState(msg.gameState);
         scheduleAI();
+        return;
+      }
+      if (msg.localEcho) {
+        if (msg.stateSnapshot) {
+          opts.ignoreNextRoomSnapshot = true;
+          opts.ignoreNextRoomSnapshotRoundId = (msg.roundId || (opts && opts.roundId) || (opts && opts.gameState && opts.gameState.roundId) || '');
+        }
+        opts.localEcho = true;
+        handleRoomAction(msg);
+        opts.localEcho = false;
         return;
       }
       handleRoomAction(msg);

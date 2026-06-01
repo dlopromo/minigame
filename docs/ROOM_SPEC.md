@@ -7,7 +7,8 @@ part of the active app flow.
 
 - Let friends join one persistent party room with a 4-digit code.
 - Keep the room alive while the host switches games between rounds.
-- Put unqueued or late users into spectator mode.
+- Keep unqueued or late users in the room lobby unless they explicitly choose
+  spectator mode.
 - Auto-seat queued users at the start of each new round.
 - Fill empty legal seats with AI only when the game declares `aiFill: true`.
 - Keep GitHub Pages as a static frontend.
@@ -144,9 +145,11 @@ Rules:
 - Joining a room creates or resumes `members/{clientId}`.
 - New members are not automatically players.
 - A user must press `加入隊列` to be considered for the next round.
-- Users not in `queue` are spectators.
-- During a game, new joiners stay in the party room as spectators until the next
-  round.
+- Users not in `queue` stay in the room lobby and are not launched into the
+  active game.
+- Users can explicitly press `觀戰本局` to spectate the active round.
+- During a game, new joiners stay in the party room until they either join the
+  queue for a future round or choose to spectate.
 - Host can choose another game after returning to lobby.
 
 ## Seating Rules
@@ -160,7 +163,8 @@ online queue ordered by queuedAt
         v
 first maxPlayers queued users -> gameStart.players
 queued users over maxPlayers  -> gameStart.spectators and remain queued
-unqueued room members         -> gameStart.spectators
+explicit watchers             -> gameStart.spectators
+unqueued room members         -> stay in room lobby
 empty seats + aiFill          -> AI records in gameStart.players
 ```
 
@@ -168,6 +172,8 @@ Important:
 
 - `queue` persists between rounds. A queued player who was not seated because
   the current game was full will automatically be considered again next round.
+- Refresh/re-entry resets the current browser to room-lobby presence and
+  `queueStatus: none`; users must opt into queue or spectate again.
 - `minRoomPlayers` is checked against queued real users.
 - Guess Color uses `minRoomPlayers: 2`.
 - 鋤大DEE and 鬥地主 use `minRoomPlayers: 2`; single-player should use local play.

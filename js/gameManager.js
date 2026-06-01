@@ -88,6 +88,14 @@ App.GameManager = (function() {
 
   function getActiveGame() { return activeGame; }
 
+  function getActiveGameSnapshot() {
+    if (!activeGame) return null;
+    if (typeof activeGame.getStateSnapshot === 'function') return activeGame.getStateSnapshot();
+    if (typeof activeGame.serializeState === 'function') return activeGame.serializeState();
+    if (typeof activeGame.getSnapshot === 'function') return activeGame.getSnapshot();
+    return null;
+  }
+
   function handleShortcut(action) {
     if (!activeGame || !activeGame.handleShortcut) return false;
     return !!activeGame.handleShortcut(action);
@@ -102,7 +110,8 @@ App.GameManager = (function() {
     handleMessage: handleMessage,
     endGame: endGame,
     handleShortcut: handleShortcut,
-    getActiveGame: getActiveGame
+    getActiveGame: getActiveGame,
+    getActiveGameSnapshot: getActiveGameSnapshot
   };
 })();
 

@@ -379,8 +379,9 @@ App.Signaling = (function() {
           ownId: uid,
           members: data.members || {},
           joinedAt: existing.joinedAt,
-          presence: existing.presence || 'lobby',
-          queueStatus: existing.queueStatus || 'none',
+          // Re-enter should always start from neutral lobby state.
+          presence: 'lobby',
+          queueStatus: 'none',
           playerColor: existing.playerColor,
           playerIcon: existing.playerIcon,
           connectionVersion: version
@@ -429,6 +430,8 @@ App.Signaling = (function() {
         authUid: authUid,
         playerColor: profile.playerColor,
         playerIcon: profile.playerIcon,
+        presence: 'lobby',
+        queueStatus: 'none',
         lastSeenAt: firebase.database.ServerValue.TIMESTAMP,
         connectionVersion: version
       }).then(function() {
@@ -512,7 +515,7 @@ App.Signaling = (function() {
     if (!roomCode) return;
     onChildAdded('rooms/' + roomCode + '/gameActions', function(snapshot) {
       var action = snapshot.val();
-      if (!action || action.from === selfId) return;
+      if (!action) return;
       fn(snapshot.key, action);
     });
   }

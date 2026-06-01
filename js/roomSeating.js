@@ -76,8 +76,11 @@ App.RoomSeating = (function() {
       }
     }
 
+    var queueMap = roomState && roomState.queue ? roomState.queue : {};
     var spectators = members.filter(function(person) {
-      return !seatedIds[person.id];
+      if (seatedIds[person.id]) return false;
+      // Only explicit spectators or queued overflow are spectators of the current round.
+      return person.presence === 'spectating' || !!queueMap[person.id];
     }).map(function(person) {
       return personRecord(person, 'spectator');
     });

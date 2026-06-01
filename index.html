@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>MiniGame</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%231f6a4d'/%3E%3Ctext x='50%25' y='56%25' text-anchor='middle' font-family='Arial, sans-serif' font-size='30' font-weight='700' fill='white'%3EMU%3C/text%3E%3C/svg%3E">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" crossorigin="anonymous" referrerpolicy="no-referrer">
 <link rel="stylesheet" href="css/common.css">
 <link rel="stylesheet" href="css/lobby.css">
@@ -143,6 +144,7 @@
     </div>
     <div class="room-action-bar">
       <button class="btn btn-primary" id="room-queue-toggle" onclick="App.Lobby.toggleQueue()"><i class="fa-solid fa-list-ol" aria-hidden="true"></i> 加入隊列</button>
+      <button class="btn btn-ghost" id="room-spectate-toggle" onclick="App.Lobby.toggleSpectate()"><i class="fa-solid fa-eye" aria-hidden="true"></i> 觀戰本局</button>
       <button class="btn btn-secondary" id="room-host-actions" onclick="App.Lobby.showGameSelect('room')"><i class="fa-solid fa-gamepad" aria-hidden="true"></i> 選擇遊戲</button>
       <button class="btn btn-ghost" onclick="App.Lobby.goHome()"><i class="fa-solid fa-door-open" aria-hidden="true"></i> 離開房間</button>
     </div>
@@ -206,7 +208,7 @@
 </aside>
 
 <!-- Scripts -->
-<script src="js/common.js?v=20260524"></script>
+<script src="js/common.js?v=20260531-flow"></script>
 <script src="js/roomSession.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-auth-compat.js"></script>
@@ -217,16 +219,16 @@
 <script src="js/signaling.js"></script>
 <script src="js/gameManager.js"></script>
 <script src="js/roomSeating.js"></script>
-<script src="games/guessColor/guessColor.js?v=20260524-icons"></script>
-<script src="games/bigDee/bigDee.js?v=20260524-icons"></script>
-<script src="games/douDizhu/douDizhu.js?v=20260524-icons"></script>
-<script src="games/blackjack/blackjack.js?v=20260524-icons"></script>
-<script src="games/tile2048/tile2048.js"></script>
-<script src="games/colorShift/colorShift.js?v=20260524-icons"></script>
-<script src="games/snapStack/snapStack.js?v=20260524-icons"></script>
-<script src="games/nineUpper/nineUpper.js?v=20260524-icons"></script>
-<script src="games/baccarat/baccarat.js"></script>
-<script src="games/sicBo/sicBo.js"></script>
+<script src="games/guessColor/guessColor.js?v=20260531-flow"></script>
+<script src="games/bigDee/bigDee.js?v=20260531-flow"></script>
+<script src="games/douDizhu/douDizhu.js?v=20260531-flow"></script>
+<script src="games/blackjack/blackjack.js?v=20260531-flow"></script>
+<script src="games/tile2048/tile2048.js?v=20260531-flow"></script>
+<script src="games/colorShift/colorShift.js?v=20260531-flow"></script>
+<script src="games/snapStack/snapStack.js?v=20260531-flow"></script>
+<script src="games/nineUpper/nineUpper.js?v=20260531-flow"></script>
+<script src="games/baccarat/baccarat.js?v=20260531-flow"></script>
+<script src="games/sicBo/sicBo.js?v=20260531-flow"></script>
 <script src="js/lobby.js"></script>
 <script>App.Common.initFocusMode(); App.Common.initGlobalShortcuts(); App.Lobby.init();</script>
 </body>

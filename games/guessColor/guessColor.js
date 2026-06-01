@@ -6,6 +6,7 @@
   var container = null;
   var opts = null;
   var myGuesses = [], opponentGuesses = [];
+  var roomGuessRows = [];
   var myTurn = true, gameOver = false;
   var pendingGuess = null;
   var computerCode = [];
@@ -62,6 +63,10 @@
     return null;
   }
 
+  function isPlayerUnavailable(player) {
+    return !!(player && (player.online === false || (player.presence && player.presence !== 'playing')));
+  }
+
   function getOpponentPlayer() {
     var players = opts && opts.players ? opts.players : [];
     for (var i = 0; i < players.length; i++) {
@@ -86,6 +91,7 @@
 
   function resetGameState() {
     myGuesses = []; opponentGuesses = [];
+    roomGuessRows = [];
     myTurn = true;
     gameOver = false; pendingGuess = null; computerCode = [];
     startTime = 0; finishedAt = 0;
@@ -136,6 +142,11 @@
   }
 
   function getRoomGuessRows() {
+    if (isRoomMode() && roomGuessRows.length) {
+      return roomGuessRows.slice().sort(function(a, b) {
+        return (a.createdAt || 0) - (b.createdAt || 0);
+      });
+    }
     var rows = [];
     myGuesses.forEach(function(g) {
       rows.push({
@@ -167,6 +178,48 @@
     });
   }
 
+  function normalizeRoomGuess(record) {
+    return {
+      playerId: record.playerId || '',
+      playerName: record.playerName || '玩家',
+      colors: (record.colors || []).slice(),
+      hits: record.hits || 0,
+      blows: record.blows || 0,
+      elapsed: record.elapsed || 0,
+      finished: record.finished !== undefined ? !!record.finished : record.hits === SLOTS,
+      createdAt: record.createdAt || Date.now()
+    };
+  }
+
+  function appendRoomGuessRecord(record) {
+    if (!isRoomMode() || !record) return;
+    var row = normalizeRoomGuess(record);
+    var exists = roomGuessRows.some(function(existing) {
+      return existing.createdAt === row.createdAt && existing.playerId === row.playerId;
+    });
+    if (!exists) roomGuessRows.push(row);
+    roomGuessRows.sort(function(a, b) {
+      return (a.createdAt || 0) - (b.createdAt || 0);
+    });
+  }
+
+  function roomRowsWithGuess(record) {
+    var row = normalizeRoomGuess(record);
+    var rows = getRoomGuessRows().filter(function(existing) {
+      return !(existing.createdAt === row.createdAt && existing.playerId === row.playerId);
+    });
+    rows.push(row);
+    rows.sort(function(a, b) {
+      return (a.createdAt || 0) - (b.createdAt || 0);
+    });
+    roomGuessRows = rows.slice();
+    return rows;
+  }
+
+  function nextCoopTurnId(rows) {
+    return currentTurnClientIdFromGuesses(rows || getRoomGuessRows());
+  }
+
   function currentTurnClientIdFromGuesses(guesses) {
     var players = opts && opts.players ? opts.players : [];
     if (!players.length || opts.mode !== 'coop') return '';
@@ -177,6 +230,9 @@
     if (!isRoomMode() || !opts.isHost || applyingRoomSnapshot || !App.Signaling || !App.Signaling.setGameState) return;
     var guesses = stateOverride && stateOverride.guesses ? stateOverride.guesses : getRoomGuessRows();
     var raceProgress = stateOverride && stateOverride.raceProgressByPlayerId ? stateOverride.raceProgressByPlayerId : {};
+    var turnClientId = stateOverride && stateOverride.turnClientId !== undefined
+      ? stateOverride.turnClientId
+      : nextCoopTurnId(guesses);
     if (opts.mode === 'race') {
       if (getPlayerById(opts.selfId)) {
         raceProgress[opts.selfId] = raceProgress[opts.selfId] || {
@@ -194,7 +250,7 @@
       gameOver: stateOverride && stateOverride.gameOver !== undefined ? !!stateOverride.gameOver : gameOver,
       winner: stateOverride && stateOverride.winner ? stateOverride.winner : '',
       winnerPlayerId: stateOverride && stateOverride.winnerPlayerId ? stateOverride.winnerPlayerId : '',
-      turnClientId: stateOverride && stateOverride.turnClientId !== undefined ? stateOverride.turnClientId : currentTurnClientIdFromGuesses(guesses),
+      turnClientId: turnClientId,
       raceProgressByPlayerId: raceProgress,
       savedAt: Date.now()
     };
@@ -221,12 +277,12 @@
     if (!isRoomMode() || !opts.isHost || gameOver) return;
     if (opts.mode === 'race') {
       var offlineRacer = (opts.players || []).filter(function(player) {
-        return player.online === false && !playerFinished(player.id);
+        return isPlayerUnavailable(player) && !playerFinished(player.id);
       })[0];
       if (!offlineRacer) return;
       aiTimer = setTimeout(function() {
         aiTimer = null;
-        if (!opts || !opts.isHost || gameOver || !getPlayerById(offlineRacer.id) || getPlayerById(offlineRacer.id).online !== false) return;
+        if (!opts || !opts.isHost || gameOver || !isPlayerUnavailable(getPlayerById(offlineRacer.id))) return;
         submitAiRaceGuess(offlineRacer);
       }, 1200);
       return;
@@ -234,13 +290,13 @@
     if (opts.mode !== 'coop') return;
     var turnId = currentTurnClientIdFromGuesses(getRoomGuessRows());
     var player = getPlayerById(turnId);
-    if (!player || player.online !== false) return;
+    if (!isPlayerUnavailable(player)) return;
     aiTimer = setTimeout(function() {
       aiTimer = null;
       if (!opts || !opts.isHost || gameOver) return;
       var latestTurnId = currentTurnClientIdFromGuesses(getRoomGuessRows());
       var latestPlayer = getPlayerById(latestTurnId);
-      if (!latestPlayer || latestPlayer.online !== false) return;
+      if (!isPlayerUnavailable(latestPlayer)) return;
       submitAiCoopGuess(latestPlayer);
     }, 900);
   }
@@ -265,17 +321,21 @@
       createdAt: Date.now()
     };
     opponentGuesses.push(guessRecord);
+    var rows = roomRowsWithGuess(guessRecord);
+    var nextTurnId = nextCoopTurnId(rows);
+    roomGuessRows = rows.slice();
     logGameChat(player.name || 'AI', result.hits === SLOTS ? '猜中答案' : '提交了一次猜測');
     if (result.hits === SLOTS) {
       gameOver = true;
-      saveRoomSnapshot({ gameOver: true, winner: 'team', winnerPlayerId: player.id, turnClientId: '' });
+      saveRoomSnapshot({ guesses: rows, gameOver: true, winner: 'team', winnerPlayerId: player.id, turnClientId: '' });
       saveRoomHistory('completed', 'team', player.id);
       renderGameBoard();
       updateTurnIndicator();
       showResult(true);
       return;
     }
-    saveRoomSnapshot();
+    myTurn = nextTurnId === opts.selfId;
+    saveRoomSnapshot({ guesses: rows, turnClientId: nextTurnId });
     renderGameBoard();
     updateTurnIndicator();
     scheduleRoomAiTakeover();
@@ -505,7 +565,8 @@
 
     document.getElementById('gc-btn-submit').onclick = submitGuess;
     document.getElementById('gc-btn-leave-game').onclick = function() {
-      App.Lobby.goHome();
+      if (isRoomMode() && App.Lobby && App.Lobby.handleGameCloseAction) App.Lobby.handleGameCloseAction();
+      else App.GameManager.endGame();
     };
 
     renderGameBoard();
@@ -912,6 +973,9 @@
     var result = calculateHitBlow(colors, computerCode);
     var guessRecord = makeGuessRecord(colors, result, { finished: result.hits === SLOTS });
     myGuesses.push(guessRecord);
+    var rows = roomRowsWithGuess(guessRecord);
+    var nextTurnId = nextCoopTurnId(rows);
+    roomGuessRows = rows.slice();
     guessSelection = [null,null,null,null];
     guessActiveSlot = 0;
     if (result.hits === SLOTS) {
@@ -919,7 +983,7 @@
       logGameChat(opts.playerName || '玩家', '猜中答案');
       send({ type: 'coop_guess', playerId: opts.selfId, playerName: opts.playerName, colors: colors, hits: result.hits, blows: result.blows, code: computerCode, createdAt: guessRecord.createdAt });
       send({ type: 'game_over', winner: 'team', code: computerCode });
-      saveRoomSnapshot({ gameOver: true, winner: 'team', winnerPlayerId: opts.selfId, turnClientId: '' });
+      saveRoomSnapshot({ guesses: rows, gameOver: true, winner: 'team', winnerPlayerId: opts.selfId, turnClientId: '' });
       saveRoomHistory('completed', 'team', opts.selfId);
       renderGameBoard();
       updateTurnIndicator();
@@ -927,8 +991,8 @@
     } else {
       logGameChat(opts.playerName || '玩家', '提交了一次猜測');
       send({ type: 'coop_guess', playerId: opts.selfId, playerName: opts.playerName, colors: colors, hits: result.hits, blows: result.blows, createdAt: guessRecord.createdAt });
-      myTurn = false;
-      saveRoomSnapshot();
+      myTurn = nextTurnId === opts.selfId;
+      saveRoomSnapshot({ guesses: rows, turnClientId: nextTurnId });
       renderGameBoard();
       updateTurnIndicator();
       scheduleRoomAiTakeover();
@@ -984,6 +1048,17 @@
 
   // ===== Message Handling =====
   function handleMessage(msg) {
+    if (!msg) return;
+    if (msg.localEcho) {
+      if (msg.stateSnapshot) {
+        opts.ignoreNextRoomSnapshot = true;
+        opts.ignoreNextRoomSnapshotRoundId = (msg.roundId || (opts && opts.roundId) || (opts && opts.gameState && opts.gameState.roundId) || '');
+      }
+      if (msg.type === 'coop_guess') handleCoopGuess(msg);
+      else if (msg.type === 'race_progress') handleRaceProgress(msg);
+      else if (msg.type === 'race_finish') handleRaceFinish(msg);
+      return;
+    }
     switch (msg.type) {
       case 'game_over':
         handleGameOver(msg);
@@ -1023,6 +1098,10 @@
 
   function handleRoomUpdate(msg) {
     if (!opts) return;
+    if (msg.gameState && opts.ignoreNextRoomSnapshot && (!opts.ignoreNextRoomSnapshotRoundId || msg.gameState.roundId === opts.ignoreNextRoomSnapshotRoundId)) {
+      opts.ignoreNextRoomSnapshot = false;
+      return;
+    }
     opts.players = msg.players || opts.players || [];
     opts.spectators = msg.spectators || opts.spectators || [];
     opts.role = msg.role || opts.role;
@@ -1035,13 +1114,16 @@
   }
 
   function applyRoomSnapshot(gameState) {
-    if (!isRoomMode() || !gameState || gameState.roundId !== opts.roundId || !gameState.state) return;
+    var expectedRoundId = opts.roundId || (roomState && roomState.roundId) || (roomState && roomState.gameStart && roomState.gameStart.roundId) || '';
+    if (!isRoomMode() || !gameState || !gameState.state) return;
+    if (expectedRoundId && gameState.roundId && gameState.roundId !== expectedRoundId) return;
     var state = gameState.state;
     applyingRoomSnapshot = true;
     if (state.computerCode && state.computerCode.length === SLOTS) computerCode = state.computerCode.slice();
     var guesses = (state.guesses || []).slice().sort(function(a, b) {
       return (a.createdAt || 0) - (b.createdAt || 0);
     });
+    roomGuessRows = guesses.map(normalizeRoomGuess);
     myGuesses = [];
     opponentGuesses = [];
     guesses.forEach(function(g) {
@@ -1091,46 +1173,93 @@
     }
   }
 
+  function getStateSnapshot() {
+    var guesses = getRoomGuessRows();
+    var raceProgress = {};
+    raceProgress[opts && opts.selfId ? opts.selfId : ''] = {
+      attempts: myGuesses.length,
+      elapsed: finishedAt || elapsedMs(),
+      finished: !!finishedAt
+    };
+    var opponent = getOpponentPlayer();
+    if (opponent) {
+      raceProgress[opponent.id] = {
+        attempts: opponentProgress.attempts || opponentGuesses.length,
+        elapsed: opponentProgress.elapsed || 0,
+        finished: !!opponentProgress.finished
+      };
+    }
+    return {
+      gameId: 'guessColor',
+      mode: opts && opts.mode || '',
+      roundId: opts && opts.roundId || '',
+      state: {
+        computerCode: computerCode.slice(),
+        guesses: guesses,
+        gameOver: !!gameOver,
+        winner: gameOver ? (opts && opts.mode === 'coop' ? 'team' : (opts && opts.mode === 'race' ? 'me' : 'opponent')) : '',
+        winnerPlayerId: '',
+        turnClientId: opts && opts.mode === 'coop'
+          ? currentTurnClientIdFromGuesses(guesses)
+          : '',
+        raceProgressByPlayerId: raceProgress,
+        savedAt: Date.now()
+      }
+    };
+  }
+
   function handleCoopGuess(msg) {
     if (gameOver) return;
-    if (hasGuessRecord(opponentGuesses, msg)) return;
-    opponentGuesses.push({
+    var isSelfGuess = msg.playerId && msg.playerId === opts.selfId;
+    if (isSelfGuess && hasGuessRecord(myGuesses, msg)) return;
+    if (!isSelfGuess && hasGuessRecord(opponentGuesses, msg)) return;
+    var guessRecord = {
       playerId: msg.playerId || '',
-      playerName: msg.playerName || opts.opponentName || '隊友',
+      playerName: msg.playerName || (isSelfGuess ? opts.playerName : opts.opponentName) || '隊友',
       colors: msg.colors,
       hits: msg.hits,
       blows: msg.blows,
       createdAt: msg.createdAt || Date.now()
-    });
-    logGameChat(msg.playerName || opts.opponentName || '隊友', msg.hits === SLOTS ? '猜中答案' : '提交了一次猜測');
-    renderOpponentGuesses();
+    };
+    if (isSelfGuess) myGuesses.push(guessRecord);
+    else opponentGuesses.push(guessRecord);
+    var rows = roomRowsWithGuess(guessRecord);
+    var nextTurnId = nextCoopTurnId(rows);
+    logGameChat(msg.playerName || (isSelfGuess ? opts.playerName : opts.opponentName) || '隊友', msg.hits === SLOTS ? '猜中答案' : '提交了一次猜測');
     if (msg.hits === SLOTS) {
       gameOver = true;
       computerCode = msg.code || computerCode;
-      saveRoomSnapshot({ gameOver: true, winner: 'team', winnerPlayerId: msg.playerId || '', turnClientId: '' });
+      saveRoomSnapshot({ guesses: rows, gameOver: true, winner: 'team', winnerPlayerId: msg.playerId || '', turnClientId: '' });
       saveRoomHistory('completed', 'team', msg.playerId || '');
       updateTurnIndicator();
       showResult(true);
     } else {
-      myTurn = true;
-      saveRoomSnapshot();
+      myTurn = nextTurnId === opts.selfId;
+      saveRoomSnapshot({ guesses: rows, turnClientId: nextTurnId });
       updateTurnIndicator();
       scheduleRoomAiTakeover();
     }
+    renderGameBoard();
   }
 
   function handleRaceProgress(msg) {
     var progressPlayer = getPlayerById(msg.playerId) || {};
-    if (!msg.finished) logGameChat(msg.playerName || progressPlayer.name || opts.opponentName || '對方', '提交了一次猜測');
-    opponentProgress = {
+    var isSelfProgress = msg.playerId && msg.playerId === opts.selfId;
+    if (!msg.finished) logGameChat(msg.playerName || progressPlayer.name || (isSelfProgress ? opts.playerName : opts.opponentName) || '對方', '提交了一次猜測');
+    var nextProgress = {
       attempts: msg.attempts || 0,
       elapsed: msg.elapsed || 0,
       finished: !!msg.finished
     };
+    if (isSelfProgress) {
+      finishedAt = nextProgress.finished ? nextProgress.elapsed : finishedAt;
+    } else {
+      opponentProgress = nextProgress;
+    }
     if (msg.guesses) {
       opponentGuesses = msg.guesses.map(function(g) {
         g.playerId = g.playerId || msg.playerId || '';
-        g.playerName = g.playerName || opts.opponentName || '對方';
+        g.playerName = g.playerName || (isSelfProgress ? opts.playerName : opts.opponentName) || '對方';
         return g;
       });
     }
@@ -1140,7 +1269,7 @@
       elapsed: finishedAt || elapsedMs(),
       finished: !!finishedAt
     };
-    if (msg.playerId) raceProgress[msg.playerId] = opponentProgress;
+    if (msg.playerId) raceProgress[msg.playerId] = isSelfProgress ? raceProgress[opts.selfId] : opponentProgress;
     saveRoomSnapshot({ raceProgressByPlayerId: raceProgress });
     if (!gameOver) {
       renderRaceProgress();
@@ -1149,15 +1278,21 @@
   }
 
   function handleRaceFinish(msg) {
-    logGameChat(msg.playerName || opts.opponentName || '對方', '猜中答案');
-    opponentProgress = {
+    var isSelfFinish = msg.playerId && msg.playerId === opts.selfId;
+    logGameChat(msg.playerName || (isSelfFinish ? opts.playerName : opts.opponentName) || '對方', '猜中答案');
+    var nextProgress = {
       attempts: msg.attempts || 0,
       elapsed: msg.elapsed || 0,
       finished: true
     };
+    if (isSelfFinish) {
+      finishedAt = nextProgress.elapsed || finishedAt;
+    } else {
+      opponentProgress = nextProgress;
+    }
     opponentGuesses = (msg.guesses || opponentGuesses).map(function(g) {
       g.playerId = g.playerId || msg.playerId || '';
-      g.playerName = g.playerName || msg.playerName || opts.opponentName || '對方';
+      g.playerName = g.playerName || msg.playerName || (isSelfFinish ? opts.playerName : opts.opponentName) || '對方';
       return g;
     });
     computerCode = msg.code || computerCode;
@@ -1167,7 +1302,7 @@
       elapsed: finishedAt || elapsedMs(),
       finished: !!finishedAt
     };
-    if (msg.playerId) raceProgress[msg.playerId] = opponentProgress;
+    if (msg.playerId) raceProgress[msg.playerId] = isSelfFinish ? raceProgress[opts.selfId] : opponentProgress;
     if (!gameOver) {
       gameOver = true;
       saveRoomSnapshot({ gameOver: true, winner: 'opponent', winnerPlayerId: msg.playerId || '', raceProgressByPlayerId: raceProgress });
@@ -1235,7 +1370,8 @@
     var rematchBtn = document.getElementById('gc-btn-rematch');
     if (rematchBtn) rematchBtn.onclick = rematch;
     document.getElementById('gc-btn-back-home').onclick = function() {
-      App.GameManager.endGame();
+      if (isRoomMode() && App.Lobby && App.Lobby.handleGameCloseAction) App.Lobby.handleGameCloseAction();
+      else App.GameManager.endGame();
     };
 
     renderCodeReveal(document.getElementById('gc-reveal-opp-code'), computerCode);
@@ -1347,6 +1483,7 @@
     },
     init: init,
     handleMessage: handleMessage,
+    getStateSnapshot: getStateSnapshot,
     destroy: destroy
   });
 })();
