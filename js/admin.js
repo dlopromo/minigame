@@ -38,6 +38,7 @@ var App = window.App || {};
     db = firebase.database();
     firebase.auth().signInAnonymously().then(function() {
       restoreUnlock();
+      bindGlobalActions();
       db.ref('rooms').on('value', function(snapshot) {
         rooms = snapshot.val() || {};
         renderAdminLock();
@@ -195,9 +196,10 @@ var App = window.App || {};
         '<button class="btn-small btn-copy" data-admin-action="repair">修復房主</button>' +
         '<button class="btn-small btn-copy" data-admin-action="reset-lobby">返回 Lobby</button>' +
         '<button class="btn-small btn-copy" data-admin-action="clear-actions">清理 Actions</button>' +
-        '<button class="btn-small btn-copy" data-admin-action="clear-vote">清理投票</button>' +
+        '<button class="btn-small btn-copy" data-admin-action="clear-room-data">清空資料</button>' +
         '<button class="btn-small btn-copy" data-admin-action="interrupt">標記中斷</button>' +
         '<button class="btn-small btn-danger" data-admin-action="close">強制關閉</button>' +
+        '<button class="btn-small btn-danger" data-admin-action="delete">刪除房間</button>' +
       '</div>' +
       '<h3 class="admin-subtitle">在線 / 離線真人</h3>' +
       renderPeopleBlock(members, room.hostId) +
@@ -285,6 +287,16 @@ var App = window.App || {};
     });
   }
 
+  function bindGlobalActions() {
+    var root = document.getElementById('admin-global-actions');
+    if (!root) return;
+    Array.prototype.forEach.call(root.querySelectorAll('[data-global-admin-action]'), function(btn) {
+      btn.addEventListener('click', function() {
+        runGlobalAction(btn.getAttribute('data-global-admin-action'));
+      });
+    });
+  }
+
   function roomRef() {
     if (!selectedCode) return null;
     return db.ref('rooms/' + selectedCode);
@@ -341,18 +353,69 @@ var App = window.App || {};
       }).catch(showAdminError);
       return;
     }
-    if (action === 'clear-vote') {
+    if (action === 'clear-room-data') {
       roomRef().update({
+        chat: null,
+        history: null,
+        leaderboard: null,
+        gameActions: null,
+        gameState: null,
+        currentRound: null,
         vote: null,
         updatedAt: firebase.database.ServerValue.TIMESTAMP
       }).then(function() {
-        App.Common.showToast('投票已清理', 'success');
+        App.Common.showToast('房間歷史與即時資料已清空', 'success');
       }).catch(showAdminError);
       return;
     }
     if (action === 'repair') {
       repairHost();
+      return;
     }
+    if (action === 'delete') {
+      if (!window.confirm('確定要刪除整個房間？此操作無法復原。')) return;
+      roomRef().remove().then(function() {
+        selectedCode = '';
+        App.Common.showToast('房間已刪除', 'success');
+      }).catch(showAdminError);
+    }
+  }
+
+  function runGlobalAction(action) {
+    if (!unlocked || !db) return;
+    var codes = Object.keys(rooms || {});
+    if (!codes.length) {
+      App.Common.showToast('目前沒有可清理房間', 'success');
+      return;
+    }
+    var now = Date.now();
+    var targets = codes.filter(function(code) {
+      var room = rooms[code] || {};
+      var members = people(room.members || {});
+      var onlineHumans = members.filter(function(member) {
+        return member.online !== false && !member.isAI && !/^ai-/.test(member.id || '');
+      }).length;
+      if (action === 'delete-empty-rooms') return onlineHumans === 0 && !room.gameId && room.status !== 'playing';
+      if (action === 'delete-closed-rooms') return room.status === 'closed';
+      if (action === 'delete-stale-rooms') return onlineHumans === 0 && Number(room.updatedAt || 0) && now - Number(room.updatedAt || 0) > 1000 * 60 * 60 * 24;
+      return false;
+    });
+    if (!targets.length) {
+      App.Common.showToast('沒有符合條件的房間', 'success');
+      return;
+    }
+    var label = action === 'delete-empty-rooms'
+      ? '空房'
+      : action === 'delete-closed-rooms'
+        ? '已關閉房間'
+        : '過舊房間';
+    if (!window.confirm('確定要刪除 ' + targets.length + ' 個' + label + '？此操作無法復原。')) return;
+    var updates = {};
+    targets.forEach(function(code) { updates[code] = null; });
+    db.ref('rooms').update(updates).then(function() {
+      if (targets.indexOf(selectedCode) >= 0) selectedCode = '';
+      App.Common.showToast('已刪除 ' + targets.length + ' 個' + label, 'success');
+    }).catch(showAdminError);
   }
 
   function resetToLobby(reason) {

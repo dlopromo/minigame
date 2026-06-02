@@ -146,6 +146,28 @@ h2{font-size:1.2rem;margin-bottom:12px}
 }
 .result-action.secondary{background:#e8edf3;color:#344054}
 .result-action:disabled{opacity:.42;cursor:not-allowed}
+.game-result-modal{
+  position:fixed;inset:0;z-index:250;display:grid;place-items:center;
+  padding:12px;pointer-events:none;
+}
+.game-result-backdrop{
+  position:absolute;inset:0;background:rgba(15,23,42,.42);backdrop-filter:blur(6px);
+}
+.game-result-dialog{
+  position:relative;z-index:1;width:min(680px,100%);max-height:min(82vh,620px);pointer-events:auto;
+}
+.game-result-dialog .game-result-panel{
+  height:auto;min-height:0;max-height:min(82vh,620px);
+  box-shadow:0 24px 70px rgba(15,23,42,.24);
+}
+.app-game-badge{
+  display:inline-flex;align-items:center;gap:7px;border-radius:999px;
+  padding:4px 10px;border:1px solid #d9e1ea;background:#fff;font-weight:900;
+  color:#344054;font-size:.76rem;white-space:nowrap;
+}
+.app-game-badge i{color:#667085;font-size:.86rem}
+.app-game-badge.mini{padding:3px 8px;font-size:.7rem}
+.app-game-badge.game-title-badge{background:#f8fafc;border-color:#e2e8f0}
 .spinner{
   display:inline-block;width:16px;height:16px;
   border:2px solid #ccc;border-top-color:#333;
@@ -178,4 +200,7 @@ h2{font-size:1.2rem;margin-bottom:12px}
   .game-result-row{grid-template-columns:auto minmax(0,1fr);gap:5px}
   .game-result-stat{font-size:.74rem}
   .game-result-stat.muted{grid-column:2}
+  .game-result-modal{padding:8px}
+  .game-result-dialog{width:100%;max-height:calc(100vh - 16px)}
+  .game-result-dialog .game-result-panel{max-height:calc(100vh - 16px)}
 }

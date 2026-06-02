@@ -84,8 +84,8 @@ function testRoomSeating() {
     aiFill: false
   });
   sameJson(spectatorPolicy.players.map(p => p.id), ['host']);
-  sameJson(spectatorPolicy.spectators.map(p => p.id).sort(), ['queued', 'watcher']);
-  assert.strictEqual(spectatorPolicy.spectators.some(p => p.id === 'idle'), false);
+  sameJson(spectatorPolicy.spectators.map(p => p.id).sort(), ['idle', 'queued', 'watcher']);
+  assert.strictEqual(spectatorPolicy.spectators.some(p => p.id === 'idle'), true);
 }
 
 function testStaleNameReclaim() {
@@ -275,6 +275,13 @@ function testBaccaratRules() {
   assert.strictEqual(initial.players.length, 2);
   assert.strictEqual(initial.players[0].balance, 1000);
   assert.strictEqual(initial.phase, 'betting');
+  const revealSource = rules.buildInitialState([{ id: 'p1', name: 'P1' }]);
+  revealSource.phase = 'reveal';
+  const revealed = rules.buildRevealSnapshotFromState(revealSource);
+  assert.strictEqual(revealed.state.status, 'settled');
+  assert.strictEqual(revealed.state.phase, 'result');
+  assert.strictEqual(Array.isArray(revealed.state.playerHand), true);
+  assert.strictEqual(Array.isArray(revealed.state.bankerHand), true);
 }
 
 function testSicBoRules() {
@@ -288,6 +295,12 @@ function testSicBoRules() {
   const initial = rules.buildInitialState([{ id: 'p1', name: 'P1' }]);
   assert.strictEqual(initial.players[0].balance, 1000);
   assert.strictEqual(initial.phase, 'betting');
+  const revealSource = rules.buildInitialState([{ id: 'p1', name: 'P1' }]);
+  revealSource.phase = 'reveal';
+  const revealed = rules.buildRevealSnapshotFromState(revealSource);
+  assert.strictEqual(revealed.state.status, 'settled');
+  assert.strictEqual(revealed.state.phase, 'result');
+  assert.strictEqual(revealed.state.dice.length, 3);
 }
 
 function testGameRegistryAndChatContract() {
@@ -315,6 +328,10 @@ function testGameRegistryAndChatContract() {
     assert.strictEqual(typeof game.buildRoomStart, 'function', `${game.id} must expose buildRoomStart`);
     assert.strictEqual(typeof game.getStateSnapshot, 'function', `${game.id} must expose getStateSnapshot`);
   });
+  ['guessColor', 'colorShift', 'nineUpper', 'bigDee', 'douDizhu', 'snapStack'].forEach(gameId => {
+    const game = App.GameManager.games[gameId];
+    assert.strictEqual(game.minRoomPlayers, 1, `${gameId} should allow solo host room start`);
+  });
   gameFiles.forEach(file => {
     const source = fs.readFileSync(path.join(root, file), 'utf8');
     assert.match(source, /logRoomEvent/, `${file} must write public room game events to Chatroom`);
@@ -329,6 +346,8 @@ function testRoomFlowGuards() {
   const signaling = fs.readFileSync(path.join(root, 'js/signaling.js'), 'utf8');
   const lobby = fs.readFileSync(path.join(root, 'js/lobby.js'), 'utf8');
   const common = fs.readFileSync(path.join(root, 'js/common.js'), 'utf8');
+  const admin = fs.readFileSync(path.join(root, 'js/admin.js'), 'utf8');
+  const adminHtml = fs.readFileSync(path.join(root, 'admin.html'), 'utf8');
 
   // Re-entry must not auto-queue.
   assert.match(signaling, /queueStatus:\s*'none'/);
@@ -341,7 +360,7 @@ function testRoomFlowGuards() {
   assert.match(lobby, /action\.roundId\s*!==\s*roomState\.roundId/);
 
   // Room close in game should use room-aware action.
-  assert.match(common, /App\.Lobby\.handleGameCloseAction\(\)/);
+  assert.match(common, /App\.Lobby\.handleGameCloseAction\(\{skipConfirm:true\}\)/);
   assert.match(lobby, /function handleGameCloseAction\(/);
   assert.match(lobby, /leftRoundIds\[roomState\.roundId\]\s*=\s*true/);
   assert.match(lobby, /presenceUpdates\['members\/' \+ selfId \+ '\/presence'\]\s*=\s*'playing'/);
@@ -350,8 +369,8 @@ function testRoomFlowGuards() {
   assert.match(lobby, /if\s*\(!gameActive && shouldRefreshRoomLobby\(\)\)\s*renderRoomLobby\(\)/);
   assert.match(lobby, /!isHost && App\.GameManager && typeof App\.GameManager\.handleMessage === 'function'/);
   assert.match(lobby, /return person\.online !== false && !person\.isAI/);
-  assert.match(lobby, /roomState\.gameStart && !active && roomState\.status !== 'closed'/);
-  assert.match(lobby, /發起重開/);
+  assert.match(lobby, /target\.hidden = true;\s*target\.innerHTML = '';/s);
+  assert.match(lobby, /等待房主開新一局/);
   assert.match(fs.readFileSync(path.join(root, 'games/guessColor/guessColor.js'), 'utf8'), /msg\.localEcho/);
   assert.match(fs.readFileSync(path.join(root, 'games/bigDee/bigDee.js'), 'utf8'), /msg\.localEcho/);
   assert.match(fs.readFileSync(path.join(root, 'games/douDizhu/douDizhu.js'), 'utf8'), /msg\.localEcho/);
@@ -379,9 +398,16 @@ function testRoomFlowGuards() {
   assert.match(fs.readFileSync(path.join(root, 'games/snapStack/snapStack.js'), 'utf8'), /state\.pile = Array\.isArray\(state\.pile\) \? state\.pile : \[\]/);
   // Room lobby should expose manual spectate toggle.
   assert.match(lobby, /function toggleSpectate\(/);
+  assert.match(lobby, /觀戰本局/);
+  assert.match(lobby, /可直接開始/);
   // Back navigation in room context should avoid forced home redirect.
   assert.match(lobby, /if\s*\(playContext === 'room'\)\s*\{/);
-  assert.match(lobby, /roomState\.gameStart && !active && roomState\.status !== 'closed'/);
+  assert.match(lobby, /等待房主開新一局/);
+  assert.match(adminHtml, /data-global-admin-action="delete-empty-rooms"/);
+  assert.match(adminHtml, /data-global-admin-action="delete-closed-rooms"/);
+  assert.match(adminHtml, /data-global-admin-action="delete-stale-rooms"/);
+  assert.match(admin, /function runGlobalAction\(/);
+  assert.doesNotMatch(admin, /data-admin-action="clear-vote"/);
 }
 
 function testGameManagerSnapshotHelper() {

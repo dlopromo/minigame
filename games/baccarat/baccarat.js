@@ -12,6 +12,7 @@
   var state = null;
   var selectedSide = 'player';
   var selectedAmount = 100;
+  var handleContainerClickRef = null;
 
   function isRoomMode() { return opts && opts.roomId; }
   function isSpectator() { return opts && opts.role === 'spectator'; }
@@ -78,6 +79,7 @@
       phase: 'betting',
       status: 'playing',
       outcome: '',
+      revealReason: '',
       resultSaved: false,
       roundNumber: 1,
       history: [{ name: '系統', text: '百家樂開始，請下注' }],
@@ -122,6 +124,7 @@
     state.history = state.history || [];
     state.phase = state.phase || 'betting';
     state.status = state.status || 'playing';
+    state.revealReason = state.revealReason || '';
     state.players.forEach(function(player) {
       player.balance = Number(player.balance == null ? START_BALANCE : player.balance);
       player.lastDelta = Number(player.lastDelta || 0);
@@ -130,6 +133,12 @@
   }
 
   function serializeState() { return { gameId: 'baccarat', mode: opts.mode || 'room', roundId: opts.roundId || '', state: clone(state) }; }
+  function resolveRoundId() {
+    return (opts && opts.roundId) || (opts && opts.gameState && opts.gameState.roundId) || '';
+  }
+  function resolveMode() {
+    return (opts && opts.mode) || 'room';
+  }
   function publishState() {
     if (!isRoomMode() || !App.Signaling || !App.Signaling.setGameState) return;
     if (!opts.isHost && !(opts && opts.localEcho)) return;
@@ -189,8 +198,125 @@
     amount = clampBet(amount, player);
     player.bet = { side: side, amount: amount };
     record(player.name, '下注 ' + SIDES[side] + ' $' + amount);
-    if (allBetsReady()) dealRound();
+    if (allBetsReady()) {
+      state.phase = 'reveal';
+      state.revealReason = 'betting';
+      record('系統', '已封盤，請開牌');
+    }
     commit();
+  }
+
+  function revealRound() {
+    if (!state || state.status !== 'playing' || state.phase !== 'reveal') return;
+    performReveal();
+  }
+
+  function settlePreparedState(next) {
+    var p = handPoint(next.playerHand);
+    var b = handPoint(next.bankerHand);
+    next.outcome = p > b ? 'player' : b > p ? 'banker' : 'tie';
+    next.players.forEach(function(player) {
+      var delta = 0;
+      if (player.bet && player.bet.amount) {
+        if (next.outcome === 'tie') {
+          delta = player.bet.side === 'tie' ? player.bet.amount * 8 : 0;
+        } else if (player.bet.side === next.outcome) {
+          delta = next.outcome === 'banker' ? Math.floor(player.bet.amount * 0.95) : player.bet.amount;
+        } else {
+          delta = -player.bet.amount;
+        }
+        player.balance += delta;
+        player.lastDelta = delta;
+        player.stats = player.stats || { rounds: 0, wins: 0 };
+        player.stats.rounds = Number(player.stats.rounds || 0) + 1;
+        if (delta > 0) player.stats.wins = Number(player.stats.wins || 0) + 1;
+      }
+    });
+    next.phase = 'result';
+    next.status = 'settled';
+    next.finishedAt = Date.now();
+    next.history = next.history || [];
+    next.history.push({
+      name: '系統',
+      text: SIDES[next.outcome] + '勝：閒 ' + p + ' 點，莊 ' + b + ' 點'
+    });
+    if (next.history.length > 30) next.history = next.history.slice(next.history.length - 30);
+    return next;
+  }
+
+  function buildRevealSnapshotFromState(baseState) {
+    if (!baseState || baseState.status !== 'playing' || baseState.phase !== 'reveal') return null;
+    var next = clone(baseState);
+    next.phase = 'dealing';
+    if (!Array.isArray(next.deck) || next.deck.length < 12) next.deck = makeDeck();
+    var draw = function() {
+      if (next.deck.length < 12) next.deck = makeDeck();
+      return next.deck.pop();
+    };
+    next.playerHand = [draw(), draw()];
+    next.bankerHand = [draw(), draw()];
+    var p = handPoint(next.playerHand);
+    var b = handPoint(next.bankerHand);
+    if (p < 8 && b < 8) {
+      var playerThird = null;
+      if (p <= 5) {
+        playerThird = draw();
+        next.playerHand.push(playerThird);
+      }
+      var thirdPoint = playerThird ? cardPoint(playerThird) : null;
+      var bankerDraw = false;
+      var bankerPoint = handPoint(next.bankerHand);
+      if (!playerThird) bankerDraw = bankerPoint <= 5;
+      else if (bankerPoint <= 2) bankerDraw = true;
+      else if (bankerPoint === 3) bankerDraw = thirdPoint !== 8;
+      else if (bankerPoint === 4) bankerDraw = thirdPoint >= 2 && thirdPoint <= 7;
+      else if (bankerPoint === 5) bankerDraw = thirdPoint >= 4 && thirdPoint <= 7;
+      else if (bankerPoint === 6) bankerDraw = thirdPoint === 6 || thirdPoint === 7;
+      if (bankerDraw) next.bankerHand.push(draw());
+    }
+    settlePreparedState(next);
+    return {
+      gameId: 'baccarat',
+      mode: resolveMode(),
+      roundId: resolveRoundId(),
+      state: next
+    };
+  }
+
+  function performReveal() {
+    var currentSnapshot = App.GameManager && App.GameManager.getActiveGameSnapshot ? App.GameManager.getActiveGameSnapshot() : null;
+    var sourceState = currentSnapshot && currentSnapshot.state ? currentSnapshot.state : state;
+    var snapshot = buildRevealSnapshotFromState(sourceState);
+    if (!snapshot || !snapshot.state) return false;
+    state = clone(snapshot.state);
+    normalizeState();
+    opts.ignoreNextRoomSnapshot = true;
+    opts.ignoreNextRoomSnapshotRoundId = snapshot.roundId || resolveRoundId() || '';
+    if (App.GameManager && typeof App.GameManager.handleMessage === 'function') {
+      App.GameManager.handleMessage({
+        type: 'room_update',
+        roomId: opts.roomId || '',
+        selfId: opts.selfId || '',
+        role: opts.role || 'player',
+        players: opts.players || [],
+        spectators: opts.spectators || [],
+        isHost: isHostAuthority(),
+        gameState: snapshot
+      });
+    } else {
+      render();
+    }
+    if (isRoomMode()) {
+      if (isHostAuthority()) {
+        publishState();
+        saveRoomResult();
+      } else if (App.Lobby && typeof App.Lobby.sendRoomGameAction === 'function') {
+        App.Lobby.sendRoomGameAction({ type: 'bc_state_sync', stateSnapshot: snapshot, playerId: opts.selfId, skipLocalEcho: true });
+      } else if (App.Signaling && App.Signaling.setGameState) {
+        App.Signaling.setGameState(snapshot).catch(function() {});
+      }
+    }
+    return true;
   }
 
   function dealRound() {
@@ -246,11 +372,13 @@
     state.status = 'settled';
     state.finishedAt = Date.now();
     record('系統', SIDES[state.outcome] + '勝：閒 ' + p + ' 點，莊 ' + b + ' 點');
-    saveRoomResult();
     if (isRoomMode() && !opts.isHost) {
       sendRoomAction({ type: 'bc_state_sync', stateSnapshot: serializeState(), playerId: opts.selfId });
     } else if (isRoomMode()) {
       publishState();
+      saveRoomResult();
+    } else {
+      saveRoomResult();
     }
   }
 
@@ -336,13 +464,14 @@
     if (!container || !state) return;
     var player = selfPlayer();
     var canBet = !!player && !isSpectator() && state.status === 'playing' && state.phase === 'betting' && player.balance >= MIN_BET && !player.bet;
+    var canReveal = !!player && !isSpectator() && state.status === 'playing' && state.phase === 'reveal';
     if (state.status === 'settled') {
       var ranked = state.players.slice().sort(function(a, b) { return b.balance - a.balance || b.lastDelta - a.lastDelta; });
       var actions = isRoomMode()
         ? ''
-        : '<button class="bc-btn secondary" id="bc-back"><i class="fa-solid fa-arrow-left" aria-hidden="true"></i><span>返回</span></button>' +
-          '<button class="bc-btn primary" id="bc-new"><i class="fa-solid fa-rotate-right" aria-hidden="true"></i><span>再來一局</span></button>';
-      container.innerHTML = '<div class="bc-shell">' + App.Common.renderResultPanel({
+        : '<button class="bc-btn secondary" id="bc-back" type="button" onclick="App.BaccaratControls && App.BaccaratControls.back()"><i class="fa-solid fa-arrow-left" aria-hidden="true"></i><span>返回</span></button>' +
+          '<button class="bc-btn primary" id="bc-new" type="button" onclick="App.BaccaratControls && App.BaccaratControls.restart()"><i class="fa-solid fa-rotate-right" aria-hidden="true"></i><span>再來一局</span></button>';
+      container.innerHTML = '<div class="bc-shell">' + App.Common.renderResultDialog({
         eyebrow: '百家樂結算',
         title: resultTitle(),
         subtitle: '閒 ' + handPoint(state.playerHand) + ' 點 · 莊 ' + handPoint(state.bankerHand) + ' 點',
@@ -358,37 +487,66 @@
     }
     container.innerHTML =
       '<div class="bc-shell">' +
-        '<div class="bc-topbar"><div class="bc-title">百家樂 · ' + (canBet ? '請下注' : '等待下注') + '</div><div class="bc-actions">' + (isRoomMode() ? '<button class="bc-icon game-chat-trigger" onclick="App.Lobby.toggleGameChat()" aria-label="Chat"><i class="fa-regular fa-comments"></i><span class="chat-badge game-chat-unread"></span></button>' : '') + '<button class="bc-icon" onclick="(App.Lobby && App.Lobby.handleGameCloseAction ? App.Lobby.handleGameCloseAction() : App.GameManager.endGame())" aria-label="離開"><i class="fa-solid fa-xmark"></i></button></div></div>' +
+        '<div class="bc-topbar"><div class="bc-title">百家樂 · ' + (state.phase === 'reveal' ? '請開牌' : canBet ? '請下注' : '等待下注') + '</div><div class="bc-actions">' + (isRoomMode() ? '<button class="bc-icon game-chat-trigger" onclick="App.Lobby.toggleGameChat()" aria-label="Chat"><i class="fa-regular fa-comments"></i><span class="chat-badge game-chat-unread"></span></button>' : '') + '<button class="bc-icon" onclick="(App.Lobby && App.Lobby.handleGameCloseAction ? App.Lobby.handleGameCloseAction() : App.GameManager.endGame())" aria-label="離開"><i class="fa-solid fa-xmark"></i></button></div></div>' +
         '<section class="bc-table"><div class="bc-hands"><article class="bc-zone"><h3><span>閒</span><b>' + handPoint(state.playerHand) + ' 點</b></h3><div class="bc-cards">' + state.playerHand.map(renderCard).join('') + '</div></article><article class="bc-zone"><h3><span>莊</span><b>' + handPoint(state.bankerHand) + ' 點</b></h3><div class="bc-cards">' + state.bankerHand.map(renderCard).join('') + '</div></article></div><section class="bc-players">' + state.players.map(renderPlayer).join('') + '</section></section>' +
         '<div class="bc-controls"><div class="bc-hint">' + escapeHtml(state.history[state.history.length - 1].name + '：' + state.history[state.history.length - 1].text) + '</div>' +
-          ['player','banker','tie'].map(function(side) { return '<button class="bc-btn secondary" data-side="' + side + '"' + (canBet ? '' : ' disabled') + '>' + SIDES[side] + '</button>'; }).join('') +
-          [100,200,500].map(function(amount) { return '<button class="bc-btn secondary" data-amount="' + amount + '"' + (canBet ? '' : ' disabled') + '>$' + amount + '</button>'; }).join('') +
-          '<button class="bc-btn primary" id="bc-bet"' + (canBet ? '' : ' disabled') + '>下注 ' + SIDES[selectedSide] + ' $' + selectedAmount + '</button>' +
+          (state.phase === 'reveal'
+            ? (canReveal
+                ? '<button class="bc-btn primary" id="bc-reveal" type="button" onclick="App.BaccaratControls && App.BaccaratControls.reveal()"><i class="fa-solid fa-clapperboard" aria-hidden="true"></i><span>開牌</span></button>'
+                : '<span class="bc-btn secondary" aria-disabled="true" style="cursor:default;opacity:.82"><i class="fa-solid fa-hourglass-half" aria-hidden="true"></i><span>等待房主開牌</span></span>')
+            : '<div class="bc-bet-grid">' +
+                '<div class="bc-bet-row bc-bet-side-row">' + ['player','banker','tie'].map(function(side) { return '<button class="bc-btn secondary" data-side="' + side + '"' + (canBet ? '' : ' disabled') + '>' + SIDES[side] + '</button>'; }).join('') + '</div>' +
+                '<div class="bc-bet-row bc-bet-amount-row">' + [100,200,500].map(function(amount) { return '<button class="bc-btn secondary" data-amount="' + amount + '"' + (canBet ? '' : ' disabled') + '>$' + amount + '</button>'; }).join('') + '</div>' +
+                '<button class="bc-btn primary bc-bet-submit" id="bc-bet"' + (canBet ? '' : ' disabled') + '>下注 ' + SIDES[selectedSide] + ' $' + selectedAmount + '</button>' +
+              '</div>') +
         '</div>' +
       '</div>';
     bindControls();
     if (App.Lobby && App.Lobby.setTitle) App.Lobby.setTitle(canBet ? '輪到你 - 百家樂' : '百家樂');
   }
 
+  function handleContainerClick(event) {
+    var target = event.target && event.target.closest ? event.target.closest('button,[data-side],[data-amount]') : null;
+    if (!target || !container || !container.contains(target)) return;
+    if (target.hasAttribute('data-side')) {
+      selectedSide = target.getAttribute('data-side') || 'player';
+      render();
+      return;
+    }
+    if (target.hasAttribute('data-amount')) {
+      selectedAmount = Number(target.getAttribute('data-amount') || 100);
+      render();
+      return;
+    }
+    if (target.id === 'bc-bet') {
+      humanBet();
+      return;
+    }
+    if (target.id === 'bc-reveal') {
+      if (state && state.status === 'playing' && state.phase === 'reveal') performReveal();
+      return;
+    }
+    if (target.id === 'bc-back') {
+      if (App.Lobby && App.Lobby.handleGameCloseAction) App.Lobby.handleGameCloseAction();
+      else App.GameManager.endGame();
+      return;
+    }
+    if (target.id === 'bc-new') {
+      startNewRound();
+    }
+  }
+
   function bindControls() {
-    Array.prototype.forEach.call(container.querySelectorAll('[data-side]'), function(button) {
-      button.addEventListener('click', function() { selectedSide = button.getAttribute('data-side') || 'player'; render(); });
-    });
-    Array.prototype.forEach.call(container.querySelectorAll('[data-amount]'), function(button) {
-      button.addEventListener('click', function() { selectedAmount = Number(button.getAttribute('data-amount') || 100); render(); });
-    });
-    var bet = container.querySelector('#bc-bet');
-    var back = container.querySelector('#bc-back');
-    var next = container.querySelector('#bc-new');
-    if (bet) bet.addEventListener('click', humanBet);
-    if (back) back.addEventListener('click', function() { if (App.Lobby && App.Lobby.handleGameCloseAction) App.Lobby.handleGameCloseAction(); else App.GameManager.endGame(); });
-    if (next) next.addEventListener('click', startNewRound);
+    if (!container || handleContainerClickRef) return;
+    handleContainerClickRef = handleContainerClick;
+    container.addEventListener('click', handleContainerClickRef);
   }
 
   App.BaccaratRules = {
     cardPoint: cardPoint,
     handPoint: handPoint,
-    buildInitialState: buildInitialState
+    buildInitialState: buildInitialState,
+    buildRevealSnapshotFromState: buildRevealSnapshotFromState
   };
 
   App.GameManager.register({
@@ -411,6 +569,47 @@
     init: function(gameContainer, gameOpts) {
       container = gameContainer;
       opts = gameOpts || {};
+      App.BaccaratControls = {
+        reveal: function() {
+          var current = App.GameManager && App.GameManager.getActiveGameSnapshot ? App.GameManager.getActiveGameSnapshot() : null;
+          var snapshot = App.BaccaratRules && App.BaccaratRules.buildRevealSnapshotFromState ? App.BaccaratRules.buildRevealSnapshotFromState(current && current.state ? current.state : state) : null;
+          if (snapshot && snapshot.state) {
+            opts.ignoreNextRoomSnapshot = true;
+            opts.ignoreNextRoomSnapshotRoundId = snapshot.roundId || resolveRoundId() || '';
+            App.GameManager.handleMessage({
+              type: 'room_update',
+              roomId: opts.roomId || '',
+              selfId: opts.selfId || '',
+              role: opts.role || 'player',
+              players: opts.players || [],
+              spectators: opts.spectators || [],
+              isHost: isHostAuthority(),
+              gameState: snapshot
+            });
+            if (isRoomMode()) {
+              if (isHostAuthority()) {
+                state = clone(snapshot.state);
+                normalizeState();
+                publishState();
+                saveRoomResult();
+              } else if (App.Lobby && typeof App.Lobby.sendRoomGameAction === 'function') {
+                App.Lobby.sendRoomGameAction({ type: 'bc_state_sync', stateSnapshot: snapshot, playerId: opts.selfId, skipLocalEcho: true });
+              }
+            }
+            return true;
+          }
+          if (state && state.status === 'playing' && state.phase === 'reveal') return performReveal();
+          return false;
+        },
+        back: function() {
+          if (App.Lobby && App.Lobby.handleGameCloseAction) App.Lobby.handleGameCloseAction();
+          else App.GameManager.endGame();
+        },
+        restart: function() {
+          startNewRound();
+        }
+      };
+      bindControls();
       setupGame();
       render();
       if (isRoomMode() && opts.isHost && !(opts.gameState && opts.gameState.roundId === opts.roundId)) publishState();
@@ -452,6 +651,9 @@
       return false;
     },
     destroy: function() {
+      if (container && handleContainerClickRef) container.removeEventListener('click', handleContainerClickRef);
+      handleContainerClickRef = null;
+      if (App.BaccaratControls) delete App.BaccaratControls;
       container = null;
       opts = null;
       state = null;

@@ -100,6 +100,25 @@ App.Common = {
     '</span>';
   },
 
+  renderGameBadge: function(gameId, label, extraClass) {
+    var map = {
+      blackjack: { icon: 'fa-solid fa-spade', text: '21' },
+      baccarat: { icon: 'fa-solid fa-club', text: '百家樂' },
+      sicBo: { icon: 'fa-solid fa-dice', text: '大小' },
+      bigDee: { icon: 'fa-solid fa-layer-group', text: '鋤大Dee' },
+      douDizhu: { icon: 'fa-solid fa-crown', text: '地主' },
+      colorShift: { icon: 'fa-solid fa-arrows-rotate', text: '轉色牌' },
+      snapStack: { icon: 'fa-solid fa-clone', text: '冚棉胎' },
+      tile2048: { icon: 'fa-solid fa-grid-2', text: '2048' },
+      nineUpper: { icon: 'fa-solid fa-comment-dots', text: '9UPPER' }
+    };
+    var item = map[gameId] || { icon: 'fa-solid fa-gamepad', text: label || 'MiniGame' };
+    return '<span class="app-game-badge ' + (extraClass || '') + '" data-game-id="' + this.escapeHtml(gameId || '') + '">' +
+      '<i class="' + this.escapeHtml(item.icon) + '" aria-hidden="true"></i>' +
+      '<span>' + this.escapeHtml(label || item.text) + '</span>' +
+    '</span>';
+  },
+
   renderGameChrome: function(options) {
     options = options || {};
     var titleClass = options.myTurn ? ' my-turn' : '';
@@ -110,8 +129,8 @@ App.Common = {
       ? '<button class="app-icon-btn" type="button" onclick="document.getElementById(\'' + this.escapeHtml(options.infoId) + '\')?.classList.toggle(\'open\')" aria-label="資訊"><i class="fa-solid fa-circle-info" aria-hidden="true"></i></button>'
       : '';
     var closeAction = options.roomMode
-      ? 'App.Lobby.handleGameCloseAction()'
-      : 'App.GameManager.endGame()';
+      ? 'App.Lobby.handleGameCloseAction({skipConfirm:true})'
+      : 'App.GameManager.endGame({skipConfirm:true})';
     return '<div class="app-game-topbar">' +
       '<div class="app-game-title' + titleClass + '">' + this.escapeHtml(options.title || 'MiniGame') + '</div>' +
       '<div class="app-game-tools">' + (options.toolsHtml || '') + chatButton + infoButton +
@@ -172,6 +191,15 @@ App.Common = {
       '<div class="game-result-list">' + rows + '</div>' +
       (history ? '<div class="game-result-history">' + history + '</div>' : '') +
       (actionsHtml ? '<div class="game-result-actions">' + actionsHtml + '</div>' : '') +
+    '</section>';
+  },
+
+  renderResultDialog: function(options) {
+    options = options || {};
+    var body = this.renderResultPanel(options);
+    return '<section class="game-result-modal" role="dialog" aria-modal="true">' +
+      '<div class="game-result-backdrop"></div>' +
+      '<div class="game-result-dialog">' + body + '</div>' +
     '</section>';
   },
 

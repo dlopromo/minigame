@@ -1473,7 +1473,7 @@
     supportsSingle: true,
     supportsMultiplayer: true,
     minPlayers: 1,
-    minRoomPlayers: 2,
+    minRoomPlayers: 1,
     maxPlayers: 2,
     allowSpectators: true,
     aiFill: false,

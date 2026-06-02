@@ -480,44 +480,8 @@ App.Lobby = (function() {
   function renderVotePanelTarget(targetId, inGame) {
     var target = document.getElementById(targetId);
     if (!target) return;
-    var vote = roomState && roomState.vote ? roomState.vote : null;
-    var active = vote && vote.status === 'pending';
-    var canStartReturnVote = !!(roomState && roomState.gameStart && !active && roomState.status !== 'closed');
-    if (!active && !canStartReturnVote) {
-      target.hidden = true;
-      target.innerHTML = '';
-      return;
-    }
-    target.hidden = false;
-    target.className = 'room-vote-panel ' + (inGame ? 'game-vote-panel ' : '') + (vote && vote.status ? vote.status : 'pending');
-    if (!active) {
-      target.innerHTML =
-        '<div class="room-vote-copy">' +
-          '<div class="room-vote-title">需要處理目前遊戲？</div>' +
-          '<div class="room-vote-meta">多人房間會先投票，避免誤關或誤重開。</div>' +
-        '</div>' +
-        '<div class="room-vote-actions">' +
-          '<button class="btn-small btn-copy" onclick="App.Lobby.requestRoomAction(&quot;return_lobby&quot;)"><i class="fa-solid fa-arrow-left" aria-hidden="true"></i><span class="btn-label">返回房間</span></button>' +
-          '<button class="btn-small btn-copy" onclick="App.Lobby.requestRoomAction(&quot;restart_round&quot;)"><i class="fa-solid fa-rotate-right" aria-hidden="true"></i><span class="btn-label">重開</span></button>' +
-          '<button class="btn-small btn-copy" onclick="App.Lobby.requestRoomAction(&quot;change_game&quot;)"><i class="fa-solid fa-gamepad" aria-hidden="true"></i><span class="btn-label">換遊戲</span></button>' +
-          '<button class="btn-small btn-danger" onclick="App.Lobby.requestRoomAction(&quot;close_room&quot;)"><i class="fa-solid fa-lock" aria-hidden="true"></i><span class="btn-label">關房</span></button>' +
-        '</div>';
-      return;
-    }
-    var counts = voteCounts(vote);
-    var own = vote.votes && vote.votes[selfId] ? vote.votes[selfId].agree : null;
-    var seconds = Math.max(0, Math.ceil((Number(vote.expireAt || 0) - Date.now()) / 1000));
-    target.innerHTML =
-      '<div class="room-vote-copy">' +
-        '<div class="room-vote-title">' + App.Common.escapeHtml(vote.title || '房間投票') + '</div>' +
-        '<div class="room-vote-meta">' + App.Common.escapeHtml(vote.initiatorName || '玩家') + ' 發起 · ' + seconds + 's · 需要 ' + counts.needed + ' 票</div>' +
-      '</div>' +
-      '<div class="room-vote-actions">' +
-        '<span class="room-vote-count">同意 ' + counts.agree + '/' + counts.total + '</span>' +
-        '<span class="room-vote-count">反對 ' + counts.reject + '</span>' +
-        '<button class="btn-small btn-copy" ' + (own === true ? 'disabled' : '') + ' onclick="App.Lobby.castRoomVote(true)">同意</button>' +
-        '<button class="btn-small btn-danger" ' + (own === false ? 'disabled' : '') + ' onclick="App.Lobby.castRoomVote(false)">反對</button>' +
-      '</div>';
+    target.hidden = true;
+    target.innerHTML = '';
   }
 
   function renderRoomLobby() {
@@ -620,6 +584,15 @@ App.Lobby = (function() {
       var kind = msg.kind || 'player';
       var row = el('div', 'room-chat-message ' + kind);
       if (mentionList(msg.mentions).indexOf(selfId) !== -1) row.className += ' mentioned';
+      if (msg.playerIcon || msg.playerColor) {
+        var avatar = el('span', 'chat-avatar');
+        avatar.innerHTML = App.Common.renderPlayerAvatar ? App.Common.renderPlayerAvatar({
+          name: msg.name,
+          playerColor: msg.playerColor,
+          playerIcon: msg.playerIcon
+        }) : '';
+        row.appendChild(avatar);
+      }
       var name = el('strong', msg.playerColor ? 'has-color' : '', msg.name || '玩家');
       if (msg.playerColor && App.Common.getPlayerColor) {
         name.style.setProperty('--player-color', App.Common.getPlayerColor(msg.playerColor).value);
@@ -939,6 +912,9 @@ App.Lobby = (function() {
     var becameHost = refreshHostFlag(state);
     maybeResolveVote(state);
     maybeApplyResolvedVote(state);
+    var nextRoomGameKey = state && state.gameStart
+      ? (state.gameStart.roundId || (state.gameStart.gameId + ':' + state.gameStart.mode + ':' + (state.updatedAt || '')))
+      : '';
     if (gameActive && (state.status === 'lobby' || state.status === 'closed')) {
       App.GameManager.endGame({ skipConfirm: true, noCallback: true });
       gameActive = false;
@@ -951,6 +927,12 @@ App.Lobby = (function() {
       setTitle('房間 ' + (state.code || App.Signaling.getRoomCode() || ''));
       renderRoomLobby();
       return;
+    }
+    if (gameActive && state.status === 'playing' && nextRoomGameKey && launchedRoomGameKey && nextRoomGameKey !== launchedRoomGameKey) {
+      App.GameManager.endGame({ skipConfirm: true, noCallback: true });
+      gameActive = false;
+      setGlobalGameChatVisible(false);
+      launchedRoomGameKey = '';
     }
     notifyRoomUpdateToGame();
     renderRoomChat();
@@ -1099,6 +1081,18 @@ App.Lobby = (function() {
     if (context) playContext = context;
     var grid = document.getElementById('game-grid');
     grid.innerHTML = '';
+    var iconMap = {
+      blackjack: '♠',
+      baccarat: '🃏',
+      sicBo: '🎲',
+      bigDee: '♠',
+      douDizhu: '👑',
+      colorShift: '🔄',
+      snapStack: '🧩',
+      tile2048: '🔢',
+      nineUpper: '💬',
+      guessColor: '🎨'
+    };
     App.GameManager.getGames().forEach(function(game) {
       var supported = playContext === 'single' ? game.supportsSingle : game.supportsMultiplayer;
       if (!supported) return;
@@ -1111,15 +1105,18 @@ App.Lobby = (function() {
         if (game.aiFill) badges.push('AI 補位');
         if (game.allowSpectators) badges.push('可觀戰');
         if (roomState) {
-          var ready = getRoomQueue().length >= getGameMinRoomPlayers(game.id);
-          badges.push(ready ? '可開始' : '隊列不足');
+          var seating = App.RoomSeating && App.RoomSeating.build ? App.RoomSeating.build(roomState, game) : null;
+          var ready = !!(seating && seating.canStart);
+          var minRoomPlayers = getGameMinRoomPlayers(game.id);
+          badges.push(ready ? (minRoomPlayers <= 1 ? '可直接開始' : '可開始') : '隊列不足');
         }
       } else {
         badges.push('單人');
         if (game.maxPlayers > 1) badges.push('AI 對手');
       }
+      var iconText = iconMap[game.id] || '🎮';
       card.innerHTML =
-        '<div class="game-icon">' + game.icon + '</div>' +
+        '<div class="game-icon" aria-hidden="true">' + iconText + '</div>' +
         '<div class="game-name">' + game.name + '</div>' +
         '<div class="game-desc">' + game.description + '</div>' +
         '<div class="game-card-meta">' + badges.map(function(badge) {
@@ -1187,9 +1184,8 @@ App.Lobby = (function() {
     seating.players.forEach(function(person) { if (!person.isAI) seatedIds[person.id] = true; });
     var updates = { players: null, spectators: null };
     members.forEach(function(person) {
-      // Only queued/selected players enter the game scene automatically.
-      // Non-selected people stay in room lobby unless they explicitly queue.
-      updates['members/' + person.id + '/presence'] = seatedIds[person.id] ? 'playing' : 'lobby';
+      // Selected players play; all other online room members automatically spectate the current round.
+      updates['members/' + person.id + '/presence'] = seatedIds[person.id] ? 'playing' : 'spectating';
     });
     updates.maxPlayers = seating.maxPlayers;
     return App.Signaling.updateRoom(updates).then(function() {
@@ -1289,13 +1285,17 @@ App.Lobby = (function() {
     var start = roomState.gameStart || {};
     var gameId = start.gameId || roomState.gameId || roomState.activeGameId;
     var mode = start.mode || roomState.mode || roomState.activeMode || 'room';
-    requestRoomAction('restart_round', { gameId: gameId, mode: mode });
+    applyRoomVoteAction('restart_round', { gameId: gameId, mode: mode }, null).catch(function(e) {
+      App.Common.showToast('開新一局失敗：' + e.message, 'error');
+    });
   }
 
   function roomResultActionsHtml() {
     if (playContext !== 'room' || !roomState) return '';
     return '<button class="result-action secondary" type="button" onclick="App.Lobby.handleGameCloseAction()"><i class="fa-solid fa-arrow-left" aria-hidden="true"></i><span>返回房間</span></button>' +
-      '<button class="result-action" type="button" onclick="App.Lobby.restartRoomGame()"><i class="fa-solid fa-rotate-right" aria-hidden="true"></i><span>' + (isHost ? '開新一局' : '發起重開') + '</span></button>';
+      (isHost
+        ? '<button class="result-action" type="button" onclick="App.Lobby.restartRoomGame()"><i class="fa-solid fa-rotate-right" aria-hidden="true"></i><span>開新一局</span></button>'
+        : '<span class="result-action secondary" aria-disabled="true" style="cursor:default;opacity:.82"><i class="fa-solid fa-hourglass-half" aria-hidden="true"></i><span>等待房主開新一局</span></span>');
   }
 
   function returnToRoomLobby() {
@@ -1316,14 +1316,15 @@ App.Lobby = (function() {
     renderRoomLobby();
   }
 
-  function handleGameCloseAction() {
+  function handleGameCloseAction(options) {
+    options = options || {};
     if (playContext !== 'room') {
-      App.GameManager.endGame();
+      App.GameManager.endGame({ skipConfirm: options.skipConfirm !== false, noCallback: !!options.noCallback });
       return;
     }
     if (isHost) {
       // Host exit from active game should sync immediately for all players.
-      endRoomRound('host_return_lobby').catch(function(e) {
+      endRoomRound('host_return_lobby', { skipConfirm: options.skipConfirm !== false, noCallback: !!options.noCallback }).catch(function(e) {
         App.Common.showToast('同步返回房間失敗：' + e.message, 'error');
       });
       return;
@@ -1335,10 +1336,10 @@ App.Lobby = (function() {
     if (!selectedGameId) return;
     if (playContext === 'room') {
       if (!isHost) return;
-      var realPlayerCount = getRoomQueue().length;
       var game = App.GameManager.getGame(selectedGameId);
       var minRoomPlayers = getGameMinRoomPlayers(selectedGameId);
-      if (realPlayerCount < minRoomPlayers) {
+      var seating = App.RoomSeating && App.RoomSeating.build ? App.RoomSeating.build(roomState, game) : null;
+      if (!seating || !seating.canStart) {
         App.Common.showToast('這個玩法需要至少 ' + minRoomPlayers + ' 位玩家加入隊列', 'error');
         return;
       }
@@ -1613,36 +1614,12 @@ App.Lobby = (function() {
   }
 
   function startRoomVote(type) {
-    if (playContext !== 'room' || !roomState || !App.Signaling || !App.Signaling.startVote) return;
-    var titleMap = {
-      return_lobby: '返回 Party Room',
-      restart_round: '開新一局',
-      change_game: '更換遊戲',
-      close_room: '關閉房間',
-      force_settle: '強制結算'
-    };
-    var payload = {
-      gameId: roomState.gameId || '',
-      mode: roomState.mode || '',
-      roundId: roomState.roundId || ''
-    };
-    var extra = arguments.length > 1 && arguments[1] ? arguments[1] : {};
-    Object.keys(extra).forEach(function(key) { payload[key] = extra[key]; });
-    App.Signaling.startVote(type || 'return_lobby', payload, titleMap[type] || '房間投票', 30000).then(function() {
-      App.Common.showToast('投票已發起', 'success');
-      logRoomEvent('system', getSelfName() + ' 發起投票：' + (titleMap[type] || '房間投票'), 'vote_start');
-    }).catch(function(e) {
-      App.Common.showToast(e.message || '未能發起投票', 'error');
-    });
+    if (type === 'restart_round') return requestRoomAction('restart_round', arguments.length > 1 ? arguments[1] : {});
+    App.Common.showToast('投票功能已移除，請由房主直接操作', 'success');
   }
 
   function castRoomVote(agree) {
-    if (playContext !== 'room' || !roomState || !App.Signaling || !App.Signaling.castVote) return;
-    App.Signaling.castVote(!!agree).then(function() {
-      logRoomEvent('system', getSelfName() + (agree ? ' 同意投票' : ' 反對投票'), 'vote_cast');
-    }).catch(function(e) {
-      App.Common.showToast('投票失敗：' + e.message, 'error');
-    });
+    App.Common.showToast('投票功能已移除，請由房主直接操作', 'success');
   }
 
   function requestRoomAction(type, payload) {
@@ -1651,17 +1628,8 @@ App.Lobby = (function() {
       App.Common.showToast('只有房主可以發起這個動作', 'error');
       return;
     }
-    var multiHuman = onlineHumanIds().length > 1;
-    var voteActions = {
-      return_lobby: true,
-      restart_round: true,
-      change_game: true,
-      close_room: true,
-      force_settle: true
-    };
-    var needsVote = multiHuman && !!voteActions[type];
-    if (needsVote) {
-      startRoomVote(type, payload || {});
+    if (type === 'restart_round' && !isHost) {
+      App.Common.showToast('只有房主可以開新一局', 'error');
       return;
     }
     applyRoomVoteAction(type, payload || {}, null).catch(function(e) {

@@ -52,12 +52,33 @@ App.RoomSeating = (function() {
     });
   }
 
+  function pickSoloCandidate(roomState, members) {
+    var hostId = roomState && roomState.hostId ? roomState.hostId : '';
+    var preferred = members.filter(function(person) {
+      return person.online !== false && person.presence !== 'spectating';
+    }).sort(function(a, b) {
+      if (a.id === hostId && b.id !== hostId) return -1;
+      if (b.id === hostId && a.id !== hostId) return 1;
+      return (a.joinedAt || 0) - (b.joinedAt || 0);
+    });
+    return preferred[0] || null;
+  }
+
   function build(roomState, game) {
     var maxPlayers = Math.max(1, Number(game && game.maxPlayers || 2));
     var minRoomPlayers = Math.max(1, Number(game && (game.minRoomPlayers || game.minPlayers) || 1));
     var members = normalizeMembers(roomState).filter(function(person) { return person.online !== false; });
     var queue = normalizeQueue(roomState);
     var seatedRealPlayers = queue.slice(0, maxPlayers);
+    if (!seatedRealPlayers.length && minRoomPlayers <= 1) {
+      var fallback = pickSoloCandidate(roomState, members);
+      if (fallback) {
+        seatedRealPlayers = [Object.assign({}, fallback, {
+          queuedAt: fallback.joinedAt || 0,
+          queueStatus: fallback.queueStatus || 'auto'
+        })];
+      }
+    }
     var seatedIds = {};
     seatedRealPlayers.forEach(function(person) { seatedIds[person.id] = true; });
 
@@ -79,8 +100,9 @@ App.RoomSeating = (function() {
     var queueMap = roomState && roomState.queue ? roomState.queue : {};
     var spectators = members.filter(function(person) {
       if (seatedIds[person.id]) return false;
-      // Only explicit spectators or queued overflow are spectators of the current round.
-      return person.presence === 'spectating' || !!queueMap[person.id];
+      // Any remaining online member can spectate the current round.
+      // This keeps solo-host rounds watchable without forcing extra真人入隊列.
+      return true;
     }).map(function(person) {
       return personRecord(person, 'spectator');
     });
@@ -94,7 +116,7 @@ App.RoomSeating = (function() {
     });
 
     return {
-      canStart: queue.length >= minRoomPlayers,
+      canStart: seatedRealPlayers.length >= minRoomPlayers,
       minRoomPlayers: minRoomPlayers,
       maxPlayers: maxPlayers,
       queuedCount: queue.length,

@@ -8,6 +8,7 @@
   var state = null;
   var selectedSide = 'big';
   var selectedAmount = 100;
+  var handleContainerClickRef = null;
 
   function isRoomMode() { return opts && opts.roomId; }
   function isSpectator() { return opts && opts.role === 'spectator'; }
@@ -66,6 +67,7 @@
       phase: 'betting',
       status: 'playing',
       outcome: '',
+      revealReason: '',
       resultSaved: false,
       roundNumber: 1,
       history: [{ name: '系統', text: '大小開始，請下注' }],
@@ -108,6 +110,7 @@
     state.history = state.history || [];
     state.phase = state.phase || 'betting';
     state.status = state.status || 'playing';
+    state.revealReason = state.revealReason || '';
     state.players.forEach(function(player) {
       player.balance = Number(player.balance == null ? START_BALANCE : player.balance);
       player.lastDelta = Number(player.lastDelta || 0);
@@ -116,6 +119,12 @@
   }
 
   function serializeState() { return { gameId: 'sicBo', mode: opts.mode || 'room', roundId: opts.roundId || '', state: clone(state) }; }
+  function resolveRoundId() {
+    return (opts && opts.roundId) || (opts && opts.gameState && opts.gameState.roundId) || '';
+  }
+  function resolveMode() {
+    return (opts && opts.mode) || 'room';
+  }
   function publishState() {
     if (!isRoomMode() || !App.Signaling || !App.Signaling.setGameState) return;
     if (!opts.isHost && !(opts && opts.localEcho)) return;
@@ -170,8 +179,93 @@
     amount = clampBet(amount, player);
     player.bet = { side: side, amount: amount };
     record(player.name, '下注 ' + SIDES[side] + ' $' + amount);
-    if (allBetsReady()) rollRound();
+    if (allBetsReady()) {
+      state.phase = 'reveal';
+      state.revealReason = 'betting';
+      record('系統', '已封盤，請開牌');
+    }
     commit();
+  }
+
+  function revealRound() {
+    if (!state || state.status !== 'playing' || state.phase !== 'reveal') return;
+    performReveal();
+  }
+
+  function settlePreparedState(next) {
+    var total = diceTotal(next.dice);
+    next.players.forEach(function(player) {
+      var delta = 0;
+      if (player.bet && player.bet.amount) {
+        delta = player.bet.side === next.outcome ? player.bet.amount : -player.bet.amount;
+        player.balance += delta;
+        player.lastDelta = delta;
+        player.stats = player.stats || { rounds: 0, wins: 0 };
+        player.stats.rounds = Number(player.stats.rounds || 0) + 1;
+        if (delta > 0) player.stats.wins = Number(player.stats.wins || 0) + 1;
+      }
+    });
+    next.phase = 'result';
+    next.status = 'settled';
+    next.finishedAt = Date.now();
+    next.history = next.history || [];
+    next.history.push({
+      name: '系統',
+      text: '開出 ' + next.dice.join('-') + '，合計 ' + total + '，' + (next.outcome === 'triple' ? '圍骰通殺' : SIDES[next.outcome] + '勝')
+    });
+    if (next.history.length > 30) next.history = next.history.slice(next.history.length - 30);
+    return next;
+  }
+
+  function buildRevealSnapshotFromState(baseState) {
+    if (!baseState || baseState.status !== 'playing' || baseState.phase !== 'reveal') return null;
+    var next = clone(baseState);
+    next.phase = 'rolling';
+    next.dice = rollDice();
+    next.outcome = outcomeForDice(next.dice);
+    settlePreparedState(next);
+    return {
+      gameId: 'sicBo',
+      mode: resolveMode(),
+      roundId: resolveRoundId(),
+      state: next
+    };
+  }
+
+  function performReveal() {
+    var currentSnapshot = App.GameManager && App.GameManager.getActiveGameSnapshot ? App.GameManager.getActiveGameSnapshot() : null;
+    var sourceState = currentSnapshot && currentSnapshot.state ? currentSnapshot.state : state;
+    var snapshot = buildRevealSnapshotFromState(sourceState);
+    if (!snapshot || !snapshot.state) return false;
+    state = clone(snapshot.state);
+    normalizeState();
+    opts.ignoreNextRoomSnapshot = true;
+    opts.ignoreNextRoomSnapshotRoundId = snapshot.roundId || resolveRoundId() || '';
+    if (App.GameManager && typeof App.GameManager.handleMessage === 'function') {
+      App.GameManager.handleMessage({
+        type: 'room_update',
+        roomId: opts.roomId || '',
+        selfId: opts.selfId || '',
+        role: opts.role || 'player',
+        players: opts.players || [],
+        spectators: opts.spectators || [],
+        isHost: isHostAuthority(),
+        gameState: snapshot
+      });
+    } else {
+      render();
+    }
+    if (isRoomMode()) {
+      if (isHostAuthority()) {
+        publishState();
+        saveRoomResult();
+      } else if (App.Lobby && typeof App.Lobby.sendRoomGameAction === 'function') {
+        App.Lobby.sendRoomGameAction({ type: 'sb_state_sync', stateSnapshot: snapshot, playerId: opts.selfId, skipLocalEcho: true });
+      } else if (App.Signaling && App.Signaling.setGameState) {
+        App.Signaling.setGameState(snapshot).catch(function() {});
+      }
+    }
+    return true;
   }
 
   function rollRound() {
@@ -197,11 +291,13 @@
     state.status = 'settled';
     state.finishedAt = Date.now();
     record('系統', '開出 ' + state.dice.join('-') + '，合計 ' + total + '，' + (state.outcome === 'triple' ? '圍骰通殺' : SIDES[state.outcome] + '勝'));
-    saveRoomResult();
     if (isRoomMode() && !opts.isHost) {
       sendRoomAction({ type: 'sb_state_sync', stateSnapshot: serializeState(), playerId: opts.selfId });
     } else if (isRoomMode()) {
       publishState();
+      saveRoomResult();
+    } else {
+      saveRoomResult();
     }
   }
 
@@ -282,13 +378,14 @@
     if (!container || !state) return;
     var player = selfPlayer();
     var canBet = !!player && !isSpectator() && state.status === 'playing' && state.phase === 'betting' && player.balance >= MIN_BET && !player.bet;
+    var canReveal = !!player && !isSpectator() && state.status === 'playing' && state.phase === 'reveal';
     if (state.status === 'settled') {
       var ranked = state.players.slice().sort(function(a, b) { return b.balance - a.balance || b.lastDelta - a.lastDelta; });
       var actions = isRoomMode()
         ? ''
-        : '<button class="sb-btn secondary" id="sb-back"><i class="fa-solid fa-arrow-left" aria-hidden="true"></i><span>返回</span></button>' +
-          '<button class="sb-btn primary" id="sb-new"><i class="fa-solid fa-rotate-right" aria-hidden="true"></i><span>再來一局</span></button>';
-      container.innerHTML = '<div class="sb-shell">' + App.Common.renderResultPanel({
+        : '<button class="sb-btn secondary" id="sb-back" type="button" onclick="App.SicBoControls && App.SicBoControls.back()"><i class="fa-solid fa-arrow-left" aria-hidden="true"></i><span>返回</span></button>' +
+          '<button class="sb-btn primary" id="sb-new" type="button" onclick="App.SicBoControls && App.SicBoControls.restart()"><i class="fa-solid fa-rotate-right" aria-hidden="true"></i><span>再來一局</span></button>';
+      container.innerHTML = '<div class="sb-shell">' + App.Common.renderResultDialog({
         eyebrow: '大小結算',
         title: resultLabel(),
         subtitle: '骰子 ' + state.dice.join('-') + ' · 合計 ' + diceTotal(state.dice),
@@ -304,38 +401,67 @@
     }
     container.innerHTML =
       '<div class="sb-shell">' +
-        '<div class="sb-topbar"><div class="sb-title">大小 · ' + (canBet ? '請下注' : '等待下注') + '</div><div class="sb-actions">' + (isRoomMode() ? '<button class="sb-icon game-chat-trigger" onclick="App.Lobby.toggleGameChat()" aria-label="Chat"><i class="fa-regular fa-comments"></i><span class="chat-badge game-chat-unread"></span></button>' : '') + '<button class="sb-icon" onclick="(App.Lobby && App.Lobby.handleGameCloseAction ? App.Lobby.handleGameCloseAction() : App.GameManager.endGame())" aria-label="離開"><i class="fa-solid fa-xmark"></i></button></div></div>' +
+        '<div class="sb-topbar"><div class="sb-title">大小 · ' + (state.phase === 'reveal' ? '請開牌' : canBet ? '請下注' : '等待下注') + '</div><div class="sb-actions">' + (isRoomMode() ? '<button class="sb-icon game-chat-trigger" onclick="App.Lobby.toggleGameChat()" aria-label="Chat"><i class="fa-regular fa-comments"></i><span class="chat-badge game-chat-unread"></span></button>' : '') + '<button class="sb-icon" onclick="(App.Lobby && App.Lobby.handleGameCloseAction ? App.Lobby.handleGameCloseAction() : App.GameManager.endGame())" aria-label="離開"><i class="fa-solid fa-xmark"></i></button></div></div>' +
         '<section class="sb-table"><div class="sb-dice-zone"><div class="sb-dice">' + (state.dice.length ? state.dice.map(function(value) { return '<span class="sb-die">' + value + '</span>'; }).join('') : '<span class="sb-die">?</span><span class="sb-die">?</span><span class="sb-die">?</span>') + '</div><div class="sb-result">結果：<strong>' + resultLabel() + '</strong></div></div><section class="sb-players">' + state.players.map(renderPlayer).join('') + '</section></section>' +
         '<div class="sb-controls"><div class="sb-hint">' + escapeHtml(state.history[state.history.length - 1].name + '：' + state.history[state.history.length - 1].text) + '</div>' +
-          ['small','big'].map(function(side) { return '<button class="sb-btn secondary" data-side="' + side + '"' + (canBet ? '' : ' disabled') + '>' + SIDES[side] + '</button>'; }).join('') +
-          [50,100,500].map(function(amount) { return '<button class="sb-btn secondary" data-amount="' + amount + '"' + (canBet ? '' : ' disabled') + '>$' + amount + '</button>'; }).join('') +
-          '<button class="sb-btn primary" id="sb-bet"' + (canBet ? '' : ' disabled') + '>下注 ' + SIDES[selectedSide] + ' $' + selectedAmount + '</button>' +
+          (state.phase === 'reveal'
+            ? (canReveal
+                ? '<button class="sb-btn primary" id="sb-reveal" type="button" onclick="App.SicBoControls && App.SicBoControls.reveal()"><i class="fa-solid fa-clapperboard" aria-hidden="true"></i><span>開牌</span></button>'
+                : '<span class="sb-btn secondary" aria-disabled="true" style="cursor:default;opacity:.82"><i class="fa-solid fa-hourglass-half" aria-hidden="true"></i><span>等待房主開牌</span></span>')
+            : '<div class="sb-bet-grid">' +
+                '<div class="sb-bet-row sb-bet-side-row">' + ['small','big'].map(function(side) { return '<button class="sb-btn secondary" data-side="' + side + '"' + (canBet ? '' : ' disabled') + '>' + SIDES[side] + '</button>'; }).join('') + '</div>' +
+                '<div class="sb-bet-row sb-bet-amount-row">' + [50,100,500].map(function(amount) { return '<button class="sb-btn secondary" data-amount="' + amount + '"' + (canBet ? '' : ' disabled') + '>$' + amount + '</button>'; }).join('') + '</div>' +
+                '<button class="sb-btn primary sb-bet-submit" id="sb-bet"' + (canBet ? '' : ' disabled') + '>下注 ' + SIDES[selectedSide] + ' $' + selectedAmount + '</button>' +
+              '</div>') +
         '</div>' +
       '</div>';
     bindControls();
     if (App.Lobby && App.Lobby.setTitle) App.Lobby.setTitle(canBet ? '輪到你 - 大小' : '大小');
   }
 
+  function handleContainerClick(event) {
+    var target = event.target && event.target.closest ? event.target.closest('button,[data-side],[data-amount]') : null;
+    if (!target || !container || !container.contains(target)) return;
+    if (target.hasAttribute('data-side')) {
+      selectedSide = target.getAttribute('data-side') || 'big';
+      render();
+      return;
+    }
+    if (target.hasAttribute('data-amount')) {
+      selectedAmount = Number(target.getAttribute('data-amount') || 100);
+      render();
+      return;
+    }
+    if (target.id === 'sb-bet') {
+      humanBet();
+      return;
+    }
+    if (target.id === 'sb-reveal') {
+      if (state && state.status === 'playing' && state.phase === 'reveal') performReveal();
+      return;
+    }
+    if (target.id === 'sb-back') {
+      if (App.Lobby && App.Lobby.handleGameCloseAction) App.Lobby.handleGameCloseAction();
+      else App.GameManager.endGame();
+      return;
+    }
+    if (target.id === 'sb-new') {
+      startNewRound();
+    }
+  }
+
   function bindControls() {
-    Array.prototype.forEach.call(container.querySelectorAll('[data-side]'), function(button) {
-      button.addEventListener('click', function() { selectedSide = button.getAttribute('data-side') || 'big'; render(); });
-    });
-    Array.prototype.forEach.call(container.querySelectorAll('[data-amount]'), function(button) {
-      button.addEventListener('click', function() { selectedAmount = Number(button.getAttribute('data-amount') || 100); render(); });
-    });
-    var bet = container.querySelector('#sb-bet');
-    var back = container.querySelector('#sb-back');
-    var next = container.querySelector('#sb-new');
-    if (bet) bet.addEventListener('click', humanBet);
-    if (back) back.addEventListener('click', function() { if (App.Lobby && App.Lobby.handleGameCloseAction) App.Lobby.handleGameCloseAction(); else App.GameManager.endGame(); });
-    if (next) next.addEventListener('click', startNewRound);
+    if (!container || handleContainerClickRef) return;
+    handleContainerClickRef = handleContainerClick;
+    container.addEventListener('click', handleContainerClickRef);
   }
 
   App.SicBoRules = {
     outcomeForDice: outcomeForDice,
     diceTotal: diceTotal,
     isTriple: isTriple,
-    buildInitialState: buildInitialState
+    buildInitialState: buildInitialState,
+    buildRevealSnapshotFromState: buildRevealSnapshotFromState
   };
 
   App.GameManager.register({
@@ -358,6 +484,47 @@
     init: function(gameContainer, gameOpts) {
       container = gameContainer;
       opts = gameOpts || {};
+      App.SicBoControls = {
+        reveal: function() {
+          var current = App.GameManager && App.GameManager.getActiveGameSnapshot ? App.GameManager.getActiveGameSnapshot() : null;
+          var snapshot = App.SicBoRules && App.SicBoRules.buildRevealSnapshotFromState ? App.SicBoRules.buildRevealSnapshotFromState(current && current.state ? current.state : state) : null;
+          if (snapshot && snapshot.state) {
+            opts.ignoreNextRoomSnapshot = true;
+            opts.ignoreNextRoomSnapshotRoundId = snapshot.roundId || resolveRoundId() || '';
+            App.GameManager.handleMessage({
+              type: 'room_update',
+              roomId: opts.roomId || '',
+              selfId: opts.selfId || '',
+              role: opts.role || 'player',
+              players: opts.players || [],
+              spectators: opts.spectators || [],
+              isHost: isHostAuthority(),
+              gameState: snapshot
+            });
+            if (isRoomMode()) {
+              if (isHostAuthority()) {
+                state = clone(snapshot.state);
+                normalizeState();
+                publishState();
+                saveRoomResult();
+              } else if (App.Lobby && typeof App.Lobby.sendRoomGameAction === 'function') {
+                App.Lobby.sendRoomGameAction({ type: 'sb_state_sync', stateSnapshot: snapshot, playerId: opts.selfId, skipLocalEcho: true });
+              }
+            }
+            return true;
+          }
+          if (state && state.status === 'playing' && state.phase === 'reveal') return performReveal();
+          return false;
+        },
+        back: function() {
+          if (App.Lobby && App.Lobby.handleGameCloseAction) App.Lobby.handleGameCloseAction();
+          else App.GameManager.endGame();
+        },
+        restart: function() {
+          startNewRound();
+        }
+      };
+      bindControls();
       setupGame();
       render();
       if (isRoomMode() && opts.isHost && !(opts.gameState && opts.gameState.roundId === opts.roundId)) publishState();
@@ -399,6 +566,9 @@
       return false;
     },
     destroy: function() {
+      if (container && handleContainerClickRef) container.removeEventListener('click', handleContainerClickRef);
+      handleContainerClickRef = null;
+      if (App.SicBoControls) delete App.SicBoControls;
       container = null;
       opts = null;
       state = null;

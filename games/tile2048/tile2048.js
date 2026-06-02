@@ -605,7 +605,7 @@
       });
       var actions = '<button class="t2048-btn ghost" id="t2048-back">返回</button>' +
         (!isRoomMode() ? '<button class="t2048-btn ghost" id="t2048-new">New</button>' : '');
-      container.innerHTML = '<div class="t2048-shell">' + App.Common.renderResultPanel({
+      container.innerHTML = '<div class="t2048-shell">' + App.Common.renderResultDialog({
         eyebrow: isRoomMode() ? '2048 合作結算' : '2048 結算',
         title: winnerText(),
         subtitle: isRoomMode() ? '合作盤分數、最高 tile 與步數' : '最高 tile、分數、步數共同排序',

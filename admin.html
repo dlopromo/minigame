@@ -27,6 +27,19 @@
     </div>
   </div>
   <div class="room-debug-panel admin-debug-panel" id="admin-summary"></div>
+  <div class="card room-party-card">
+    <div class="room-code-line">
+      <div>
+        <span class="room-eyebrow">Maintenance</span>
+        <strong>全局清理工具</strong>
+      </div>
+    </div>
+    <div class="admin-actions" id="admin-global-actions">
+      <button class="btn-small btn-copy" data-global-admin-action="delete-empty-rooms">刪除空房</button>
+      <button class="btn-small btn-copy" data-global-admin-action="delete-closed-rooms">刪除已關閉房</button>
+      <button class="btn-small btn-danger" data-global-admin-action="delete-stale-rooms">刪除過舊房間</button>
+    </div>
+  </div>
   <div class="admin-layout">
     <section class="card room-party-card">
       <h2>房間列表</h2>

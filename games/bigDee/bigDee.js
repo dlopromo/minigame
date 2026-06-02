@@ -841,9 +841,9 @@
   }
 
   function renderDiscardPiles() {
-    var piles = playedPiles.slice(0, lastPlay ? -1 : playedPiles.length).slice(-5);
-    if (!piles.length) return '<div class="bd-discard-area empty">已出牌堆</div>';
-    return '<div class="bd-discard-area">' + piles.map(function(pile, pileIndex) {
+    var piles = playedPiles.slice(0, lastPlay ? -1 : playedPiles.length).slice(-4);
+    if (!piles.length) return '<div class="bd-discard-strip empty">已出牌堆</div>';
+    return '<div class="bd-discard-strip">' + piles.map(function(pile, pileIndex) {
       var cards = (pile.cards || []).slice(-5);
       return '<div class="bd-discard-pile" style="--pile-i:' + pileIndex + '">' +
         '<div class="bd-discard-stack">' + cards.map(function(card, cardIndex) {
@@ -971,7 +971,7 @@
     var actions = (isRoomMode() ? '' : '<button class="bd-action-btn" id="bd-new-game">再來一局</button>') +
       '<button class="bd-action-btn secondary" id="bd-back-lobby"><i class="fa-solid fa-arrow-left" aria-hidden="true"></i><span>返回大廳</span></button>';
     container.innerHTML =
-      '<div class="bd-shell">' + App.Common.renderResultPanel({
+      '<div class="bd-shell">' + App.Common.renderResultDialog({
         eyebrow: '鋤大DEE 結算',
         title: winner.name + ' 勝出',
         subtitle: topDaRecords.length ? '頂大紀錄 ' + topDaRecords.length + ' 宗，已計入分數' : '未有頂大罰分',
@@ -1096,7 +1096,7 @@
     supportsSingle: true,
     supportsMultiplayer: true,
     minPlayers: 1,
-    minRoomPlayers: 2,
+    minRoomPlayers: 1,
     maxPlayers: 4,
     allowSpectators: true,
     aiFill: true,

@@ -12,6 +12,7 @@
     DEALING: 'DEALING',
     PLAYER_TURN: 'PLAYER_TURN',
     PLAYER_BUST: 'PLAYER_BUST',
+    REVEAL: 'REVEAL',
     DEALER_TURN: 'DEALER_TURN',
     RESULT: 'RESULT'
   };
@@ -110,6 +111,8 @@
       dealer: { hand: [], status: 'hidden' },
       players: players,
       currentIndex: 0,
+      revealById: '',
+      revealReason: '',
       status: 'playing',
       phase: PHASES.DEALING,
       history: [],
@@ -201,6 +204,8 @@
     state.dealer.hand = Array.isArray(state.dealer.hand) ? state.dealer.hand : [];
     state.dealer.status = state.dealer.status || 'hidden';
     state.players = state.players || [];
+    state.revealById = state.revealById || '';
+    state.revealReason = state.revealReason || '';
     state.players.forEach(function(player) {
       player.status = player.status || 'playing';
       player.outcome = player.outcome || '';
@@ -268,10 +273,14 @@
     if (value > 21) {
       player.status = 'bust';
       state.phase = PHASES.PLAYER_BUST;
+      state.revealById = player.id;
+      state.revealReason = 'bust';
       record(player.name, '爆牌');
       advanceTurn();
     } else if (value === 21) {
       player.status = 'stand';
+      state.revealById = player.id;
+      state.revealReason = 'stand';
       advanceTurn();
     }
     commit();
@@ -283,6 +292,8 @@
     if (!player || player.status !== 'playing' || !activePlayer() || activePlayer().id !== player.id) return;
     suggestedAction = '';
     player.status = 'stand';
+    state.revealById = player.id;
+    state.revealReason = 'stand';
     record(player.name, '停牌 ' + handValue(player.hand) + ' 點');
     advanceTurn();
     commit();
@@ -295,8 +306,10 @@
       state.currentIndex++;
     }
     if (state.currentIndex >= state.players.length) {
-      dealerPlay();
-      settleRound();
+      state.phase = PHASES.REVEAL;
+      if (!state.revealById && state.players.length) {
+        state.revealById = state.players[Math.max(0, state.players.length - 1)].id || '';
+      }
     }
   }
 
@@ -308,6 +321,13 @@
       state.dealer.hand.push(drawCard());
     }
     state.dealer.status = handValue(state.dealer.hand) > 21 ? 'bust' : 'stand';
+  }
+
+  function revealRound() {
+    if (!state || state.status !== 'playing' || state.phase !== PHASES.REVEAL) return;
+    dealerPlay();
+    settleRound();
+    commit();
   }
 
   function settleRound() {
@@ -406,8 +426,18 @@
 
   function playerAction(action) {
     var player = selfPlayer();
-    if (!canControlPlayer(player)) return;
     suggestedAction = '';
+    if (action === 'reveal') {
+      if (!state || state.status !== 'playing' || state.phase !== PHASES.REVEAL) return;
+      if (isRoomMode() && !opts.isHost && (!player || player.id !== state.revealById)) return;
+      if (isRoomMode() && !opts.isHost) {
+        sendRoomAction({ type: 'bj_action', playerId: opts.selfId, action: action });
+        return;
+      }
+      revealRound();
+      return;
+    }
+    if (!canControlPlayer(player)) return;
     if (isRoomMode() && !opts.isHost) {
       sendRoomAction({ type: 'bj_action', playerId: opts.selfId, action: action });
       return;
@@ -467,9 +497,10 @@
   function handleRoomAction(msg) {
     if (!isRoomMode() || !msg || (!opts.isHost && !msg.localEcho) || (opts.isHost && msg.localEcho) || msg.type !== 'bj_action') return;
     var player = state.players.filter(function(item) { return item.id === msg.playerId; })[0];
-    if (!player || player.id !== (activePlayer() && activePlayer().id) || player.ai || state.phase !== PHASES.PLAYER_TURN) return;
+    if (!player) return;
     if (msg.action === 'hit') hit(player.id);
     if (msg.action === 'stand') stand(player.id);
+    if (msg.action === 'reveal' && state.phase === PHASES.REVEAL) revealRound();
   }
 
   function syncPlayerPresence(roomPlayers) {
@@ -533,6 +564,7 @@
 
   function titleText() {
     if (state.status === 'settled') return '21點結算';
+    if (state.phase === PHASES.REVEAL) return '等待投降並開牌';
     var player = activePlayer();
     if (!player) return '莊家結算中';
     return canControlPlayer(player) ? '輪到你：抽牌或停牌' : player.name + ' 行動中';
@@ -543,20 +575,23 @@
     container.setAttribute('data-active-game', 'blackjack');
     var player = selfPlayer();
     var canAct = canControlPlayer(player);
+    var canReveal = !!player && state.status === 'playing' && state.phase === PHASES.REVEAL && (!isRoomMode() || opts.isHost || player.id === state.revealById || player.id === 'human');
     try {
       var dealerHtml = renderHand(state.dealer.hand, state.phase === PHASES.PLAYER_TURN && state.status === 'playing' && !isSpectator());
       var playersHtml = state.players.map(renderPlayer).join('');
       var isSettled = state.status === 'settled';
-      var hintHtml = escapeHtml(isSettled ? resultHint() : canAct ? handValue(player.hand) + ' 點，請選擇操作' : latestHint());
+      var hintHtml = escapeHtml(isSettled ? resultHint() : state.phase === PHASES.REVEAL ? '爆牌後請按投降並開牌' : canAct ? handValue(player.hand) + ' 點，請選擇操作' : latestHint());
       if (isSettled) {
         var actions = isRoomMode()
-          ? '<button class="bj-btn secondary" id="bj-room-next"><i class="fa-solid fa-rotate-right" aria-hidden="true"></i><span>開新一局</span></button>' +
+          ? (isHostAuthority()
+              ? '<button class="bj-btn secondary" id="bj-room-next"><i class="fa-solid fa-rotate-right" aria-hidden="true"></i><span>開新一局</span></button>'
+              : '<span class="bj-btn secondary" aria-disabled="true" style="cursor:default;opacity:.82"><i class="fa-solid fa-hourglass-half" aria-hidden="true"></i><span>等待房主開新一局</span></span>') +
             '<button class="bj-btn secondary" id="bj-room-back"><i class="fa-solid fa-arrow-left" aria-hidden="true"></i><span>返回房間</span></button>'
           : '<button class="bj-btn secondary" id="bj-back"><i class="fa-solid fa-arrow-left" aria-hidden="true"></i><span>返回</span></button>' +
             '<button class="bj-btn" id="bj-new-round"' + (canStartNewRound() ? '' : ' disabled') + '><i class="fa-solid fa-rotate-right" aria-hidden="true"></i><span>再來一局</span></button>';
         container.textContent = '';
         container.insertAdjacentHTML('beforeend',
-          '<div class="bj-shell">' + App.Common.renderResultPanel({
+          '<div class="bj-shell">' + App.Common.renderResultDialog({
             eyebrow: '21點結算',
             title: blackjackResultTitle(),
             subtitle: resultHint(),
@@ -596,7 +631,9 @@
           '</div>' +
           '<div class="bj-controlbar">' +
             '<div class="bj-hint">' + hintHtml + '</div>' +
-            ('<button class="bj-btn secondary" id="bj-suggest"' + (canAct ? '' : ' disabled') + '><i class="fa-regular fa-lightbulb" aria-hidden="true"></i><span>推薦</span></button>' +
+            (state.phase === PHASES.REVEAL
+              ? '<button class="bj-btn' + (canReveal ? ' recommended' : '') + '" id="bj-reveal"' + (canReveal ? '' : ' disabled') + '><i class="fa-solid fa-gavel" aria-hidden="true"></i><span>投降並開牌</span></button>'
+              : '<button class="bj-btn secondary" id="bj-suggest"' + (canAct ? '' : ' disabled') + '><i class="fa-regular fa-lightbulb" aria-hidden="true"></i><span>推薦</span></button>' +
                 '<button class="bj-btn secondary' + (suggestedAction === 'hit' ? ' recommended' : '') + '" id="bj-hit"' + (canAct ? '' : ' disabled') + '><i class="fa-solid fa-plus" aria-hidden="true"></i><span>抽牌</span></button>' +
                 '<button class="bj-btn' + (suggestedAction === 'stand' ? ' recommended' : '') + '" id="bj-stand"' + (canAct ? '' : ' disabled') + '><i class="fa-solid fa-hand" aria-hidden="true"></i><span>停牌</span></button>') +
           '</div>' +
@@ -674,6 +711,7 @@
     var hitBtn = container.querySelector('#bj-hit');
     var standBtn = container.querySelector('#bj-stand');
     var suggestBtn = container.querySelector('#bj-suggest');
+    var revealBtn = container.querySelector('#bj-reveal');
     var newRoundBtn = container.querySelector('#bj-new-round');
     var backBtn = container.querySelector('#bj-back');
     var roomNextBtn = container.querySelector('#bj-room-next');
@@ -681,6 +719,7 @@
     if (hitBtn) hitBtn.addEventListener('click', function() { playerAction('hit'); });
     if (standBtn) standBtn.addEventListener('click', function() { playerAction('stand'); });
     if (suggestBtn) suggestBtn.addEventListener('click', suggestAction);
+    if (revealBtn) revealBtn.addEventListener('click', function() { playerAction('reveal'); });
     if (newRoundBtn) newRoundBtn.addEventListener('click', startNewRound);
     if (backBtn) backBtn.addEventListener('click', backToLobby);
     if (roomNextBtn && App.Lobby && App.Lobby.requestRoomAction) roomNextBtn.addEventListener('click', function() {

@@ -478,7 +478,7 @@
       });
       var actions = '<button class="cs-btn secondary" id="cs-back"><i class="fa-solid fa-arrow-left" aria-hidden="true"></i><span>返回</span></button>' +
         (isRoomMode() ? '' : '<button class="cs-btn" id="cs-new"><i class="fa-solid fa-rotate-right" aria-hidden="true"></i><span>再來一局</span></button>');
-      container.innerHTML = '<div class="cs-shell">' + App.Common.renderResultPanel({
+      container.innerHTML = '<div class="cs-shell">' + App.Common.renderResultDialog({
         eyebrow: '轉色牌結算',
         title: winnerText(),
         subtitle: '剩牌越少排名越前',
@@ -560,7 +560,7 @@
     supportsSingle: true,
     supportsMultiplayer: true,
     minPlayers: 1,
-    minRoomPlayers: 2,
+    minRoomPlayers: 1,
     maxPlayers: 6,
     allowSpectators: true,
     aiFill: true,

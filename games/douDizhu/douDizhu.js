@@ -1144,7 +1144,7 @@
     var actions = (isRoomMode() ? '' : '<button class="ddz-btn" id="ddz-new-game">再來一局</button>') +
       '<button class="ddz-btn secondary" id="ddz-back"><i class="fa-solid fa-arrow-left" aria-hidden="true"></i><span>返回大廳</span></button>';
     container.innerHTML =
-      '<div class="ddz-shell">' + App.Common.renderResultPanel({
+      '<div class="ddz-shell">' + App.Common.renderResultDialog({
         eyebrow: '鬥地主結算',
         title: landlordWon ? '地主勝出' : '農民勝出',
         subtitle: '底分 ' + currentBid + ' · 炸彈/火箭 ' + bombCount + ' 次 · 倍數 x' + multiplier + ' · 勝出：' + players[winnerIndex].name,
@@ -1230,7 +1230,7 @@
     supportsSingle: true,
     supportsMultiplayer: true,
     minPlayers: 1,
-    minRoomPlayers: 2,
+    minRoomPlayers: 1,
     maxPlayers: 3,
     allowSpectators: true,
     aiFill: true,

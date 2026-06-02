@@ -443,7 +443,7 @@
       });
       var actions = '<button class="nu-btn secondary" id="nu-back">返回</button>' +
         (isRoomMode() ? '' : '<button class="nu-btn" id="nu-new">再來一局</button>');
-      container.innerHTML = '<div class="nu-shell">' + App.Common.renderResultPanel({
+      container.innerHTML = '<div class="nu-shell">' + App.Common.renderResultDialog({
         eyebrow: '9Upper 結算',
         title: winnerText(),
         subtitle: '總分最高者勝出',
@@ -514,7 +514,7 @@
     supportsSingle: true,
     supportsMultiplayer: true,
     minPlayers: 1,
-    minRoomPlayers: 2,
+    minRoomPlayers: 1,
     maxPlayers: 6,
     allowSpectators: true,
     aiFill: true,

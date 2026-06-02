@@ -183,6 +183,9 @@
   display:grid;grid-template-columns:auto minmax(0,1fr);gap:8px;align-items:baseline;
   font-size:.82rem;
 }
+.room-chat-message .chat-avatar .room-avatar{
+  width:24px;height:24px;font-size:.75rem;box-shadow:0 0 0 2px rgba(255,255,255,.75),0 3px 8px rgba(32,44,58,.12);
+}
 .room-chat-message.mentioned{
   border:1px solid #f2c078;background:#fff8ec;border-radius:9px;padding:5px 6px;
 }

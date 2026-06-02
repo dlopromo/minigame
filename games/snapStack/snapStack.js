@@ -245,7 +245,7 @@
       var ranked = state.players.slice().sort(function(a, b) { return b.score - a.score || String(a.name).localeCompare(String(b.name)); });
       var actions = '<button class="ss-btn secondary" id="ss-back"><i class="fa-solid fa-arrow-left" aria-hidden="true"></i><span>返回</span></button>' +
         (isRoomMode() ? '' : '<button class="ss-btn" id="ss-new"><i class="fa-solid fa-rotate-right" aria-hidden="true"></i><span>再來一局</span></button>');
-      container.innerHTML = '<div class="ss-shell">' + App.Common.renderResultPanel({
+      container.innerHTML = '<div class="ss-shell">' + App.Common.renderResultDialog({
         eyebrow: '冚棉胎結算',
         title: titleText(),
         subtitle: '得分最高者勝出',
@@ -309,7 +309,7 @@
     supportsSingle: true,
     supportsMultiplayer: true,
     minPlayers: 1,
-    minRoomPlayers: 2,
+    minRoomPlayers: 1,
     maxPlayers: 8,
     allowSpectators: true,
     aiFill: true,
