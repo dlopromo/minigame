@@ -256,6 +256,9 @@
 .admin-lock .text-input{margin:0;text-align:left}
 .admin-actions{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0}
 .admin-kick{border:0;cursor:pointer}
+.admin-game-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:8px;margin-top:10px}
+.admin-game-row.disabled{border-color:#e2e8f0;background:#f8fafc;opacity:.78}
+.admin-game-toggle{border:0;cursor:pointer}
 .admin-room-row{width:100%;text-align:left;cursor:pointer;font:inherit;color:inherit}
 .admin-room-row.active{border-color:#7cc59d;background:#f1fbf5}
 .admin-detail-empty{font-size:.9rem;color:var(--muted)}

@@ -2,6 +2,7 @@ var App = window.App || {};
 
 (function() {
   var rooms = {};
+  var gameSettings = {};
   var selectedCode = '';
   var db = null;
   var unlocked = false;
@@ -45,6 +46,11 @@ var App = window.App || {};
         renderSummary();
         renderRoomList();
         renderSelectedRoom();
+      });
+      db.ref('appSettings/games').on('value', function(snapshot) {
+        gameSettings = snapshot.val() || {};
+        renderSummary();
+        renderGameSettings();
       });
     }).catch(function(error) {
       App.Common.showToast('Admin 連線失敗：' + error.message, 'error');
@@ -97,6 +103,7 @@ var App = window.App || {};
         : '未設定 adminPin：目前只適合私人測試，正式公開前請加 Firebase Rules。';
       note.className = 'room-config-note' + (expected ? '' : ' error');
     }
+    renderGameSettings();
   }
 
   function renderSummary() {
@@ -106,6 +113,7 @@ var App = window.App || {};
     var onlinePlayers = 0;
     var playingRooms = 0;
     var aiTakeovers = 0;
+    var disabledGames = getGames().filter(function(game) { return !isGameEnabled(game.id); }).length;
     codes.forEach(function(code) {
       var room = rooms[code] || {};
       if (room.status === 'playing') playingRooms++;
@@ -123,8 +131,68 @@ var App = window.App || {};
       '<div><span>在線真人</span><strong>' + onlinePlayers + '</strong></div>' +
       '<div><span>遊戲中</span><strong>' + playingRooms + '</strong></div>' +
       '<div><span>AI 接管</span><strong>' + aiTakeovers + '</strong></div>' +
+      '<div><span>停用遊戲</span><strong>' + disabledGames + '</strong></div>' +
       '<div><span>資料源</span><strong>Firebase RTDB</strong></div>' +
       '<div><span>Admin</span><strong>' + (unlocked ? 'Unlocked' : 'Locked') + '</strong></div>';
+  }
+
+  function getGames() {
+    if (App.GameManager && App.GameManager.getGames) return App.GameManager.getGames();
+    return [
+      { id: 'guessColor', name: 'Guess Color', supportsSingle: true, supportsMultiplayer: true },
+      { id: 'bigDee', name: '鋤大Dee', supportsSingle: true, supportsMultiplayer: true },
+      { id: 'douDizhu', name: '鬥地主', supportsSingle: true, supportsMultiplayer: true },
+      { id: 'blackjack', name: '21點', supportsSingle: true, supportsMultiplayer: true },
+      { id: 'tile2048', name: '2048', supportsSingle: true, supportsMultiplayer: true },
+      { id: 'colorShift', name: 'UNO', supportsSingle: true, supportsMultiplayer: true },
+      { id: 'snapStack', name: '冚棉胎', supportsSingle: true, supportsMultiplayer: true },
+      { id: 'nineUpper', name: '9Upper', supportsSingle: true, supportsMultiplayer: true },
+      { id: 'baccarat', name: '百家樂', supportsSingle: true, supportsMultiplayer: true },
+      { id: 'sicBo', name: '大小', supportsSingle: true, supportsMultiplayer: true }
+    ];
+  }
+
+  function isGameEnabled(gameId) {
+    var item = gameSettings && gameSettings[gameId] || {};
+    return item.enabled !== false;
+  }
+
+  function renderGameSettings() {
+    var target = document.getElementById('admin-game-list');
+    if (!target) return;
+    if (!unlocked) {
+      target.innerHTML = '<p class="room-list-empty">請先解鎖 Admin</p>';
+      return;
+    }
+    var games = getGames().sort(function(a, b) {
+      return String(a.name || a.id).localeCompare(String(b.name || b.id), 'zh-Hant');
+    });
+    if (!games.length) {
+      target.innerHTML = '<p class="room-list-empty">未載入遊戲列表</p>';
+      return;
+    }
+    target.innerHTML = games.map(function(game) {
+      var enabled = isGameEnabled(game.id);
+      var item = gameSettings && gameSettings[game.id] || {};
+      var meta = [
+        game.supportsSingle ? '單人' : '',
+        game.supportsMultiplayer ? '多人' : '',
+        item.updatedAt ? '更新 ' + formatTime(item.updatedAt) : ''
+      ].filter(Boolean).join(' · ');
+      return '<div class="room-person admin-game-row' + (enabled ? '' : ' disabled') + '">' +
+        '<div><div class="room-person-name">' + escapeHtml(game.name || game.id) + '</div>' +
+        '<div class="room-person-meta">' + escapeHtml(game.id) + (meta ? ' · ' + escapeHtml(meta) : '') + '</div></div>' +
+        '<div class="room-person-badges">' +
+          '<span class="room-badge ' + (enabled ? 'self' : 'ai') + '">' + (enabled ? 'Enabled' : 'Disabled') + '</span>' +
+          '<button class="room-badge admin-game-toggle" data-game-id="' + escapeHtml(game.id) + '" data-game-enabled="' + (enabled ? 'false' : 'true') + '">' + (enabled ? '停用' : '啟用') + '</button>' +
+        '</div>' +
+      '</div>';
+    }).join('');
+    Array.prototype.forEach.call(target.querySelectorAll('[data-game-id]'), function(btn) {
+      btn.addEventListener('click', function() {
+        setGameEnabled(btn.getAttribute('data-game-id'), btn.getAttribute('data-game-enabled') === 'true');
+      });
+    });
   }
 
   function renderRoomList() {
@@ -295,6 +363,17 @@ var App = window.App || {};
         runGlobalAction(btn.getAttribute('data-global-admin-action'));
       });
     });
+  }
+
+  function setGameEnabled(gameId, enabled) {
+    if (!unlocked || !db || !gameId) return;
+    db.ref('appSettings/games/' + gameId).update({
+      enabled: !!enabled,
+      updatedAt: firebase.database.ServerValue.TIMESTAMP,
+      updatedBy: 'admin'
+    }).then(function() {
+      App.Common.showToast((enabled ? '已啟用 ' : '已停用 ') + gameId, 'success');
+    }).catch(showAdminError);
   }
 
   function roomRef() {

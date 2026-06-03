@@ -19,6 +19,7 @@ App.Lobby = (function() {
   var lastMentionNoticeKey = '';
   var lastHostNoticeEpoch = 0;
   var processedVoteIds = {};
+  var gameSettings = {};
   var titleFlashTimer = null;
   var titleFlashBase = 'MiniGame';
   var titleFlashOn = false;
@@ -268,6 +269,16 @@ App.Lobby = (function() {
   function getGameMinRoomPlayers(gameId) {
     var game = App.GameManager.getGame(gameId);
     return (game && (game.minRoomPlayers || game.minPlayers)) || 1;
+  }
+
+  function isGameEnabled(gameId) {
+    if (App.Signaling && App.Signaling.isGameEnabled) return App.Signaling.isGameEnabled(gameSettings, gameId);
+    var item = gameSettings && gameSettings[gameId] || {};
+    return item.enabled !== false;
+  }
+
+  function disabledGameMessage(game) {
+    return (game && game.name ? game.name : '此遊戲') + ' 已由 Admin 停用';
   }
 
   function getSelfRole() {
@@ -1096,10 +1107,12 @@ App.Lobby = (function() {
     App.GameManager.getGames().forEach(function(game) {
       var supported = playContext === 'single' ? game.supportsSingle : game.supportsMultiplayer;
       if (!supported) return;
+      var enabled = isGameEnabled(game.id);
 
       var card = document.createElement('div');
-      card.className = 'game-card';
+      card.className = 'game-card' + (enabled ? '' : ' disabled');
       var badges = [];
+      if (!enabled) badges.push('Admin 已停用');
       if (playContext === 'room') {
         badges.push('玩家 ' + (game.minRoomPlayers || game.minPlayers || 1) + '-' + (game.maxPlayers || 2));
         if (game.aiFill) badges.push('AI 補位');
@@ -1122,7 +1135,13 @@ App.Lobby = (function() {
         '<div class="game-card-meta">' + badges.map(function(badge) {
           return '<span class="game-badge">' + badge + '</span>';
         }).join('') + '</div>';
-      card.onclick = function() { onGameSelected(game.id); };
+      card.onclick = function() {
+        if (!isGameEnabled(game.id)) {
+          App.Common.showToast(disabledGameMessage(game), 'error');
+          return;
+        }
+        onGameSelected(game.id);
+      };
       grid.appendChild(card);
     });
 
@@ -1134,6 +1153,10 @@ App.Lobby = (function() {
   }
 
   function onGameSelected(gameId) {
+    if (!isGameEnabled(gameId)) {
+      App.Common.showToast(disabledGameMessage(App.GameManager.getGame(gameId)), 'error');
+      return;
+    }
     selectedGameId = gameId;
     if (playContext === 'single') {
       launchSingleGame(gameId);
@@ -1238,6 +1261,10 @@ App.Lobby = (function() {
   function startRoomRound(gameId, mode) {
     if (playContext !== 'room' || !isHost || !roomState || !gameId) return Promise.resolve(false);
     var game = App.GameManager.getGame(gameId);
+    if (!isGameEnabled(gameId)) {
+      App.Common.showToast(disabledGameMessage(game), 'error');
+      return Promise.resolve(false);
+    }
     var roomStart = null;
     return App.Signaling.updateRoom({ status: 'starting' }).then(function() {
       return rebalanceRoomForGame(gameId);
@@ -1336,6 +1363,11 @@ App.Lobby = (function() {
     if (!selectedGameId) return;
     if (playContext === 'room') {
       if (!isHost) return;
+      if (!isGameEnabled(selectedGameId)) {
+        App.Common.showToast(disabledGameMessage(App.GameManager.getGame(selectedGameId)), 'error');
+        showGameSelect('room');
+        return;
+      }
       var game = App.GameManager.getGame(selectedGameId);
       var minRoomPlayers = getGameMinRoomPlayers(selectedGameId);
       var seating = App.RoomSeating && App.RoomSeating.build ? App.RoomSeating.build(roomState, game) : null;
@@ -1394,6 +1426,11 @@ App.Lobby = (function() {
   }
 
   function launchSingleGame(gameId) {
+    if (!isGameEnabled(gameId)) {
+      App.Common.showToast(disabledGameMessage(App.GameManager.getGame(gameId)), 'error');
+      showGameSelect('single');
+      return;
+    }
     showScreen('game');
     setTitle('載入中...');
     var container = document.getElementById('game-container');
@@ -1527,6 +1564,14 @@ App.Lobby = (function() {
   }
 
   function init() {
+    if (App.Signaling && App.Signaling.isConfigured && App.Signaling.isConfigured() && App.Signaling.watchGameSettings) {
+      App.Signaling.watchGameSettings(function(settings) {
+        gameSettings = settings || {};
+        if (isScreenActive('game-select')) showGameSelect(playContext || 'single');
+      }).catch(function(e) {
+        console.warn('Game settings watcher failed', e);
+      });
+    }
     var roomCodeInput = document.getElementById('room-code-input');
     if (roomCodeInput) {
       roomCodeInput.addEventListener('input', function() {

@@ -2,6 +2,27 @@
   "rules": {
     ".read": false,
     ".write": false,
+    "appSettings": {
+      ".read": "auth != null",
+      "games": {
+        "$gameId": {
+          ".write": "auth != null && $gameId.matches(/^[A-Za-z0-9_-]{1,40}$/)",
+          ".validate": "newData.hasChildren(['enabled', 'updatedAt'])",
+          "enabled": {
+            ".validate": "newData.isBoolean()"
+          },
+          "updatedAt": {
+            ".validate": "newData.isNumber()"
+          },
+          "updatedBy": {
+            ".validate": "newData.isString() && newData.val().length <= 128"
+          },
+          "$other": {
+            ".validate": false
+          }
+        }
+      }
+    },
     "rooms": {
       ".read": "auth != null",
       ".indexOn": ["createdAt"],

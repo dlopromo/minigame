@@ -763,6 +763,39 @@ App.Signaling = (function() {
     });
   }
 
+  function normalizeGameSettings(value) {
+    return value && typeof value === 'object' ? value : {};
+  }
+
+  function isGameEnabled(settings, gameId) {
+    var item = normalizeGameSettings(settings)[gameId] || {};
+    return item.enabled !== false;
+  }
+
+  function watchGameSettings(callback) {
+    if (!callback) return Promise.resolve();
+    return initFirebase().then(function() {
+      var r = ref('appSettings/games');
+      var handler = function(snapshot) {
+        callback(normalizeGameSettings(snapshot.val() || {}));
+      };
+      r.on('value', handler);
+      unsubscribers.push(function() { r.off('value', handler); });
+    });
+  }
+
+  function setGameEnabled(gameId, enabled) {
+    gameId = String(gameId || '').replace(/[^A-Za-z0-9_-]/g, '');
+    if (!gameId) return Promise.reject(new Error('缺少 gameId'));
+    return initFirebase().then(function() {
+      return ref('appSettings/games/' + gameId).update({
+        enabled: enabled !== false,
+        updatedAt: firebase.database.ServerValue.TIMESTAMP,
+        updatedBy: selfId || authUid || 'admin'
+      });
+    });
+  }
+
   function sendGameAction(action) {
     if (!roomCode || !action) return Promise.resolve();
     action.from = selfId;
@@ -819,6 +852,9 @@ App.Signaling = (function() {
     castVote: castVote,
     finishVote: finishVote,
     clearVote: clearVote,
+    watchGameSettings: watchGameSettings,
+    setGameEnabled: setGameEnabled,
+    isGameEnabled: isGameEnabled,
     updateProfile: updateProfile,
     sendGameAction: sendGameAction,
     clearGameAction: clearGameAction,
@@ -834,7 +870,8 @@ App.Signaling = (function() {
       markStaleMembers: markStaleMembers,
       selectHostCandidate: selectHostCandidate,
       voteDecision: voteDecision,
-      chatText: chatText
+      chatText: chatText,
+      isGameEnabled: isGameEnabled
     },
     getRoomCode: getRoomCode,
     getSelfId: getSelfId,

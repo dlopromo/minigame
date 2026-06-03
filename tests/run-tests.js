@@ -348,6 +348,8 @@ function testRoomFlowGuards() {
   const common = fs.readFileSync(path.join(root, 'js/common.js'), 'utf8');
   const admin = fs.readFileSync(path.join(root, 'js/admin.js'), 'utf8');
   const adminHtml = fs.readFileSync(path.join(root, 'admin.html'), 'utf8');
+  const rules = fs.readFileSync(path.join(root, 'database.rules.json'), 'utf8');
+  const signalingApp = loadBrowserScripts(['js/signaling.js']);
 
   // Re-entry must not auto-queue.
   assert.match(signaling, /queueStatus:\s*'none'/);
@@ -400,13 +402,29 @@ function testRoomFlowGuards() {
   assert.match(lobby, /function toggleSpectate\(/);
   assert.match(lobby, /觀戰本局/);
   assert.match(lobby, /可直接開始/);
+  assert.match(lobby, /function isGameEnabled\(gameId\)/);
+  assert.match(lobby, /Admin 已停用/);
+  assert.match(lobby, /watchGameSettings/);
+  assert.match(lobby, /disabledGameMessage/);
   // Back navigation in room context should avoid forced home redirect.
   assert.match(lobby, /if\s*\(playContext === 'room'\)\s*\{/);
   assert.match(lobby, /等待房主開新一局/);
+  assert.match(signaling, /appSettings\/games/);
+  assert.match(signaling, /function setGameEnabled\(gameId, enabled\)/);
+  assert.strictEqual(signalingApp.Signaling._test.isGameEnabled({}, 'guessColor'), true);
+  assert.strictEqual(signalingApp.Signaling._test.isGameEnabled({ guessColor: { enabled: false } }, 'guessColor'), false);
+  assert.match(rules, /"appSettings"/);
+  assert.match(rules, /"games"/);
+  assert.match(rules, /"enabled"/);
+  assert.match(adminHtml, /id="admin-game-list"/);
+  assert.match(adminHtml, /games\/guessColor\/guessColor\.js/);
   assert.match(adminHtml, /data-global-admin-action="delete-empty-rooms"/);
   assert.match(adminHtml, /data-global-admin-action="delete-closed-rooms"/);
   assert.match(adminHtml, /data-global-admin-action="delete-stale-rooms"/);
   assert.match(admin, /function runGlobalAction\(/);
+  assert.match(admin, /function renderGameSettings\(/);
+  assert.match(admin, /appSettings\/games/);
+  assert.match(admin, /data-game-id/);
   assert.doesNotMatch(admin, /data-admin-action="clear-vote"/);
 }
 
