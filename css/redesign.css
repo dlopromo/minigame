@@ -862,3 +862,175 @@ h1,h2,.home-title-row h1{letter-spacing:0;color:var(--app-text)}
   .room-action-bar{grid-template-columns:1fr 1fr}
   .room-action-bar .btn-ghost{grid-column:1/3}
 }
+
+/* Card Table Layout v2
+   Shared tabletop language for the card games: muted fabric, fixed zones,
+   compact hand stage, and restrained highlights for phone-first play. */
+:root{
+  --ct-felt:#204f49;
+  --ct-felt-deep:#173c37;
+  --ct-felt-soft:#2f665f;
+  --ct-rail:rgba(9,31,29,.42);
+  --ct-zone:rgba(255,255,255,.13);
+  --ct-zone-line:rgba(255,255,255,.2);
+  --ct-seat:rgba(246,249,250,.82);
+  --ct-card-back:#20272c;
+}
+
+:is(.bd-shell,.ddz-shell,.cs-shell,.ss-shell,.bj-shell){
+  background:
+    radial-gradient(circle at 18% 0%,rgba(255,255,255,.52),transparent 26%),
+    linear-gradient(145deg,#f1f5f4 0%,#dbe5e1 100%);
+}
+
+:is(.bd-board,.ddz-board,.cs-opponents,.ss-scoreboard,.bj-scoreboard){
+  background:
+    linear-gradient(180deg,rgba(255,255,255,.32),rgba(255,255,255,.06)),
+    #d8e3df;
+  border-radius:18px;
+  border:1px solid rgba(177,195,190,.8);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.56),0 8px 18px rgba(32,44,58,.06);
+}
+
+:is(.bd-table,.ddz-table,.cs-table,.ss-table,.bj-table){
+  background-color:var(--ct-felt);
+  background-image:
+    linear-gradient(45deg,rgba(255,255,255,.045) 25%,transparent 25%,transparent 75%,rgba(255,255,255,.045) 75%),
+    linear-gradient(45deg,rgba(0,0,0,.075) 25%,transparent 25%,transparent 75%,rgba(0,0,0,.075) 75%),
+    linear-gradient(145deg,var(--ct-felt-soft),var(--ct-felt-deep));
+  background-size:74px 74px,74px 74px,auto;
+  background-position:0 0,37px 37px,center;
+  border:1px solid rgba(9,45,40,.82);
+  box-shadow:
+    inset 0 0 0 7px var(--ct-rail),
+    inset 0 1px 0 rgba(255,255,255,.16),
+    inset 0 -22px 44px rgba(0,0,0,.22),
+    0 12px 28px rgba(32,44,58,.12);
+}
+
+:is(.bd-table,.ddz-table,.cs-table,.ss-table,.bj-table)::before{
+  content:"";
+  position:absolute;
+  inset:14px;
+  border:1px solid var(--ct-zone-line);
+  border-radius:14px;
+  pointer-events:none;
+  z-index:0;
+}
+
+:is(.bd-table,.ddz-table,.cs-table,.ss-table,.bj-table)::after{
+  content:"";
+  position:absolute;
+  inset:26px 18px;
+  border-radius:12px;
+  background:
+    linear-gradient(90deg,transparent 0 12%,var(--ct-zone) 12% 12.5%,transparent 12.5% 87.5%,var(--ct-zone) 87.5% 88%,transparent 88%),
+    linear-gradient(180deg,transparent 0 33%,var(--ct-zone) 33% 33.5%,transparent 33.5% 66.5%,var(--ct-zone) 66.5% 67%,transparent 67%);
+  pointer-events:none;
+  z-index:0;
+}
+
+:is(.bd-status,.bd-discard-strip,.bd-last-play,.ddz-info,.ddz-bottom-cards,.ddz-last-play,.ddz-discard-area,.cs-pile,.cs-color,.ss-pile,.ss-deck,.bj-dealer,.bj-players){
+  position:relative;
+  z-index:2;
+}
+
+:is(.bd-seat,.ddz-seat,.cs-seat,.ss-player,.bj-player,.bj-score-chip){
+  background:var(--ct-seat);
+  border-color:rgba(255,255,255,.62);
+  box-shadow:0 8px 20px rgba(32,44,58,.08);
+  backdrop-filter:blur(8px);
+}
+
+:is(.bd-seat.active,.ddz-seat.active,.cs-seat.active,.ss-player.active,.bj-player.active){
+  background:rgba(234,250,240,.93);
+  border-color:#7ad69f;
+  box-shadow:0 0 0 3px rgba(122,214,159,.22),0 14px 28px rgba(20,70,54,.18);
+}
+
+:is(.bd-last-play,.ddz-last-play){
+  border-radius:16px;
+  background:
+    linear-gradient(180deg,rgba(255,255,255,.032),rgba(255,255,255,.012));
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.075);
+  align-items:center;
+  justify-content:center;
+}
+
+:is(.bd-discard-strip,.ddz-discard-area){
+  border-radius:14px;
+  background:rgba(0,0,0,.11);
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.08);
+}
+.bd-discard-strip{padding:6px 8px 10px}
+.ddz-discard-area{padding:8px 10px 12px}
+
+:is(.bd-hand-panel,.ddz-hand-panel,.cs-hand,.ss-controls,.bj-controlbar){
+  background:rgba(250,252,253,.9);
+  border-color:rgba(255,255,255,.72);
+  box-shadow:0 -10px 24px rgba(32,44,58,.1),inset 0 1px 0 rgba(255,255,255,.75);
+}
+
+:is(.bd-hand-panel.active,.ddz-hand-panel.active){
+  background:rgba(240,252,246,.94);
+  box-shadow:0 0 0 3px rgba(122,214,159,.18),0 -10px 24px rgba(32,44,58,.1);
+}
+
+:is(.bd-card-back,.ddz-card-back,.bj-card.back,.cs-backs i){
+  background:
+    linear-gradient(135deg,rgba(255,255,255,.055) 0 18%,transparent 18% 50%,rgba(255,255,255,.04) 50% 68%,transparent 68%),
+    linear-gradient(145deg,#252c31,#171d21);
+  border-color:#3a4249;
+}
+
+:is(.bd-card,.ddz-card,.bj-card,.cs-card,.ss-card){
+  border-color:#d3dbe4;
+  box-shadow:0 8px 18px rgba(15,30,42,.16);
+}
+
+:is(.bd-last-play .bd-card,.ddz-last-play .ddz-card,.cs-pile .cs-card,.ss-card.latest){
+  box-shadow:0 16px 32px rgba(0,0,0,.26);
+}
+
+:is(.bd-card.selected,.ddz-card.selected,.cs-card.suggested){
+  transform:translateY(-32px) scale(1.07);
+  border-color:#79b3db;
+  box-shadow:0 20px 38px rgba(28,90,128,.36),0 0 0 5px rgba(121,179,219,.2);
+}
+
+.bj-table{
+  grid-template-rows:auto minmax(0,1fr);
+}
+.bj-players{
+  align-items:end;
+  justify-content:center;
+  gap:8px 12px;
+}
+.bj-player{
+  transform-origin:center 120%;
+}
+
+@media(min-width:761px){
+  .bj-players .bj-player:nth-child(1){transform:translateY(12px) rotate(-5deg)}
+  .bj-players .bj-player:nth-child(2){transform:translateY(0) rotate(-2deg)}
+  .bj-players .bj-player:nth-child(3){transform:translateY(0) rotate(2deg)}
+  .bj-players .bj-player:nth-child(4){transform:translateY(12px) rotate(5deg)}
+}
+
+@media(max-width:760px){
+  :is(.bd-table,.ddz-table,.cs-table,.ss-table,.bj-table){
+    background-size:54px 54px,54px 54px,auto;
+    background-position:0 0,27px 27px,center;
+    box-shadow:
+      inset 0 0 0 5px var(--ct-rail),
+      inset 0 1px 0 rgba(255,255,255,.14),
+      inset 0 -18px 34px rgba(0,0,0,.2),
+      0 8px 18px rgba(32,44,58,.1);
+  }
+  :is(.bd-table,.ddz-table,.cs-table,.ss-table,.bj-table)::before{inset:10px;border-radius:12px}
+  :is(.bd-table,.ddz-table,.cs-table,.ss-table,.bj-table)::after{inset:20px 13px}
+  .bd-discard-strip{min-height:34px;padding:5px 6px 8px}
+  .ddz-discard-area{padding:5px 6px 8px}
+  :is(.bd-last-play,.ddz-last-play){min-height:82px}
+  .bj-players{gap:5px 6px}
+}
