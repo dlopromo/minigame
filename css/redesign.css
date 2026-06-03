@@ -1034,3 +1034,35 @@ h1,h2,.home-title-row h1{letter-spacing:0;color:var(--app-text)}
   :is(.bd-last-play,.ddz-last-play){min-height:82px}
   .bj-players{gap:5px 6px}
 }
+
+/* Final blackjack proportion pass: compact player pods around the lower table. */
+.bj-table{grid-template-rows:auto minmax(92px,1fr)}
+.bj-dealer{max-width:min(100%,520px);width:100%;margin:0 auto}
+.bj-players{max-width:min(100%,620px);align-content:end;align-items:end;justify-content:center;padding:0 8px 10px;gap:6px 9px}
+.bj-player{width:118px;padding:5px 6px;gap:3px;border-radius:12px;transform-origin:center 120%}
+.bj-player-head{gap:5px;padding-left:5px}
+.bj-player-name{gap:4px}
+.bj-player-name .room-avatar{width:18px;height:18px;font-size:.62rem}
+.bj-player-head strong{font-size:.7rem;line-height:1}
+.bj-player-head span{font-size:.58rem}
+.bj-score{font-size:.6rem}
+.bj-score strong{font-size:.6rem;padding:1px 5px}
+.bj-hand{min-height:42px}
+.bj-player .bj-card{width:29px;height:42px;border-radius:7px;margin-right:-9px}
+.bj-player .bj-card b{font-size:.56rem}
+.bj-player .bj-card em{font-size:.74rem}
+.bj-hidden-hand{font-size:.68rem;font-weight:850;color:#667085;background:#eef2f6;border:1px solid #d7e0ea;border-radius:999px;padding:5px 8px}
+
+@media(max-width:760px){
+  .bj-table{grid-template-rows:auto minmax(80px,1fr)}
+  .bj-dealer{padding:5px 6px}
+  .bj-players{max-width:100%;gap:5px;padding:0 2px 7px}
+  .bj-player{width:104px;padding:4px 5px;border-radius:10px}
+  .bj-player-name .room-avatar{width:16px;height:16px;font-size:.56rem}
+  .bj-player-head strong{font-size:.64rem}
+  .bj-player-head span{font-size:.54rem}
+  .bj-hand{min-height:36px}
+  .bj-player .bj-card{width:26px;height:38px;margin-right:-9px}
+  .bj-player .bj-card b{font-size:.52rem}
+  .bj-player .bj-card em{font-size:.68rem}
+}

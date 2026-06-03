@@ -292,20 +292,7 @@
     normalizeState();
     opts.ignoreNextRoomSnapshot = true;
     opts.ignoreNextRoomSnapshotRoundId = snapshot.roundId || resolveRoundId() || '';
-    if (App.GameManager && typeof App.GameManager.handleMessage === 'function') {
-      App.GameManager.handleMessage({
-        type: 'room_update',
-        roomId: opts.roomId || '',
-        selfId: opts.selfId || '',
-        role: opts.role || 'player',
-        players: opts.players || [],
-        spectators: opts.spectators || [],
-        isHost: isHostAuthority(),
-        gameState: snapshot
-      });
-    } else {
-      render();
-    }
+    render();
     if (isRoomMode()) {
       if (isHostAuthority()) {
         publishState();
@@ -571,33 +558,6 @@
       opts = gameOpts || {};
       App.BaccaratControls = {
         reveal: function() {
-          var current = App.GameManager && App.GameManager.getActiveGameSnapshot ? App.GameManager.getActiveGameSnapshot() : null;
-          var snapshot = App.BaccaratRules && App.BaccaratRules.buildRevealSnapshotFromState ? App.BaccaratRules.buildRevealSnapshotFromState(current && current.state ? current.state : state) : null;
-          if (snapshot && snapshot.state) {
-            opts.ignoreNextRoomSnapshot = true;
-            opts.ignoreNextRoomSnapshotRoundId = snapshot.roundId || resolveRoundId() || '';
-            App.GameManager.handleMessage({
-              type: 'room_update',
-              roomId: opts.roomId || '',
-              selfId: opts.selfId || '',
-              role: opts.role || 'player',
-              players: opts.players || [],
-              spectators: opts.spectators || [],
-              isHost: isHostAuthority(),
-              gameState: snapshot
-            });
-            if (isRoomMode()) {
-              if (isHostAuthority()) {
-                state = clone(snapshot.state);
-                normalizeState();
-                publishState();
-                saveRoomResult();
-              } else if (App.Lobby && typeof App.Lobby.sendRoomGameAction === 'function') {
-                App.Lobby.sendRoomGameAction({ type: 'bc_state_sync', stateSnapshot: snapshot, playerId: opts.selfId, skipLocalEcho: true });
-              }
-            }
-            return true;
-          }
           if (state && state.status === 'playing' && state.phase === 'reveal') return performReveal();
           return false;
         },
